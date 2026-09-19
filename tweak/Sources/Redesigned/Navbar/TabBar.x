@@ -281,6 +281,7 @@ static void syncBar(UIView *stockBar) {
         objc_setAssociatedObject(stockBar, &kBarKey, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     bar.tintColor = SGRAccent();
+    bar.overrideUserInterfaceStyle = SGHidden(SGRKeyNavbarAlwaysDark) ? UIUserInterfaceStyleDark : UIUserInterfaceStyleUnspecified;
 
     for (UIView *sub in stockBar.subviews) {
         if (sub == bar) continue;
