@@ -9,6 +9,6 @@
 void SGSetRedesignedUI(BOOL on);
 extern NSString *const SGRedesignedUIInfo;
 
-SGModSection *SGAppearanceSection(void);   // the Appearance card at the top of Mod Settings
+UIViewController *SGAppearancePage(void); // Appearance and its font/icon sub-pages
 UIViewController *SGPlayerSettingsPage(void);
 UIViewController *SGNavbarPage(void);       // the tab editor of whichever look is stored

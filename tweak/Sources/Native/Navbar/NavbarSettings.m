@@ -74,8 +74,8 @@ static void appendTab(NSDictionary *tab) {
     [super viewDidLoad];
     _footer = SGNote(@"Paste a share link or a spotify: URI. Icons: home, search, collection, heart, "
                    "playlist, album, artist, podcasts, audiobook, downloaded, bookmark, browse, star, "
-                   "user, events, queue, plus, radio, gears, spotifyLogo. Use All icons to browse every "
-                   "Encore icon and copy its name.");
+                   "user, events, queue, plus, radio, gears, spotifyLogo. Use All icons to browse "
+                   "Encore or SF Symbols and copy a name for a custom tab.");
     self.tableView.tableFooterView = _footer;
 }
 
@@ -118,7 +118,7 @@ static void appendTab(NSDictionary *tab) {
     } else if (path.section == 1) {
         SGFillCell(cell, @"Any link…", nil, nil, @"link");
     } else {
-        SGFillCell(cell, @"All icons", @"Preview and copy every Spotify Encore icon", nil, @"square.grid.2x2");
+        SGFillCell(cell, @"All icons", @"Preview and copy Encore or SF Symbols", nil, @"square.grid.2x2");
     }
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     return cell;
@@ -135,6 +135,32 @@ static void appendTab(NSDictionary *tab) {
         [self.navigationController pushViewController:SGNavbarIconPickerPage() animated:YES];
         return;
     }
+    [self chooseIconLibrary];
+}
+
+- (void)chooseIconLibrary {
+    UIAlertController *choice = [UIAlertController alertControllerWithTitle:@"Icon library"
+                                                                        message:[NSString stringWithFormat:@"Choose the icon type for this custom tab. Default: %@.", SGNavbarIconLibraryLabel()]
+                                                                 preferredStyle:UIAlertControllerStyleActionSheet];
+    SGNavbarIconLibrary defaultLibrary = SGNavbarIconLibraryValue();
+    [choice addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"Use default (%@)", SGNavbarIconLibraryLabel()]
+                                               style:UIAlertActionStyleDefault
+                                             handler:^(UIAlertAction *action) {
+        [self presentAnyLinkWithLibrary:defaultLibrary];
+    }]];
+    [choice addAction:[UIAlertAction actionWithTitle:@"Spotify Encore" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [self presentAnyLinkWithLibrary:SGNavbarIconLibraryEncore];
+    }]];
+    [choice addAction:[UIAlertAction actionWithTitle:@"SF Symbols" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [self presentAnyLinkWithLibrary:SGNavbarIconLibrarySFSymbols];
+    }]];
+    [choice addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    choice.popoverPresentationController.sourceView = self.view;
+    choice.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
+    [self presentViewController:choice animated:YES completion:nil];
+}
+
+- (void)presentAnyLinkWithLibrary:(SGNavbarIconLibrary)library {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Any link" message:@"Where the tab goes, and the glyph on it." preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) { field.placeholder = @"Name"; }];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
@@ -143,8 +169,8 @@ static void appendTab(NSDictionary *tab) {
         field.autocorrectionType = UITextAutocorrectionTypeNo;
     }];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.placeholder = @"Icon";
-        field.text = @"star";
+        field.placeholder = library == SGNavbarIconLibrarySFSymbols ? @"SF Symbol name" : @"Encore icon name";
+        field.text = library == SGNavbarIconLibrarySFSymbols ? @"star.fill" : @"star";
         field.autocapitalizationType = UITextAutocapitalizationTypeNone;
         field.autocorrectionType = UITextAutocorrectionTypeNo;
     }];
@@ -152,7 +178,9 @@ static void appendTab(NSDictionary *tab) {
     [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         NSString *title = alert.textFields[0].text, *uri = alert.textFields[1].text, *icon = alert.textFields[2].text;
         if (!uri.length) return;
-        appendTab(@{SGNavbarTitle: title.length ? title : uri, SGNavbarURI: uri, SGNavbarIcon: icon.length ? icon : @"star"});
+        NSString *kind = library == SGNavbarIconLibrarySFSymbols ? SGNavbarIconKindSymbol : SGNavbarIconKindEncore;
+        NSString *fallback = library == SGNavbarIconLibrarySFSymbols ? @"star.fill" : @"star";
+        appendTab(@{SGNavbarTitle: title.length ? title : uri, SGNavbarURI: uri, SGNavbarIcon: icon.length ? icon : fallback, SGNavbarIconKind: kind});
         [self.navigationController popViewControllerAnimated:YES];
     }]];
     [self presentViewController:alert animated:YES completion:nil];

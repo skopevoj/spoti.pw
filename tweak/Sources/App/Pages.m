@@ -12,6 +12,8 @@
 #import "Native/Player/NowPlaying.h"
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/LiveActivity/LiveActivity.h"
+#import "Shared/Appearance/AppFont.h"
+#import "Shared/NavbarIconPicker.h"
 #import "Redesigned/Lyrics/LyricsText.h"
 #import "Redesigned/Navbar/Navbar.h"
 #import "Redesigned/NowPlayingBar/NowPlayingBar.h"
@@ -47,22 +49,31 @@ static SGModRow *unavailableRow(void) {
     return SGWithSymbol(row, @"sparkles");
 }
 
-SGModSection *SGAppearanceSection(void) {
+UIViewController *SGAppearancePage(void) {
+    NSMutableArray<SGModSection *> *sections = [NSMutableArray array];
     if (!SGRedesignAvailable()) {
         NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObject:unavailableRow()];
         [rows addObjectsFromArray:SGNativeAppearanceRows()];
-        return SGNotedSection(@"Appearance", rows, @"Changes apply after you restart Spotify.");
+        [sections addObject:SGNotedSection(@"Look", rows, @"The redesigned UI needs iOS 26. Changes apply after you restart Spotify.")];
+    } else {
+        SGModRow *redesign = SGOptionRow(@"Redesigned UI", nil, SGKeyRedesign);
+        redesign.glows = YES;
+        redesign.info = SGRedesignedUIInfo;
+        redesign.changed = ^(BOOL on) {
+            SGSetRedesignedUI(on);
+            offerRestart(on);
+        };
+        NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObject:SGWithSymbol(redesign, @"sparkles")];
+        [rows addObjectsFromArray:SGRedesignedUIStored() ? SGRAppearanceRows() : SGNativeAppearanceRows()];
+        [sections addObject:SGNotedSection(@"Look", rows, @"Changes apply after you restart Spotify.")];
     }
-    SGModRow *redesign = SGOptionRow(@"Redesigned UI", nil, SGKeyRedesign);
-    redesign.glows = YES;
-    redesign.info = SGRedesignedUIInfo;
-    redesign.changed = ^(BOOL on) {
-        SGSetRedesignedUI(on);
-        offerRestart(on);
-    };
-    NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObject:SGWithSymbol(redesign, @"sparkles")];
-    [rows addObjectsFromArray:SGRedesignedUIStored() ? SGRAppearanceRows() : SGNativeAppearanceRows()];
-    return SGNotedSection(@"Appearance", rows, @"Changes apply after you restart Spotify.");
+
+    SGModRow *font = SGWithSymbol(SGPageRow(@"App-Font", ^UIViewController *{ return SGAppFontSettingsPage(); }), @"textformat");
+    font.value = ^NSString *{ return SGAppFontLabel(); };
+    SGModRow *icons = SGWithSymbol(SGPageRow(@"Icons", ^UIViewController *{ return SGNavbarIconSettingsPage(); }), @"square.grid.2x2");
+    icons.value = ^NSString *{ return SGNavbarIconLibraryLabel(); };
+    [sections addObject:SGSection(@"Customization", @[font, icons])];
+    return [[SGModPage alloc] initWithTitle:@"Appearance" intro:SGRestartNote sections:sections footer:nil];
 }
 
 UIViewController *SGNavbarPage(void) {

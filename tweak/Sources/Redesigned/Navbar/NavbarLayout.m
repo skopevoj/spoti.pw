@@ -6,6 +6,9 @@ NSString *const SGRNavbarID = @"id";
 NSString *const SGRNavbarTitle = @"title";
 NSString *const SGRNavbarURI = @"uri";
 NSString *const SGRNavbarIcon = @"icon";
+NSString *const SGRNavbarIconKind = @"iconKind";
+NSString *const SGRNavbarIconKindEncore = @"encore";
+NSString *const SGRNavbarIconKindSymbol = @"sfSymbol";
 NSString *const SGRNavbarHidden = @"hidden";
 
 static NSString *const kNavbarLayout = @"spotifyglass.redesign.navbar.layout";

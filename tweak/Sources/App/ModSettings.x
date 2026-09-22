@@ -40,6 +40,9 @@ static UIViewController *modSettingsPage(void) {
     // that no switch can put right, and it is worth reading before anything else.
     SGModRow *signing = SGSigningWarningRow();
     if (signing) [sections addObject:SGSection(nil, @[signing])];
+    SGModRow *appearance = pageRow(@"Appearance", @"paintpalette", ^UIViewController *{ return SGAppearancePage(); });
+    appearance.value = ^NSString *{ return SGRedesignedUIStored() ? @"Redesigned UI" : @"Spotify"; };
+    [sections addObject:SGSection(nil, @[appearance])];
     [sections addObject:SGSection(nil, @[SGDonateRow()])];
     SGModRow *mod = pageRow(@"Mod", @"info.circle", ^UIViewController *{ return SGAboutPage(); });
     mod.value = ^NSString *{ return @(SG_VERSION); };
@@ -60,7 +63,6 @@ static UIViewController *modSettingsPage(void) {
     }
     if (!SGRedesignedUIStored()) [parts addObject:pageRow(@"Home & Library", @"house", ^UIViewController *{ return SGHomeSettingsPage(); })];
     [sections addObjectsFromArray:@[
-        SGAppearanceSection(),
         SGSection(nil, parts),
         SGSection(nil, @[
             pageRow(@"Privacy & clutter", @"hand.raised", ^UIViewController *{ return SGPrivacySettingsPage(); }),

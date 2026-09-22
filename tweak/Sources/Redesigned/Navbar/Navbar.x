@@ -44,9 +44,18 @@ static UIColor *itemColor(void) { return [UIColor colorWithWhite:0xB3 / 255.0 al
 #pragma mark - the mod's own items
 
 // One of the 538 glyphs SPTEncoreIcon exposes, one class method each ("podcasts", "heart"), so an
-// item of the mod's own is drawn the same way as Spotify's. An SF Symbol stands in if the name is
-// not one of them.
-static UIView *iconView(NSString *name) {
+// item of the mod's own is drawn the same way as Spotify's. Custom tabs may also opt into SF Symbols.
+static UIView *iconView(NSString *name, NSString *kind) {
+    if ([kind isEqualToString:SGRNavbarIconKindSymbol]) {
+        UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:19 weight:UIImageSymbolWeightSemibold];
+        UIImage *image = [UIImage systemImageNamed:name.length ? name : @"star.fill" withConfiguration:configuration];
+        if (image) {
+            UIImageView *symbol = [[UIImageView alloc] initWithImage:image];
+            symbol.tintColor = itemColor();
+            symbol.contentMode = UIViewContentModeCenter;
+            return symbol;
+        }
+    }
     Class icon = NSClassFromString(@"SPTEncoreIcon");
     Class view = NSClassFromString(@"SPTEncoreIconView");
     SEL glyphSel = NSSelectorFromString(name.length ? name : @"star");
@@ -74,6 +83,7 @@ static UIView *iconView(NSString *name) {
 
 @implementation SGRTabItemView {
     NSString *_iconName;
+    NSString *_iconKind;
     UIView *_icon;
     UILabel *_title;
 }
@@ -93,10 +103,12 @@ static UIView *iconView(NSString *name) {
     self.uri = entry[SGRNavbarURI];
     _title.text = entry[SGRNavbarTitle];
     NSString *name = entry[SGRNavbarIcon] ?: @"star";
-    if ([name isEqualToString:_iconName]) return;
+    NSString *kind = entry[SGRNavbarIconKind] ?: SGRNavbarIconKindEncore;
+    if ([name isEqualToString:_iconName] && [kind isEqualToString:_iconKind]) return;
     [_icon removeFromSuperview];
     _iconName = [name copy];
-    _icon = iconView(name);
+    _iconKind = [kind copy];
+    _icon = iconView(name, kind);
     // Encore's views lay themselves out from constraints; this one is placed by frame.
     _icon.translatesAutoresizingMaskIntoConstraints = YES;
     [self addSubview:_icon];
