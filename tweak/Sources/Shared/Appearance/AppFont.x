@@ -4,7 +4,7 @@ static BOOL sgApplyingAppFont = NO;
 
 static NSAttributedString *SGAppFontMappedAttributedString(NSAttributedString *text) {
     if (!text.length || SGAppFontModeValue() == SGAppFontModeSpotify) return text;
-    NSMutableAttributedString *mapped = nil;
+    __block NSMutableAttributedString *mapped = nil;
     [text enumerateAttribute:NSFontAttributeName inRange:NSMakeRange(0, text.length) options:0 usingBlock:^(UIFont *font, NSRange range, BOOL *stop) {
         if (!font) return;
         UIFont *replacement = SGAppFontReplacement(font);
@@ -83,7 +83,7 @@ static UIFont *SGAppFontSystemFont(CGFloat size, CGFloat weight) {
 
 - (void)setText:(NSString *)text {
     %orig(text);
-    SGAppFontRefreshLabel(self);
+    SGAppFontRefreshLabel((UILabel *)self);
 }
 
 - (void)setAttributedText:(NSAttributedString *)text {
@@ -92,7 +92,7 @@ static UIFont *SGAppFontSystemFont(CGFloat size, CGFloat weight) {
 
 - (void)didMoveToWindow {
     %orig;
-    SGAppFontRefreshLabel(self);
+    SGAppFontRefreshLabel((UILabel *)self);
 }
 %end
 

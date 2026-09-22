@@ -1,4 +1,5 @@
 #import "GlobalIcons.h"
+#import "Core/SGCore.h"
 #import "Headers/SPTEncoreIconView.h"
 #import <objc/runtime.h>
 
