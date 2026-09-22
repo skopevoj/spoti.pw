@@ -22,7 +22,7 @@ NSString *SGAppFontLabel(void) {
 }
 
 static CGFloat fontWeight(UIFont *font) {
-    NSDictionary *traits = [font.fontDescriptor objectForKey:UIFontDescriptorTraitsAttribute];
+    NSDictionary *traits = font.fontDescriptor.fontAttributes[UIFontDescriptorTraitsAttribute];
     NSNumber *weight = traits[UIFontWeightTrait];
     return weight ? MAX(-1, MIN(1, weight.doubleValue)) : UIFontWeightRegular;
 }
