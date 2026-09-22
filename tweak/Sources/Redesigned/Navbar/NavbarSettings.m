@@ -3,6 +3,7 @@
 #import "Settings/SGPageStyle.h"
 #import "Navbar.h"
 #import "Shared/Navigation/Links.h"
+#import "Shared/NavbarIconPicker.h"
 
 // What "Add a tab" offers: URIs Spotify's own router resolves to a page of its own, each with the
 // name of the SPTEncoreIcon class method that draws its glyph. Playlists was spotify:collection:playlists
@@ -101,7 +102,8 @@ static NSArray<NSDictionary *> *openablePresets(void) {
     [super viewDidLoad];
     _footer = SGNote(@"Paste a share link or a spotify: URI. Icons: home, search, collection, heart, "
                    "playlist, album, artist, podcasts, audiobook, downloaded, bookmark, browse, star, "
-                   "user, events, queue, plus, radio, gears, spotifyLogo.");
+                   "user, events, queue, plus, radio, gears, spotifyLogo. Use All icons to browse every "
+                   "Encore icon and copy its name.");
     self.tableView.tableFooterView = _footer;
 }
 
@@ -116,7 +118,7 @@ static NSArray<NSDictionary *> *openablePresets(void) {
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)table {
-    return 2;
+    return 3;
 }
 
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
@@ -124,7 +126,8 @@ static NSArray<NSDictionary *> *openablePresets(void) {
 }
 
 - (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
-    return SGSectionHeader(table, section == 0 ? @"Spotify's pages" : @"Anywhere else");
+    NSString *title = section == 0 ? @"Spotify's pages" : section == 1 ? @"Anywhere else" : @"Icon reference";
+    return SGSectionHeader(table, title);
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section {
@@ -140,8 +143,10 @@ static NSArray<NSDictionary *> *openablePresets(void) {
     if (path.section == 0) {
         NSDictionary *tab = _presets[(NSUInteger)path.row];
         SGFillCell(cell, tab[SGRNavbarTitle], tab[SGRNavbarURI], nil, nil);
-    } else {
+    } else if (path.section == 1) {
         SGFillCell(cell, @"Any link…", nil, nil, @"link");
+    } else {
+        SGFillCell(cell, @"All icons", @"Preview and copy every Spotify Encore icon", nil, @"square.grid.2x2");
     }
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     return cell;
@@ -152,6 +157,10 @@ static NSArray<NSDictionary *> *openablePresets(void) {
     if (path.section == 0) {
         appendTab(_presets[(NSUInteger)path.row]);
         [self.navigationController popViewControllerAnimated:YES];
+        return;
+    }
+    if (path.section == 2) {
+        [self.navigationController pushViewController:SGNavbarIconPickerPage() animated:YES];
         return;
     }
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Any link" message:@"Where the tab goes, and the glyph on it." preferredStyle:UIAlertControllerStyleAlert];
