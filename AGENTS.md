@@ -15,7 +15,7 @@ A Theos tweak (Objective-C + Logos) injected into the decrypted Spotify iOS app.
   playlist, album and artist pages the way the Music app lays them out with one pinned ⋯ over each, black
   throughout, and its own accent colour. No native tweak runs.
 
-Anything that doesn't draw on Spotify's screens works the same under both: privacy, lyrics
+Anything that doesn't draw on Spotify's screens works the same under both: ads, Premium, privacy, lyrics
 sources, gestures, blocked artists, flags, Vibrations, Speed and pitch, and the Live Activity. Those
 last three were the redesign's until they moved to `Shared/`, so their keys lost the `.redesign.` and
 `Core/SGPrefs.h`'s `SGMigrateKey` carries the old ones over at launch.

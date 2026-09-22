@@ -107,7 +107,7 @@ to use, a coffee is a good way to say so.
 
 [cyan](https://github.com/asdfzxcvbn/pyzule-rw) injects, [Theos](https://theos.dev) builds, and
 [FLEX](https://github.com/FLEXTool/FLEX), as hopeless's AutoFLEX build in `vendor/`, is the inspector
-the view trees are read through. The lyrics hook follows
-[EeveeSpotify Reincarnated](https://github.com/SideloadLabs/EeveeSpotifyReincarnated)'s.
+the view trees are read through. The ad blocking and Premium state are ported from
+[EeveeSpotify Reincarnated](https://github.com/SideloadLabs/EeveeSpotifyReincarnated), as is the lyrics hook.
 
 GPL-3.0. Not affiliated with Spotify.

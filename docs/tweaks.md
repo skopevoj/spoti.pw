@@ -71,6 +71,8 @@ A feature is a directory in its layer holding everything about one area of the a
 
 Shared:
 
+    AdBlock/      EeveeSpotify's ad blocking: ad and upsell services silenced, ad components removed from feeds, Premium pop-ups dropped,
+                  responses rewritten on the way in, and crossfade/automix enabled when Spoof Premium is on
     Privacy/      telemetry blocking and its counters, and the Search switches that force their flags off (Clutter.m)
     ArtistBlock/  tracks by blocked artists skipped as they start (ArtistSkip.x), the list and the Blocked artists page under Player
     Flags/        Spotify's remote-config flags: the provider hook, the generated table, the All flags page and the Labs page
@@ -264,8 +266,9 @@ opening out into its sliders, choices, curve or file library while its switch is
 changes; the row reads out Off, On or how many effects are on. Home & Library, in the native look only:
 the Gradient page (the wash behind the top of Home in one of eight colours, at three strengths and
 four heights) and the Home flags, the parts of Home to hide including the DJ button and badge, the
-playlist header, buttons and pills to hide, and the Library flags. Then Privacy & clutter
-(Block telemetry; hiding the video carousel and social proof in Search, and a Tips page under them,
+playlist header, buttons and pills to hide, and the Library flags. Then Premium, ads & privacy
+(Hide ads, Hide upsells, Spoof Premium, and an Ad and upsell flags page), followed by Privacy & clutter
+(Block telemetry; hiding the video carousel and social proof in Search; and a Tips page under them,
 every switch there forcing a flag Spotify ships on to off; then what the telemetry blocking has stopped) and Labs (features Spotify built and did not ship,
 AI Chat (Martini) first). Last, All flags, Spotify's remote-config flags with a search field and an
 Auto / Off / On control per flag (a text field for the number and text ones), and Mod: Updates

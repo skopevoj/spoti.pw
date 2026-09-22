@@ -6,6 +6,7 @@
 #import "About.h"
 #import "Native/Appearance/Appearance.h"
 #import "Native/Player/NowPlaying.h"
+#import "Shared/AdBlock/AdBlock.h"
 #import "Shared/ArtistBlock/ArtistBlock.h"
 #import "Shared/Gestures/Gestures.h"
 #import "Shared/Haptics/Haptics.h"
@@ -93,6 +94,8 @@ NSData *SGUsageBody(void) {
         @"artistBlock": @(SGFlag(SGKeyArtistBlock, NO)),
         @"gestures": @(SGFlag(SGKeyGestures, NO)),
         @"blockTelemetry": @(SGEnabled(SGKeyBlockTelemetry)),
+        @"hideAds": @(SGHidden(SGKeyHideAds)),
+        @"fakePremium": @(SGHidden(SGKeyFakePremium)),
         @"lyricsCard": @(SGFlag(SGKeyLyricsCard, NO)),
         @"amoled": @(SGFlag(SGKeyAmoled, NO)),
     };

@@ -13,5 +13,10 @@ NSArray<NSString *> *SGBlockedLabels(void);
 NSUInteger SGBlockedCount(NSString *label);
 void SGResetBlocked(void);
 
+// The telemetry switch and counters, reused by the Premium, ads & privacy page.
+@class SGModSection;
+SGModSection *SGPrivacySection(void);
+SGModSection *SGPrivacyCountersSection(void);
+
 // The Privacy & clutter page: telemetry, the Search switches, the tips, what telemetry blocking stopped.
 UIViewController *SGPrivacySettingsPage(void);

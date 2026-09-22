@@ -17,6 +17,7 @@
 #import "Settings/SGPageStyle.h"
 #import "Settings/SGModPage.h"
 #import "Native/Home/Home.h"
+#import "Shared/AdBlock/AdBlock.h"
 #import "Shared/Privacy/Privacy.h"
 #import "Shared/Flags/Flags.h"
 #import "Shared/JamesDSP/JamesDSPPage.h"
@@ -63,6 +64,7 @@ static UIViewController *modSettingsPage(void) {
         SGAppearanceSection(),
         SGSection(nil, parts),
         SGSection(nil, @[
+            pageRow(@"Premium, ads & privacy", @"crown", ^UIViewController *{ return SGAdsSettingsPage(); }),
             pageRow(@"Privacy & clutter", @"hand.raised", ^UIViewController *{ return SGPrivacySettingsPage(); }),
             pageRow(@"Labs", @"testtube.2", ^UIViewController *{ return SGLabsPage(); }),
         ]),
