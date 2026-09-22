@@ -4,6 +4,7 @@
 #import <UIKit/UIKit.h>
 
 #define SGKeyNavbar @"spotifyglass.navbar"
+#define SGKeyNavbarSplit @"spotifyglass.navbar.split"
 
 extern NSString *const SGNavbarID;      // NSString, the entry's identity
 extern NSString *const SGNavbarTitle;   // NSString, the name in the settings list and under the icon
@@ -15,6 +16,8 @@ extern NSString *const SGNavbarIconKindSymbol;
 extern NSString *const SGNavbarHidden;  // NSNumber
 NSArray<NSDictionary *> *SGNavbarLayout(void);
 void SGSetNavbarLayout(NSArray<NSDictionary *> *layout);
+NSArray<NSString *> *SGNavbarSplitIDs(void);
+void SGSetNavbarSplitIDs(NSArray<NSString *> *identifiers);
 // Spotify's own tabs in Spotify's order, as Navbar.x last saw them on the bar.
 NSArray<NSString *> *SGNavbarStock(void);
 void SGSetNavbarStock(NSArray<NSString *> *stock);

@@ -1,5 +1,6 @@
 #import "NavbarIconPicker.h"
 #import "Core/SGCore.h"
+#import "Shared/Appearance/GlobalIcons.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGPage.h"
 #import "Settings/SGPageStyle.h"
@@ -231,11 +232,14 @@ UIViewController *SGNavbarIconPickerPage(void) {
 }
 
 UIViewController *SGNavbarIconSettingsPage(void) {
+    SGModRow *global = SGChoiceRow(@"App icons", nil, SGKeyAppIconStyle,
+                                   @[@"Spotify Encore", @"SF Symbols"], SGAppIconStyleEncore);
+    global.choiceFooter = @"This replaces Spotify's Encore glyphs throughout the app. Changes apply after Spotify restarts. Unmapped glyphs use a question-mark SF Symbol.";
     SGModRow *library = SGChoiceRow(@"Default custom-tab icons", nil, SGKeyNavbarIconLibrary,
                                     @[@"Spotify Encore", @"SF Symbols"], SGNavbarIconLibraryEncore);
     library.choiceFooter = @"This default is used when you create a new custom tab. Existing tabs keep their selected library.";
     SGModRow *browse = SGWithSymbol(SGPageRow(@"Browse all icons", ^UIViewController *{ return SGNavbarIconPickerPage(); }), @"square.grid.2x2");
     return [[SGModPage alloc] initWithTitle:@"Icons" intro:SGRestartNote
-                                   sections:@[SGSection(@"Custom navbar tabs", @[library]), SGSection(nil, @[browse])]
-                                      footer:@"Global Spotify icon replacement is planned for a later step. For now, this page controls custom tabs only."];
+                                   sections:@[SGSection(@"Everywhere", @[global]), SGSection(@"Custom navbar tabs", @[library]), SGSection(nil, @[browse])]
+                                      footer:@"The global choice covers Spotify's Encore icon views. Custom navbar tabs can still choose their own library when they are created." ];
 }

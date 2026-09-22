@@ -29,6 +29,14 @@ void SGRSetNavbarLayout(NSArray<NSDictionary *> *layout) {
     [NSUserDefaults.standardUserDefaults setObject:layout ?: @[] forKey:kNavbarLayout];
 }
 
+NSArray<NSString *> *SGRNavbarSplitIDs(void) {
+    return listOfKind(SGRKeyNavbarSplit, NSString.class);
+}
+
+void SGRSetNavbarSplitIDs(NSArray<NSString *> *identifiers) {
+    [NSUserDefaults.standardUserDefaults setObject:identifiers ?: @[] forKey:SGRKeyNavbarSplit];
+}
+
 NSArray<NSString *> *SGRNavbarStock(void) {
     return listOfKind(kNavbarStock, NSString.class);
 }

@@ -12,6 +12,7 @@
 // layout pass that styled it: both are then invisible on the glass until the next pass, a second or
 // so later. So the two setters are refused for as long as the field is a capsule.
 #import "Core/SGCore.h"
+#import "Shared/Appearance/GlobalIcons.h"
 #import "Diagnostics/Diagnostics.h"
 
 // Spotify's glyph view, resolved at runtime; declared on UIView so the call and the hook below
@@ -146,7 +147,9 @@ static void styleSearchField(UIView *button) {
 
 %hook SPTEncoreIconView
 - (void)setForegroundColor:(UIColor *)color {
-    %orig(SGIsInside((UIView *)self, sg_searchField) ? UIColor.whiteColor : color);
+    UIColor *foreground = SGAppIconStyleValue() == SGAppIconStyleSFSymbols ? UIColor.clearColor
+                      : SGIsInside((UIView *)self, sg_searchField) ? UIColor.whiteColor : color;
+    %orig(foreground);
 }
 %end
 

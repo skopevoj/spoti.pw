@@ -24,7 +24,7 @@ static const CGFloat kIconSize = 24;
 static const CGFloat kIconTop = 12.5;
 static const CGFloat kLabelTop = 35;
 static const CGFloat kLabelHeight = 14;
-static char kCustomKey, kOrderKey;
+static char kCustomKey, kOrderKey, kEntryKey, kSplitGapKey;
 
 // Where Spotify's own items keep their icon and label, read off one of them every pass, so an item of
 // the mod's own sits on the same line as its neighbours.
@@ -190,11 +190,14 @@ void SGRComposeTabBar(UIView *tabBar) {
     sg_navbarRoot = tabBar;
 
     NSMutableDictionary<NSString *, UIView *> *stockViews = [NSMutableDictionary dictionary];
+    UIView *splitGap = objc_getAssociatedObject(stack, &kSplitGapKey);
     for (UIView *item in stack.arrangedSubviews) {
         if ([item isKindOfClass:SGRTabItemView.class]) continue;
+        if (item == splitGap) continue;
         NSString *ident = stockID(item);
         if (stockViews[ident]) continue;
         stockViews[ident] = item;
+        objc_setAssociatedObject(item, &kEntryKey, ident, OBJC_ASSOCIATION_COPY_NONATOMIC);
         measureItem(item);
         if (!sg_stockOrder) sg_stockOrder = [NSMutableArray array];
         if (![sg_stockOrder containsObject:ident]) [sg_stockOrder addObject:ident];
@@ -217,6 +220,7 @@ void SGRComposeTabBar(UIView *tabBar) {
                 SGRTabItemView *item = custom[ident];
                 if (item) [item applyEntry:entry];
                 else custom[ident] = item = [[SGRTabItemView alloc] initWithEntry:entry];
+                objc_setAssociatedObject(item, &kEntryKey, ident, OBJC_ASSOCIATION_COPY_NONATOMIC);
                 [keep addObject:ident];
                 [wanted addObject:item];
             } else if (stockViews[ident]) {
@@ -249,8 +253,31 @@ void SGRComposeTabBar(UIView *tabBar) {
     for (UIView *item in wanted) {
         if ([item isKindOfClass:SGRTabItemView.class] && item.superview != stack) [stack addArrangedSubview:item];
     }
-    NSMutableArray<UIView *> *order = [NSMutableArray array];
-    for (UIView *item in wanted) if (!item.hidden && item.superview == stack) [order addObject:item];
+    NSMutableArray<UIView *> *normal = [NSMutableArray array], *split = [NSMutableArray array];
+    NSSet<NSString *> *splitIDs = [NSSet setWithArray:SGRNavbarSplitIDs()];
+    for (UIView *item in wanted) {
+        if (item.hidden || item.superview != stack) continue;
+        NSString *ident = objc_getAssociatedObject(item, &kEntryKey);
+        if ([splitIDs containsObject:ident]) [split addObject:item];
+        else [normal addObject:item];
+    }
+    UIView *gap = objc_getAssociatedObject(stack, &kSplitGapKey);
+    if (split.count) {
+        if (!gap) {
+            gap = [UIView new];
+            gap.userInteractionEnabled = NO;
+            objc_setAssociatedObject(stack, &kSplitGapKey, gap, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        if (gap.superview != stack) [stack addArrangedSubview:gap];
+    } else if (gap) {
+        [stack removeArrangedSubview:gap];
+        [gap removeFromSuperview];
+        objc_setAssociatedObject(stack, &kSplitGapKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        gap = nil;
+    }
+    NSMutableArray<UIView *> *order = [normal mutableCopy];
+    if (gap) [order addObject:gap];
+    [order addObjectsFromArray:split];
     sg_row = stack;
     if (![order isEqualToArray:objc_getAssociatedObject(stack, &kOrderKey)]) {
         objc_setAssociatedObject(stack, &kOrderKey, order, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -273,11 +300,18 @@ static void placeRow(UIStackView *stack) {
     NSArray<UIView *> *order = objc_getAssociatedObject(stack, &kOrderKey);
     UIView *bar = sg_navbarRoot;
     if (!order.count || !bar) return;
-    CGFloat width = bar.bounds.size.width / order.count;
+    UIView *gap = objc_getAssociatedObject(stack, &kSplitGapKey);
+    CGFloat gapWidth = gap && [order containsObject:gap] ? 10 : 0;
+    NSUInteger tabCount = order.count - (gap ? 1 : 0);
+    if (!tabCount) return;
+    CGFloat width = (bar.bounds.size.width - gapWidth) / tabCount;
     CGFloat height = stack.bounds.size.height;
     [order enumerateObjectsUsingBlock:^(UIView *item, NSUInteger i, BOOL *stop) {
-        CGFloat x = [bar convertPoint:CGPointMake(i * width, 0) toView:stack].x;
-        CGRect frame = CGRectMake(x, 0, width, height);
+        CGFloat offset = 0;
+        for (NSUInteger previous = 0; previous < i; previous++) offset += order[previous] == gap ? gapWidth : width;
+        CGFloat itemWidth = item == gap ? gapWidth : width;
+        CGFloat x = [bar convertPoint:CGPointMake(offset, 0) toView:stack].x;
+        CGRect frame = CGRectMake(x, 0, itemWidth, height);
         if (!CGAffineTransformIsIdentity(item.transform)) item.transform = CGAffineTransformIdentity;
         if (!CGRectEqualToRect(item.frame, frame)) item.frame = frame;
         centreContents(item);

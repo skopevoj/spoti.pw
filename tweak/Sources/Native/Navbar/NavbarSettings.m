@@ -192,9 +192,73 @@ typedef NS_ENUM(NSInteger, SGNavbarSection) {
     SGNavbarSectionSwitch,
     SGNavbarSectionTabs,
     SGNavbarSectionAdd,
+    SGNavbarSectionSplit,
     SGNavbarSectionReset,
     SGNavbarSectionCount,
 };
+
+@interface SGNavbarSplitPage : SGPage
+@end
+
+@implementation SGNavbarSplitPage {
+    NSMutableArray<NSMutableDictionary *> *_entries;
+    UIView *_intro;
+}
+
+- (instancetype)init {
+    if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
+    self.title = @"Split tabs";
+    _entries = navbarEntries();
+    return self;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    _intro = SGNote(@"Choose tabs that sit separately on the trailing side of the navbar. Search can be its own pill like Apple Music.");
+    self.tableView.tableHeaderView = _intro;
+}
+
+- (void)viewWillLayoutSubviews {
+    [super viewWillLayoutSubviews];
+    SGFitNote(self.tableView, _intro, 24, 0);
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    SGInsetForBars(self.tableView);
+}
+
+- (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section { return (NSInteger)_entries.count; }
+- (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section { return CGFLOAT_MIN; }
+- (CGFloat)tableView:(UITableView *)table heightForFooterInSection:(NSInteger)section { return CGFLOAT_MIN; }
+
+- (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
+    UITableViewCell *cell = SGDequeueCell(table, @"split-tab");
+    NSDictionary *entry = _entries[(NSUInteger)path.row];
+    BOOL split = [SGNavbarSplitIDs() containsObject:entry[SGNavbarID]];
+    SGFillCell(cell, entry[SGNavbarTitle], split ? @"Separate on the right" : @"In the main group", nil, nil);
+    UISwitch *toggle = [UISwitch new];
+    toggle.tag = path.row;
+    toggle.onTintColor = SGGreen();
+    toggle.on = split;
+    [toggle addTarget:self action:@selector(splitToggled:) forControlEvents:UIControlEventValueChanged];
+    cell.accessoryView = toggle;
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    return cell;
+}
+
+- (void)splitToggled:(UISwitch *)toggle {
+    if (toggle.tag < 0 || toggle.tag >= (NSInteger)_entries.count) return;
+    NSString *ident = _entries[(NSUInteger)toggle.tag][SGNavbarID];
+    NSMutableOrderedSet *ids = [NSMutableOrderedSet orderedSetWithArray:SGNavbarSplitIDs()];
+    if (toggle.on) [ids addObject:ident];
+    else [ids removeObject:ident];
+    SGSetNavbarSplitIDs(ids.array);
+    SGRefreshTabBar();
+    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:toggle.tag inSection:0]] withRowAnimation:UITableViewRowAnimationNone];
+}
+
+@end
 
 // The tabs, in the order the bar shows them: drag to reorder, tap to show or hide, swipe a tab of
 // your own away. Spotify's own tabs can only be hidden, never removed. Mod Settings and the welcome
@@ -294,6 +358,10 @@ typedef NS_ENUM(NSInteger, SGNavbarSection) {
             SGFillCell(cell, @"Add a tab…", nil, nil, @"plus");
             cell.selectionStyle = UITableViewCellSelectionStyleDefault;
             break;
+        case SGNavbarSectionSplit:
+            SGFillCell(cell, @"Split tabs", @"Place selected tabs separately on the right", nil, @"rectangle.split.2x1");
+            cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+            break;
         default:
             SGFillCell(cell, @"Use Spotify's order", nil, nil, @"arrow.uturn.backward");
             cell.selectionStyle = UITableViewCellSelectionStyleDefault;
@@ -343,6 +411,8 @@ typedef NS_ENUM(NSInteger, SGNavbarSection) {
         [table reloadRowsAtIndexPaths:@[path] withRowAnimation:UITableViewRowAnimationNone];
     } else if (path.section == SGNavbarSectionAdd) {
         [self.navigationController pushViewController:[SGTabPickerPage new] animated:YES];
+    } else if (path.section == SGNavbarSectionSplit) {
+        [self.navigationController pushViewController:[SGNavbarSplitPage new] animated:YES];
     } else if (path.section == SGNavbarSectionReset) {
         [self reset];
     }
@@ -360,6 +430,7 @@ typedef NS_ENUM(NSInteger, SGNavbarSection) {
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [alert addAction:[UIAlertAction actionWithTitle:@"Reset" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         SGSetNavbarLayout(@[]);
+        SGSetNavbarSplitIDs(@[]);
         SGRefreshTabBar();
         self->_entries = navbarEntries();
         [self.tableView reloadData];

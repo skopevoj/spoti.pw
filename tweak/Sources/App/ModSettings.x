@@ -40,10 +40,10 @@ static UIViewController *modSettingsPage(void) {
     // that no switch can put right, and it is worth reading before anything else.
     SGModRow *signing = SGSigningWarningRow();
     if (signing) [sections addObject:SGSection(nil, @[signing])];
+    [sections addObject:SGSection(nil, @[SGDonateRow()])];
     SGModRow *appearance = pageRow(@"Appearance", @"paintpalette", ^UIViewController *{ return SGAppearancePage(); });
     appearance.value = ^NSString *{ return SGRedesignedUIStored() ? @"Redesigned UI" : @"Spotify"; };
     [sections addObject:SGSection(nil, @[appearance])];
-    [sections addObject:SGSection(nil, @[SGDonateRow()])];
     SGModRow *mod = pageRow(@"Mod", @"info.circle", ^UIViewController *{ return SGAboutPage(); });
     mod.value = ^NSString *{ return @(SG_VERSION); };
     // JamesDSP works on the sound, so both looks have it, with what it is doing beside the chevron.

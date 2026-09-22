@@ -13,6 +13,7 @@
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Shared/Appearance/AppFont.h"
+#import "Shared/Appearance/GlobalIcons.h"
 #import "Shared/NavbarIconPicker.h"
 #import "Redesigned/Lyrics/LyricsText.h"
 #import "Redesigned/Navbar/Navbar.h"
@@ -71,7 +72,7 @@ UIViewController *SGAppearancePage(void) {
     SGModRow *font = SGWithSymbol(SGPageRow(@"App-Font", ^UIViewController *{ return SGAppFontSettingsPage(); }), @"textformat");
     font.value = ^NSString *{ return SGAppFontLabel(); };
     SGModRow *icons = SGWithSymbol(SGPageRow(@"Icons", ^UIViewController *{ return SGNavbarIconSettingsPage(); }), @"square.grid.2x2");
-    icons.value = ^NSString *{ return SGNavbarIconLibraryLabel(); };
+    icons.value = ^NSString *{ return SGAppIconStyleLabel(); };
     [sections addObject:SGSection(@"Customization", @[font, icons])];
     return [[SGModPage alloc] initWithTitle:@"Appearance" intro:SGRestartNote sections:sections footer:nil];
 }

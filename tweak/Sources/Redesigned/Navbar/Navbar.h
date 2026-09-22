@@ -5,6 +5,7 @@
 #import <UIKit/UIKit.h>
 
 #define SGRKeyNavbar @"spotifyglass.redesign.navbar"
+#define SGRKeyNavbarSplit @"spotifyglass.redesign.navbar.split"
 // Icons only on the glass bar. Off unless set; applies as soon as the bar lays out again.
 #define SGRKeyNavbarHideLabels @"spotifyglass.redesign.navbar.hideLabels"
 
@@ -18,6 +19,8 @@ extern NSString *const SGRNavbarIconKindSymbol;
 extern NSString *const SGRNavbarHidden;  // NSNumber
 NSArray<NSDictionary *> *SGRNavbarLayout(void);
 void SGRSetNavbarLayout(NSArray<NSDictionary *> *layout);
+NSArray<NSString *> *SGRNavbarSplitIDs(void);
+void SGRSetNavbarSplitIDs(NSArray<NSString *> *identifiers);
 // Spotify's own tabs in Spotify's order, as Navbar.x last saw them on the bar.
 NSArray<NSString *> *SGRNavbarStock(void);
 void SGRSetNavbarStock(NSArray<NSString *> *stock);
