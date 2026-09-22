@@ -3,12 +3,10 @@
 // Redesigned UI switch, so a page opened after flipping it shows what the restart will bring.
 #import <UIKit/UIKit.h>
 
-@class SGModSection;
-
 // Redesigned UI, the one switch between the two looks, and what its ⓘ reads out.
 void SGSetRedesignedUI(BOOL on);
 extern NSString *const SGRedesignedUIInfo;
 
-SGModSection *SGAppearanceSection(void);   // the Appearance card at the top of Mod Settings
+UIViewController *SGAppearanceSettingsPage(void);
 UIViewController *SGPlayerSettingsPage(void);
 UIViewController *SGNavbarPage(void);       // the tab editor of whichever look is stored

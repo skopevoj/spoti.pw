@@ -47,11 +47,14 @@ static SGModRow *unavailableRow(void) {
     return SGWithSymbol(row, @"sparkles");
 }
 
-SGModSection *SGAppearanceSection(void) {
+UIViewController *SGAppearanceSettingsPage(void) {
+    NSMutableArray<SGModRow *> *rows;
     if (!SGRedesignAvailable()) {
-        NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObject:unavailableRow()];
+        rows = [NSMutableArray arrayWithObject:unavailableRow()];
         [rows addObjectsFromArray:SGNativeAppearanceRows()];
-        return SGNotedSection(@"Appearance", rows, @"Changes apply after you restart Spotify.");
+        return [[SGModPage alloc] initWithTitle:@"Appearance" intro:SGRestartNote sections:@[
+            SGSection(nil, rows),
+        ] footer:nil];
     }
     SGModRow *redesign = SGOptionRow(@"Redesigned UI", nil, SGKeyRedesign);
     redesign.glows = YES;
@@ -60,9 +63,11 @@ SGModSection *SGAppearanceSection(void) {
         SGSetRedesignedUI(on);
         offerRestart(on);
     };
-    NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObject:SGWithSymbol(redesign, @"sparkles")];
+    rows = [NSMutableArray arrayWithObject:SGWithSymbol(redesign, @"sparkles")];
     [rows addObjectsFromArray:SGRedesignedUIStored() ? SGRAppearanceRows() : SGNativeAppearanceRows()];
-    return SGNotedSection(@"Appearance", rows, @"Changes apply after you restart Spotify.");
+    return [[SGModPage alloc] initWithTitle:@"Appearance" intro:SGRestartNote sections:@[
+        SGSection(nil, rows),
+    ] footer:nil];
 }
 
 UIViewController *SGNavbarPage(void) {

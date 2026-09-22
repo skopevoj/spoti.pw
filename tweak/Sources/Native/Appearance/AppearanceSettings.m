@@ -21,7 +21,7 @@ static void chooseAccent(void) {
     [top presentViewController:sheet animated:YES completion:nil];
 }
 
-// The native look's rows of the Appearance card (App/Pages.m).
+// The native look's rows of the Appearance page (App/Pages.m).
 NSArray<SGModRow *> *SGNativeAppearanceRows(void) {
     return @[
         SGWithSymbol(SGOptionRow(@"AMOLED background", nil, SGKeyAmoled), @"moon"),
