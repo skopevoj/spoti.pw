@@ -1,5 +1,5 @@
 // Settings: a Mod Settings row at the end of Spotify's settings list opens the mod's own page: the
-// Appearance card with Redesigned UI, then a page per part of Spotify, each holding what that part
+// Appearance page with Redesigned UI, then a page per part of Spotify, each holding what that part
 // offers in the stored look (App/Pages.m: Navbar, Player, and Home & Library for the native look), Audio
 // effects (JamesDSP, Shared/JamesDSP, in either look and applying straight away), Privacy & clutter
 // and Labs, All flags, a searchable list of every flag with an override per flag, and Mod, the
@@ -40,7 +40,9 @@ static UIViewController *modSettingsPage(void) {
     // that no switch can put right, and it is worth reading before anything else.
     SGModRow *signing = SGSigningWarningRow();
     if (signing) [sections addObject:SGSection(nil, @[signing])];
+    SGModRow *appearance = pageRow(@"Appearance", @"paintpalette", ^UIViewController *{ return SGAppearanceSettingsPage(); });
     [sections addObject:SGSection(nil, @[SGDonateRow()])];
+    [sections addObject:SGSection(nil, @[appearance])];
     SGModRow *mod = pageRow(@"Mod", @"info.circle", ^UIViewController *{ return SGAboutPage(); });
     mod.value = ^NSString *{ return @(SG_VERSION); };
     // JamesDSP works on the sound, so both looks have it, with what it is doing beside the chevron.
@@ -60,7 +62,6 @@ static UIViewController *modSettingsPage(void) {
     }
     if (!SGRedesignedUIStored()) [parts addObject:pageRow(@"Home & Library", @"house", ^UIViewController *{ return SGHomeSettingsPage(); })];
     [sections addObjectsFromArray:@[
-        SGAppearanceSection(),
         SGSection(nil, parts),
         SGSection(nil, @[
             pageRow(@"Privacy & clutter", @"hand.raised", ^UIViewController *{ return SGPrivacySettingsPage(); }),

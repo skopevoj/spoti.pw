@@ -185,6 +185,33 @@ SGModRow *SGChoiceRow(NSString *title, NSString *subtitle, NSString *key, NSArra
     return row;
 }
 
+SGModRow *SGMenuChoiceRow(NSString *title, NSString *subtitle, NSString *key, NSArray<NSString *> *choices, NSInteger fallback) {
+    SGModRow *row = [SGModRow new];
+    row.title = title;
+    row.subtitle = subtitle;
+    row.value = ^NSString *{
+        NSInteger index = SGInt(key, fallback);
+        return index >= 0 && index < (NSInteger)choices.count ? choices[(NSUInteger)index] : choices.firstObject;
+    };
+    __weak SGModRow *weakRow = row;
+    row.menu = ^UIMenu *{
+        NSInteger selected = SGInt(key, fallback);
+        NSMutableArray<UIAction *> *actions = [NSMutableArray arrayWithCapacity:choices.count];
+        [choices enumerateObjectsUsingBlock:^(NSString *choice, NSUInteger index, BOOL *stop) {
+            UIAction *action = [UIAction actionWithTitle:choice image:nil identifier:nil handler:^(UIAction *action) {
+                SGSetInt(key, (NSInteger)index);
+                SGModRow *strongRow = weakRow;
+                if (strongRow.chosen) strongRow.chosen((NSInteger)index);
+                if (strongRow.menuChanged) strongRow.menuChanged();
+            }];
+            action.state = (NSInteger)index == selected ? UIMenuElementStateOn : UIMenuElementStateOff;
+            [actions addObject:action];
+        }];
+        return [UIMenu menuWithTitle:@"" children:actions];
+    };
+    return row;
+}
+
 SGModRow *SGSliderRow(NSString *title, NSString *subtitle, double minimum, double maximum, double step,
                       double (^get)(void), void (^set)(double value), NSString *(^format)(double value)) {
     SGModRow *row = [SGModRow new];
@@ -249,6 +276,45 @@ static UIView *valueAndChevron(NSString *text) {
     [box addSubview:chevron];
     return box;
 }
+
+// A compact colour chip beside a value, used by the accent picker without changing the row's tap target.
+@interface SGValueSwatch : UIView
+- (instancetype)initWithValue:(NSString *)value color:(UIColor *)color;
+- (void)showValue:(NSString *)value color:(UIColor *)color;
+@end
+
+@implementation SGValueSwatch {
+    UILabel *_label;
+    UIView *_swatch;
+}
+
+- (instancetype)initWithValue:(NSString *)value color:(UIColor *)color {
+    if (!(self = [super initWithFrame:CGRectZero])) return nil;
+    _label = [UILabel new];
+    _label.font = SGTitleFont();
+    _label.textColor = SGGrey();
+    _swatch = [UIView new];
+    _swatch.layer.cornerRadius = 8;
+    _swatch.layer.borderWidth = 0.5;
+    _swatch.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.25].CGColor;
+    [self addSubview:_label];
+    [self addSubview:_swatch];
+    [self showValue:value color:color];
+    return self;
+}
+
+- (void)showValue:(NSString *)value color:(UIColor *)color {
+    CGPoint origin = self.frame.origin;
+    _label.text = value;
+    _swatch.backgroundColor = color ?: UIColor.clearColor;
+    [_label sizeToFit];
+    CGFloat height = MAX(_label.bounds.size.height, 16);
+    self.frame = CGRectMake(origin.x, origin.y, _label.bounds.size.width + 8 + 16, height);
+    _label.frame = CGRectMake(0, (height - _label.bounds.size.height) / 2, _label.bounds.size.width, _label.bounds.size.height);
+    _swatch.frame = CGRectMake(CGRectGetMaxX(_label.frame) + 8, (height - 16) / 2, 16, 16);
+}
+
+@end
 
 // On means the row's own override is in place; anything else, including the opposite override
 // somebody set from the All flags page, reads as off.
@@ -522,6 +588,10 @@ static const CGFloat kSliderTop = 12, kSliderLine = 18, kSliderSubtitle = 14, kS
 - (void)readValues {
     for (UITableViewCell *cell in self.tableView.visibleCells) {
         SGModRow *row = [self rowAt:[self.tableView indexPathForCell:cell]];
+        if (row.value && row.swatch && [cell.accessoryView isKindOfClass:SGValueSwatch.class]) {
+            [(SGValueSwatch *)cell.accessoryView showValue:row.value() color:row.swatch()];
+            continue;
+        }
         UILabel *label = (UILabel *)cell.accessoryView;
         if (!row.value || row.page || ![label isKindOfClass:UILabel.class]) continue;
         label.text = row.value();
@@ -609,6 +679,28 @@ static const CGFloat kSliderTop = 12, kSliderLine = 18, kSliderSubtitle = 14, kS
         [toggle addTarget:self action:@selector(toggled:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = row.info ? [self infoButtonBeside:toggle] : toggle;
         cell.selectionStyle = locked ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
+    } else if (row.swatch) {
+        cell.accessoryView = [[SGValueSwatch alloc] initWithValue:row.value ? row.value() : @"" color:row.swatch()];
+        cell.selectionStyle = row.action ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
+    } else if (row.menu) {
+        UIButton *menu = [UIButton buttonWithType:UIButtonTypeSystem];
+        menu.titleLabel.font = SGTitleFont();
+        [menu setTitleColor:SGGrey() forState:UIControlStateNormal];
+        [menu setTitle:row.value ? row.value() : @"" forState:UIControlStateNormal];
+        menu.menu = row.menu();
+        menu.showsMenuAsPrimaryAction = YES;
+        menu.accessibilityLabel = row.title;
+        menu.accessibilityValue = row.value ? row.value() : nil;
+        [menu sizeToFit];
+        __weak SGModPage *weakPage = self;
+        NSIndexPath *indexPath = path;
+        row.menuChanged = ^{
+            SGModPage *page = weakPage;
+            if (!page) return;
+            [page.tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+        };
+        cell.accessoryView = menu;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else if (row.page) {
         cell.accessoryView = row.value ? valueAndChevron(row.value()) : SGSymbolView(@"chevron.right", 13, UIImageSymbolWeightSemibold, 16);
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;

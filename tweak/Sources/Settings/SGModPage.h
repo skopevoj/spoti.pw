@@ -18,6 +18,9 @@
 @property (nonatomic, copy) UIViewController *(^page)(void);
 @property (nonatomic, copy) NSString *(^value)(void);
 @property (nonatomic, copy) void (^action)(void);
+@property (nonatomic, copy) UIMenu *(^menu)(void);  // a native menu shown from the accessory button
+@property (nonatomic, copy) UIColor *(^swatch)(void); // a colour preview beside a value
+@property (nonatomic, copy) void (^menuChanged)(void); // after a menu choice is stored; the row reloads
 @property (nonatomic, copy) NSString *warning;
 @property (nonatomic, copy) void (^changed)(BOOL on);   // after the switch is stored; the page reloads
 @property (nonatomic, strong) UIColor *color;   // title, subtitle and symbol, for a warning row
@@ -70,6 +73,8 @@ SGModRow *SGPageRow(NSString *title, UIViewController *(^page)(void));
 // A setting picked from a list of names, stored under `key` as the index into it: the row reads the
 // name of the current one out and opens a list of them, a checkmark against that one.
 SGModRow *SGChoiceRow(NSString *title, NSString *subtitle, NSString *key, NSArray<NSString *> *choices, NSInteger fallback);
+// The same setting presented as a native UIMenu dropdown in the row's accessory area.
+SGModRow *SGMenuChoiceRow(NSString *title, NSString *subtitle, NSString *key, NSArray<NSString *> *choices, NSInteger fallback);
 // A number on a slider under the row's title, written out by `format` on the right: the thumb snaps to
 // `step` and each step is stored through `set` as the thumb reaches it, so a setting applying as it
 // changes applies while it is dragged. `subtitle` may be nil.

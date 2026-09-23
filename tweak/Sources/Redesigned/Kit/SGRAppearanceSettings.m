@@ -3,27 +3,19 @@
 #import "Settings/SGPageStyle.h"
 #import "SGRAccent.h"
 
-// Going back to Spotify's green is offered only once a colour of the mod's is set, so a stray tap
-// cannot wipe it.
-static void chooseAccent(void) {
-    if (!SGRAccentColor()) {
-        SGRPickAccent();
-        return;
-    }
-    UIViewController *top = SGTopController();
-    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Accent colour" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Pick a colour" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { SGRPickAccent(); }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Spotify's green" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { SGSetInt(SGRKeyAccent, -1); }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    sheet.popoverPresentationController.sourceView = top.view;
-    sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(top.view.bounds), CGRectGetMidY(top.view.bounds), 0, 0);
-    sheet.popoverPresentationController.permittedArrowDirections = 0;
-    [top presentViewController:sheet animated:YES completion:nil];
+static UIColor *spotifyAccentPreview(void) {
+    return [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1];
 }
 
-// The redesign's rows of the Appearance card (App/Pages.m). AMOLED has no row: the redesign is always black.
+// The redesign's rows of the Appearance page (App/Pages.m). AMOLED has no row: the redesign is always black.
 NSArray<SGModRow *> *SGRAppearanceRows(void) {
+    NSArray<NSString *> *palettes = @[@"Spotify", @"Apple Music", @"Custom"];
+    SGModRow *palette = SGMenuChoiceRow(@"Accent color preset", nil, SGRKeyAccentChoice, palettes, SGRCurrentAccentChoice());
+    palette.chosen = ^(NSInteger index) { SGRRefreshAccent(); };
+    SGModRow *color = SGStatActionRow(@"Accent color", nil, ^NSString *{ return SGRAccentLabel(); }, ^{ SGRPickAccent(); });
+    color.swatch = ^UIColor *{ return SGRAccentColor() ?: spotifyAccentPreview(); };
     return @[
-        SGWithSymbol(SGStatActionRow(@"Accent colour", nil, ^NSString *{ return SGRAccentLabel(); }, ^{ chooseAccent(); }), @"paintpalette"),
+        SGWithSymbol(palette, @"paintpalette"),
+        SGWithSymbol(color, @"paintpalette"),
     ];
 }
