@@ -64,3 +64,9 @@ jobs:
             echo "- https://filebin.net/$BIN/$(basename "$f")" >> "$GITHUB_STEP_SUMMARY"
           done
           echo "- _filebin deletes bins after a few days of inactivity, download promptly._" >> "$GITHUB_STEP_SUMMARY"
+      
+      - name: Subir a Catbox
+        run: |
+          IPA_FILE=$(find . -name "*.ipa" | head -n 1)
+          curl -F "reqtype=fileupload" -F "fileToUpload=@$IPA_FILE" https://catbox.moe/user/api.php
+
