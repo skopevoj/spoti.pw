@@ -43,5 +43,14 @@
     "signed_at": "2026-09-24T09:56:02.133Z",
     "pull_request": 134,
     "evidence": "https://github.com/skopevoj/spoti.pw/pull/134"
+  },
+  {
+    "login": "Uri6",
+    "id": 93275900,
+    "cla": "1.0",
+    "via": "checkbox",
+    "signed_at": "2026-09-24T13:49:54.628Z",
+    "pull_request": 136,
+    "evidence": "https://github.com/skopevoj/spoti.pw/pull/136"
   }
 ]
