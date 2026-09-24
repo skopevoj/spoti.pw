@@ -34,5 +34,14 @@
     "signed_at": "2026-09-24T07:44:57.314Z",
     "pull_request": 132,
     "evidence": "https://github.com/skopevoj/spoti.pw/pull/132"
+  },
+  {
+    "login": "Svogliato",
+    "id": 79596753,
+    "cla": "1.0",
+    "via": "checkbox",
+    "signed_at": "2026-09-24T09:56:02.133Z",
+    "pull_request": 134,
+    "evidence": "https://github.com/skopevoj/spoti.pw/pull/134"
   }
 ]
