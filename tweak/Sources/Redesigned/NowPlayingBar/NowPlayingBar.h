@@ -9,7 +9,7 @@
 
 UIViewController *SGRNowPlayingBarSettingsPage(void);
 
-// The bar's glass card in `host`'s coordinates, with its corner radius; CGRectNull before the bar has
+// The bar's glass card in `host`'s coordinates, a Jam's hat on it included, with its corner radius; CGRectNull before the bar has
 // been styled or while it is out of a window (NowPlayingBar.x). The bar keeps its geometry while
 // Spotify hides it for the player's open and close.
 CGRect SGRNowPlayingCardFrameIn(UIView *host, CGFloat *radius);

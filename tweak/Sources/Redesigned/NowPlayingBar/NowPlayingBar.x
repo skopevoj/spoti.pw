@@ -33,22 +33,87 @@ CGRect SGRNowPlayingArtworkFrameIn(UIView *host) {
     return [host convertRect:artwork.bounds fromView:artwork];
 }
 
-static UIView *detectColoredCard(UIView *bar) {
-    __block UIView *best = nil;
-    __block CGFloat bestArea = 0;
-    SGForEachView(bar, ^(UIView *v) {
-        if ([v isKindOfClass:UIVisualEffectView.class] || SGKeepsColor(v) || !SGLooksLikeCard(v, v.layer.backgroundColor)) return;
-        CGFloat area = v.bounds.size.width * v.bounds.size.height;
-        if (area > bestArea) { bestArea = area; best = v; }
+// Spotify hangs attachments on the bar's card: in a Jam, the "Jam by ..." hat, a SwiftUI
+// _UIHostingView of Jam_AttachmentsImpl.JamHatElement as wide as the card and 44 high (FLEX, Jam
+// running). It is not the card, and the painted view around both took the glass up onto the hat. Only
+// the hats are matched: a container of the attachments module may hold the card itself.
+static BOOL isAttachment(UIView *view) {
+    NSString *name = NSStringFromClass(view.class);
+    return [name containsString:@"AttachmentsImpl"] && [name containsString:@"Hat"];
+}
+
+static BOOL insideAttachment(UIView *view, UIView *root) {
+    for (UIView *v = view; v && v != root; v = v.superview) if (isAttachment(v)) return YES;
+    return NO;
+}
+
+static BOOL holdsAttachment(UIView *view) {
+    __block BOOL found = NO;
+    SGForEachView(view, ^(UIView *v) {
+        if (!found) found = isAttachment(v);
     });
-    return best;
+    return found;
+}
+
+// The track's card holds its title and artist (Connect's InformationContainer, trees/test6.txt) or, in a
+// bar without one, the artwork.
+static BOOL holdsTrack(UIView *view, BOOL named) {
+    if (insideAttachment(view, nil)) return NO;
+    __block BOOL found = NO;
+    SGForEachView(view, ^(UIView *v) {
+        if (found || insideAttachment(v, view)) return;
+        if (named) {
+            found = [NSStringFromClass(v.class) containsString:@"InformationContainer"];
+            return;
+        }
+        CGSize size = v.bounds.size;
+        found = ![v isKindOfClass:UIControl.class] && size.width >= 36 && size.width <= 48 && fabs(size.width - size.height) < 1;
+    });
+    return found;
+}
+
+// The largest painted view holding the track, one without an attachment in it before one with.
+static UIView *detectColoredCard(UIView *bar, BOOL named) {
+    __block UIView *best = nil, *bestWithAttachment = nil;
+    __block CGFloat bestArea = 0, bestWithAttachmentArea = 0;
+    SGForEachView(bar, ^(UIView *v) {
+        if ([v isKindOfClass:UIVisualEffectView.class] || SGKeepsColor(v)) return;
+        if (!SGLooksLikeCard(v, v.layer.backgroundColor) && !SGRPaintedAsCard(v)) return;
+        if (!holdsTrack(v, named)) return;
+        CGFloat area = v.bounds.size.width * v.bounds.size.height;
+        if (holdsAttachment(v)) {
+            if (area > bestWithAttachmentArea) { bestWithAttachmentArea = area; bestWithAttachment = v; }
+        } else if (area > bestArea) {
+            bestArea = area;
+            best = v;
+        }
+    });
+    return best ?: bestWithAttachment;
+}
+
+// The card's frame with the attachments on it cut off, the hat above it or anything hung below.
+static CGRect withoutAttachments(CGRect frame, UIView *target) {
+    __block CGRect cut = frame;
+    SGForEachView(target, ^(UIView *v) {
+        if (!isAttachment(v) || insideAttachment(v.superview, target) || v.hidden || v.alpha == 0) return;
+        CGRect attachment = SGFrameIn(v, target);
+        if (!CGRectIntersectsRect(cut, attachment)) return;
+        if (CGRectGetMidY(attachment) < CGRectGetMidY(cut)) {
+            CGFloat top = CGRectGetMaxY(attachment);
+            cut.size.height = CGRectGetMaxY(cut) - top;
+            cut.origin.y = top;
+        } else {
+            cut.size.height = CGRectGetMinY(attachment) - CGRectGetMinY(cut);
+        }
+    });
+    return cut;
 }
 
 // Fallback when nothing is painted: the box around artwork, text and the small buttons.
 static CGRect contentBounds(UIView *bar, UIView *target) {
     __block CGRect box = CGRectNull;
     SGForEachView(bar, ^(UIView *v) {
-        if (v.hidden || v.alpha == 0) return;
+        if (v.hidden || v.alpha == 0 || insideAttachment(v, bar)) return;
         CGFloat width = v.bounds.size.width;
         BOOL content = ([v isKindOfClass:UIImageView.class] && width >= 20 && width <= 120)
             || [v isKindOfClass:UILabel.class]
@@ -67,7 +132,7 @@ static void restyleCardContent(UIView *card) {
     SGForEachView(card, ^(UIView *v) {
         CGSize size = v.bounds.size;
         BOOL square = size.width >= 36 && size.width <= 48 && fabs(size.width - size.height) < 1;
-        if (!square || v.layer.cornerRadius <= 0) return;
+        if (!square || v.layer.cornerRadius <= 0 || insideAttachment(v, card)) return;
         if (v.layer.cornerRadius >= size.width / 2) {
             if (!sg_cardArtwork) sg_cardArtwork = v;
             return;
@@ -82,7 +147,7 @@ static void restyleCardContent(UIView *card) {
     });
     SGForEachView(card, ^(UIView *v) {
         CGRect f = v.frame;
-        if (f.size.height > 3 || f.size.width < 200 || v.superview.bounds.size.height < 40) return;
+        if (f.size.height > 3 || f.size.width < 200 || v.superview.bounds.size.height < 40 || insideAttachment(v, card)) return;
         CGRect target = CGRectMake(52, card.bounds.size.height - 6, 226, 2);
         if (CGRectEqualToRect(f, target)) return;
         v.frame = target;
@@ -91,19 +156,71 @@ static void restyleCardContent(UIView *card) {
     });
 }
 
+static BOOL shownIn(UIView *view, UIView *root) {
+    for (UIView *v = view; v && v != root; v = v.superview) if (v.hidden || v.alpha == 0) return NO;
+    return YES;
+}
+
+// A hat and the card share one glass card, the hat its header row: two panes stacked with a gap read
+// as two bars, and the hat's pane was measured off the SwiftUI view mid-animation, 12 above where the
+// hat settles (trees/jam-now.txt: pane at y -12, hat at 0). The edge on the hat's side comes from the
+// bar instead, which Spotify grows by the hat's 44 (386x100 in a Jam, card at y 44) and whose changes
+// lay the container out again.
+static CGRect withHat(CGRect cardFrame, UIView *bar, UIView *host) {
+    __block UIView *hat = nil;
+    SGForEachView(bar, ^(UIView *v) {
+        if (!hat && isAttachment(v) && v.bounds.size.height >= 20 && shownIn(v, bar)) hat = v;
+    });
+    if (!hat) return cardFrame;
+    CGRect barFrame = SGFrameIn(bar, host), hatFrame = SGFrameIn(hat, host);
+    CGRect frame = cardFrame;
+    if (CGRectGetMidY(hatFrame) < CGRectGetMidY(cardFrame)) {
+        CGFloat top = MAX(CGRectGetMinY(barFrame), CGRectGetMinY(hatFrame));
+        if (top >= CGRectGetMinY(cardFrame)) return cardFrame;
+        frame.size.height = CGRectGetMaxY(cardFrame) - top;
+        frame.origin.y = top;
+    } else {
+        CGFloat bottom = MIN(CGRectGetMaxY(barFrame), CGRectGetMaxY(hatFrame));
+        if (bottom <= CGRectGetMaxY(cardFrame)) return cardFrame;
+        frame.size.height = bottom - CGRectGetMinY(cardFrame);
+    }
+
+    static NSUInteger logged;
+    if (logged++ < 2) {
+        SGLog(@"now playing hat %@ at %@ joins the card %@ as %@", hat.class, NSStringFromCGRect(hatFrame),
+              NSStringFromCGRect(cardFrame), NSStringFromCGRect(frame));
+    }
+    return frame;
+}
+
 static void styleNowPlayingBar(UIViewController *container) {
     UIViewController *barVC = container.childViewControllers.firstObject;
     UIView *bar = barVC.viewIfLoaded ?: container.view;
     sgr_nowPlayingRoot = bar;
 
+    BOOL named = SGHasClass(bar, @"InformationContainer");
     UIView *card = sgr_nowPlayingCard;
-    if (!card || !SGIsInside(card, bar)) card = sgr_nowPlayingCard = detectColoredCard(bar);
+    if (!card || !SGIsInside(card, bar) || !holdsTrack(card, named) || holdsAttachment(card)) {
+        UIView *passed = card;
+        card = sgr_nowPlayingCard = detectColoredCard(bar, named);
+        static NSUInteger logged;
+        if (passed && passed != card && SGIsInside(passed, bar) && logged++ < 4) {
+            SGLog(@"now playing card: passed over %@ %@ for %@ %@", passed.class, NSStringFromCGRect(SGFrameIn(passed, bar)),
+                  card.class, card ? NSStringFromCGRect(SGFrameIn(card, bar)) : @"(none)");
+        }
+    }
 
     container.view.layer.backgroundColor = NULL;
     SGStripBackgrounds(bar);
 
     CGRect frame = card ? SGFrameIn(card, container.view) : contentBounds(bar, container.view);
     if (CGRectIsNull(frame)) return;
+    CGRect whole = frame;
+    frame = withoutAttachments(frame, container.view);
+    static NSUInteger cuts;
+    if (!CGRectEqualToRect(whole, frame) && cuts++ < 2) {
+        SGLog(@"now playing card: attachments cut %@ to %@", NSStringFromCGRect(whole), NSStringFromCGRect(frame));
+    }
     frame.size.height = MIN(frame.size.height, 80);
     if (frame.size.height < 30 || frame.size.width < 100) return;
 
@@ -112,6 +229,7 @@ static void styleNowPlayingBar(UIViewController *container) {
         roundView(card, radius);
         restyleCardContent(card);
     }
+    frame = withHat(frame, bar, container.view);
 
     UIVisualEffectView *glass = SGGlassFor(container.view, &kGlassKey);
     // Dark whatever the system is set to: the bar is outside the navigation stacks Spotify makes dark, and
