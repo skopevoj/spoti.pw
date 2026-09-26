@@ -61,6 +61,66 @@ static NSString *pictureOf(SPTPlayerTrack *track, NSURL **url) {
     return nil;
 }
 
+static id objectResultForNoArgumentSelector(id object, SEL selector) {
+    NSMethodSignature *signature = [object methodSignatureForSelector:selector];
+    // The private method may change its signature between Spotify releases. Only invoke the form
+    // this fallback expects: an object return and no arguments beyond self/_cmd.
+    if (!signature || signature.numberOfArguments != 2 || signature.methodReturnType[0] != '@') return nil;
+    NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+    invocation.target = object;
+    invocation.selector = selector;
+    [invocation invoke];
+    __unsafe_unretained id result = nil;
+    [invocation getReturnValue:&result];
+    return result;
+}
+
+// Local-file cover URLs are resolved by Spotify's own local-image URL category to a cached file.
+// These selectors are private and vary between releases, so call them only when the runtime object
+// advertises the selector and accept only an image or a readable local path as the result.
+static UIImage *localImageFromValue(id value) {
+    if ([value isKindOfClass:UIImage.class]) return value;
+
+    NSMutableArray *candidates = [NSMutableArray array];
+    if ([value isKindOfClass:NSURL.class]) [candidates addObject:value];
+    if ([value isKindOfClass:NSString.class]) {
+        NSString *string = value;
+        NSURL *url = [NSURL URLWithString:string];
+        if (url) [candidates addObject:url];
+        [candidates addObject:string];
+    }
+
+    for (id candidate in candidates) {
+        NSString *path = nil;
+        if ([candidate isKindOfClass:NSURL.class] && [candidate isFileURL]) path = [candidate path];
+        else if ([candidate isKindOfClass:NSString.class] && [candidate hasPrefix:@"/"]) path = candidate;
+
+        // Spotify 9.1.74 exposes this local image path resolver in its binary. A runtime selector
+        // check keeps this fallback inert if a later app version removes or renames it.
+        SEL resolver = @selector(spt_localFileImagePath);
+        if (!path && [candidate respondsToSelector:resolver]) {
+            id resolved = objectResultForNoArgumentSelector(candidate, resolver);
+            if ([resolved isKindOfClass:NSURL.class] && [resolved isFileURL]) path = [resolved path];
+            else if ([resolved isKindOfClass:NSString.class] && [resolved hasPrefix:@"/"]) path = resolved;
+        }
+        if (path.length && [NSFileManager.defaultManager fileExistsAtPath:path]) {
+            UIImage *image = [UIImage imageWithContentsOfFile:path];
+            if (image) return image;
+        }
+    }
+    return nil;
+}
+
+static UIImage *localArtwork(SPTPlayerTrack *track) {
+    NSDictionary *metadata = [track respondsToSelector:@selector(metadata)] ? track.metadata : nil;
+    if (![metadata isKindOfClass:NSDictionary.class]) return nil;
+    for (NSString *field in @[@"image_xlarge_url", @"image_large_url", @"image_url", @"image_small_url"]) {
+        UIImage *image = localImageFromValue(metadata[field]);
+        if (image) return image;
+    }
+    return nil;
+}
+
 static void publish(UIImage *image, NSString *key, SGRArtworkQuality quality) {
     sg_artwork = image;
     sg_artworkURI = sg_wantedURI;
@@ -129,8 +189,24 @@ static void followPlayer(void) {
     NSString *uri = SGURIString(track.URI);
     if (!uri) return;
     // The same track is looked at again only while its metadata has named no picture yet.
-    if ([uri isEqualToString:sg_wantedURI] && ![sg_wantedKey hasPrefix:@"track:"]) return;
+    BOOL local = [uri hasPrefix:@"spotify:local:"];
+    if ([uri isEqualToString:sg_wantedURI] && ![sg_wantedKey hasPrefix:@"track:"] && !local) return;
     sg_wantedURI = uri;
+    if (local) {
+        UIImage *image = localArtwork(track);
+        if (image) {
+            NSString *key = [@"local-cache:" stringByAppendingString:uri];
+            if (![key isEqualToString:sg_wantedKey]) {
+                sg_wantedKey = key;
+                [sg_fetch cancel];
+                sg_fetch = nil;
+            }
+            if (![key isEqualToString:sg_artworkKey] || sg_artworkQuality != SGRArtworkQualityExact) {
+                publish(image, key, SGRArtworkQualityExact);
+            }
+            return;
+        }
+    }
     NSURL *url = nil;
     // A track whose metadata names no picture is its own key: only the screens can show it then.
     NSString *key = pictureOf(track, &url) ?: [@"track:" stringByAppendingString:uri];
