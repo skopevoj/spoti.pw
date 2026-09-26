@@ -139,6 +139,9 @@ NSString *SGKaraokeSpotifyAuthorization(void) {
 }
 
 static void requestFromSpotify(NSString *trackID) {
+    // Spotify has no color-lyrics catalogue ID for a local file. Its title and artist are resolved by
+    // the configured external sources instead; never interpolate a local URI into the endpoint.
+    if (SGKaraokeTrackKeyIsLocal(trackID)) return;
     NSDictionary<NSString *, NSString *> *headers = sg_spclientHeaders;
     if (!headers) return;
     [sg_requested addObject:trackID];
@@ -216,8 +219,21 @@ static SPTPlayerState *playerState(void) {
 
 NSString *SGKaraokePlayingTrack(void) {
     id uri = playerState().track.URI;
-    NSString *text = [uri isKindOfClass:NSURL.class] ? ((NSURL *)uri).absoluteString : [uri description];
-    return [text hasPrefix:@"spotify:track:"] ? [text substringFromIndex:@"spotify:track:".length] : nil;
+    return SGKaraokeTrackKeyFromURI(uri);
+}
+
+NSString *SGKaraokeTrackKeyFromURI(id URI) {
+    NSString *text = [URI isKindOfClass:NSURL.class] ? ((NSURL *)URI).absoluteString
+                                                     : [URI isKindOfClass:NSString.class] ? URI : nil;
+    if ([text hasPrefix:@"spotify:track:"]) return [text substringFromIndex:@"spotify:track:".length];
+    // Local URIs already carry a stable, unique identity for this file. Keep the full URI as the
+    // in-memory cache key; it is never used as a Spotify catalogue ID or sent to a Spotify endpoint.
+    if ([text hasPrefix:@"spotify:local:"]) return text;
+    return nil;
+}
+
+BOOL SGKaraokeTrackKeyIsLocal(NSString *trackKey) {
+    return [trackKey hasPrefix:@"spotify:local:"];
 }
 
 NSInteger SGKaraokePositionMs(void) {
@@ -233,9 +249,7 @@ void SGKaraokeSeek(NSInteger ms) {
 }
 
 static NSString *idOf(SPTPlayerTrack *track) {
-    id uri = track.URI;
-    NSString *text = [uri isKindOfClass:NSURL.class] ? ((NSURL *)uri).absoluteString : [uri description];
-    return [text hasPrefix:@"spotify:track:"] ? [text substringFromIndex:@"spotify:track:".length] : nil;
+    return SGKaraokeTrackKeyFromURI(track.URI);
 }
 
 // Tracks come in from the player and from every list that reads their metadata, so when the table
@@ -320,7 +334,7 @@ static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *s
 %ctor {
     // The sources that search by name learn the name from the player, so the player is caught
     // whenever one is on, not only for the redesign's lyrics and the lock screen.
-    if (!SGRedesignedUI() && !SGFlag(SGKeyLockScreenLyrics, NO) && !SGLyricsEnabled()) return;
+    // Keep the track cache ready if an external source is enabled while Spotify is open.
     sg_seenTracks = [NSMutableDictionary dictionary];
     sg_lyrics = [NSMutableDictionary dictionary];
     sg_requested = [NSMutableSet set];

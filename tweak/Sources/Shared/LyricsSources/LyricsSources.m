@@ -153,6 +153,7 @@ NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void) {
             return provider;
         };
         all = @[
+            make(@"importedlrc", @"Imported LRC", @"Your timestamped lyric files", SGImportedLRCAsk),
             make(@"binilyrics", @"BiniLyrics", @"Apple Music word timing", SGBiniLyricsAsk),
             make(@"musixmatch", @"Musixmatch", @"Spotify's licensed catalogue", SGMusixmatchAsk),
             make(@"unison", @"Unison", @"Hand-timed, few tracks", SGUnisonAsk),
@@ -190,7 +191,9 @@ NSArray<NSString *> *SGLyricsOrder(void) {
 }
 
 void SGLyricsSetOrder(NSArray<NSString *> *keys) {
+    NSArray *old = SGLyricsOrder();
     [NSUserDefaults.standardUserDefaults setObject:keys ?: @[] forKey:SGKeyLyricsProviders];
+    if (![old isEqualToArray:keys ?: @[]]) SGLyricsInvalidateCache();
 }
 
 BOOL SGLyricsEnabled(void) {
@@ -209,9 +212,53 @@ static SGLyricsQuery *queryFor(NSString *trackID) {
     query.trackID = trackID;
     SPTPlayerTrack *track = SGKaraokeTrackFor(trackID);
     if (!track) return query;
-    query.title = track.trackTitle;
-    query.artist = track.artistName;
     NSDictionary<NSString *, NSString *> *metadata = track.metadata;
+
+    // Spotify's local-file model has used different fields for the same ID3 tags across app
+    // versions. Prefer the public model properties, then try the metadata dictionary that travels
+    // with the track. This is also what lets Imported LRC match by title/artist when the local URI
+    // itself has no catalogue ID.
+    NSString *(^firstText)(NSArray<NSString *> *) = ^NSString *(NSArray<NSString *> *keys) {
+        for (NSString *key in keys) {
+            id value = metadata[key];
+            if ([value isKindOfClass:NSString.class] && [value length]) return value;
+        }
+        return nil;
+    };
+    query.title = track.trackTitle.length ? track.trackTitle : firstText(@[@"track_title", @"title", @"name"]);
+    query.artist = track.artistName.length ? track.artistName : firstText(@[@"artist_name", @"artist", @"artists"]);
+    if (!query.artist.length) {
+        id artistList = metadata[@"artists"];
+        if ([artistList isKindOfClass:NSArray.class]) {
+            for (id item in (NSArray *)artistList) {
+                NSString *name = [item isKindOfClass:NSString.class] ? item :
+                    [item isKindOfClass:NSDictionary.class] && [item[@"name"] isKindOfClass:NSString.class] ? item[@"name"] : nil;
+                if (name.length) { query.artist = name; break; }
+            }
+        }
+    }
+    if (!query.artist.length) {
+        NSMutableArray<NSString *> *artists = [NSMutableArray array];
+        for (NSUInteger index = 0; index < 8; index++) {
+            NSString *key = index ? [NSString stringWithFormat:@"artist_name:%lu", (unsigned long)index] : @"artist_name";
+            id value = metadata[key];
+            if ([value isKindOfClass:NSString.class] && [value length]) [artists addObject:value];
+        }
+        if (artists.count) query.artist = [artists componentsJoinedByString:@", "];
+    }
+
+    // Spotify local URIs are spotify:local:artist:album:title:duration. Use those tags only when
+    // the model and metadata did not provide them; URI components may be percent-escaped.
+    if (SGKaraokeTrackKeyIsLocal(trackID)) {
+        NSArray<NSString *> *parts = [trackID componentsSeparatedByString:@":"];
+        if (parts.count >= 6) {
+            NSString *(^decoded)(NSString *) = ^NSString *(NSString *part) {
+                return [part stringByRemovingPercentEncoding] ?: part;
+            };
+            if (!query.artist.length) query.artist = decoded(parts[2]);
+            if (!query.title.length) query.title = decoded(parts[4]);
+        }
+    }
     id album = metadata[@"album_title"];
     id length = metadata[@"duration"];
     if ([album isKindOfClass:NSString.class]) query.album = album;
@@ -247,6 +294,17 @@ static void setUp(void) {
         sg_credits = [NSMutableDictionary dictionary];
         sg_spotifyHas = [NSMutableDictionary dictionary];
     });
+}
+
+void SGLyricsInvalidateCache(void) {
+    setUp();
+    void (^clear)(void) = ^{
+        [sg_kept removeAllObjects];
+        @synchronized (sg_missing) { [sg_missing removeAllObjects]; }
+        @synchronized (sg_credits) { [sg_credits removeAllObjects]; }
+    };
+    if (NSThread.isMainThread) clear();
+    else dispatch_async(dispatch_get_main_queue(), clear);
 }
 
 // Whether the source's lines are better than what the walk already has: any lines beat none, and

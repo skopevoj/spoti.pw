@@ -4,6 +4,7 @@
 #import "Core/SGCore.h"
 #import "LyricsSources.h"
 #import "Shared/Lyrics/Protobuf.h"
+#import "Shared/Lyrics/Lyrics.h"
 #import "Headers/SPTPlayer.h"
 #import <os/lock.h>
 
@@ -51,6 +52,7 @@ typedef NS_ENUM(NSInteger, SGLyricsTaskKind) {
 static char kStateKey, kAnswerKey;
 static NSData *sg_sectionTemplate;
 static os_unfair_lock sg_templateLock = OS_UNFAIR_LOCK_INIT;
+static BOOL sg_allTracks;
 
 #pragma mark - reading requests
 
@@ -61,14 +63,35 @@ static NSString *lyricsTrack(NSURL *url) {
     NSString *rest = [path substringFromIndex:NSMaxRange(marker)];
     NSRange slash = [rest rangeOfString:@"/"];
     NSString *track = slash.location == NSNotFound ? rest : [rest substringToIndex:slash.location];
+    track = track.stringByRemovingPercentEncoding ?: track;
     return track.length ? track : nil;
 }
 
 static NSString *cardListTrack(NSURL *url) {
     if (![url.path containsString:kCardListPath]) return nil;
+    NSString *(^trackInValue)(NSString *) = ^NSString *(NSString *value) {
+        NSString *uri = value;
+        // Some app builds escape the URI once for the URL and again for the query value.
+        for (NSUInteger pass = 0; pass < 2; pass++) {
+            NSString *decoded = uri.stringByRemovingPercentEncoding;
+            if (!decoded || [decoded isEqualToString:uri]) break;
+            uri = decoded;
+        }
+        if ([uri hasPrefix:kTrackPrefix] && uri.length > kTrackPrefix.length)
+            return [uri substringFromIndex:kTrackPrefix.length];
+        if ([uri hasPrefix:@"spotify:local:"]) return uri;
+        return nil;
+    };
     for (NSString *component in url.pathComponents) {
-        NSString *uri = component.stringByRemovingPercentEncoding ?: component;
-        if ([uri hasPrefix:kTrackPrefix] && uri.length > kTrackPrefix.length) return [uri substringFromIndex:kTrackPrefix.length];
+        NSString *track = trackInValue(component);
+        if (track) return track;
+    }
+    NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+    for (NSURLQueryItem *item in components.queryItems) {
+        // Spotify has used different key names for the item URI; only accept recognized URI values,
+        // regardless of which key currently carries it.
+        NSString *track = trackInValue(item.value);
+        if (track) return track;
     }
     return nil;
 }
@@ -79,9 +102,7 @@ static NSString *donorFor(NSURLRequest *request) {
 }
 
 static NSString *trackOf(SPTPlayerTrack *track) {
-    id uri = track.URI;
-    NSString *text = [uri isKindOfClass:NSURL.class] ? [uri absoluteString] : [uri description];
-    return [text hasPrefix:kTrackPrefix] && text.length > kTrackPrefix.length ? [text substringFromIndex:kTrackPrefix.length] : nil;
+    return SGKaraokeTrackKeyFromURI(track.URI);
 }
 
 static NSURL *urlOf(NSURLSessionTask *task) {
@@ -93,11 +114,14 @@ static NSURL *urlOf(NSURLSessionTask *task) {
 // Only a real 200 makes the lyrics card show, so a track Spotify has none for is asked for as the
 // donor, whose reply then carries the sources' lines. Everything but the id stays as Spotify sent it.
 static NSURLRequest *donorRequestFor(NSURLRequest *request) {
+    if (!SGLyricsEnabled()) return nil;
     NSString *address = request.URL.absoluteString;
     if (![address containsString:kLyricsPath]) return nil;
     if ([NSURLProtocol propertyForKey:SGLyricsOwnRequestKey inRequest:request] || donorFor(request)) return nil;
     NSString *track = lyricsTrack(request.URL);
     if (!track || [track isEqualToString:kDonorTrack]) return nil;
+    // A local URI is a cache key for our title/artist search, not a Spotify catalogue ID.
+    if (SGKaraokeTrackKeyIsLocal(track)) return nil;
     if (SGLyricsSpotifyHas(track) != 0 || !SGLyricsMayHave(track)) return nil;
     NSRange range = [address rangeOfString:[kLyricsPath stringByAppendingString:track]];
     if (range.location == NSNotFound) return nil;
@@ -198,7 +222,8 @@ static BOOL isLyricsSection(NSData *section) {
 // A lyrics section Spotify sent for another track carries whatever else a section holds; one made from
 // nothing has only the track.
 static NSData *lyricsSection(NSString *track) {
-    NSData *lyrics = SGPBSerialize(@[SGPBString(1, [kTrackPrefix stringByAppendingString:track])]);
+    NSString *uri = SGKaraokeTrackKeyIsLocal(track) ? track : [kTrackPrefix stringByAppendingString:track];
+    NSData *lyrics = SGPBSerialize(@[SGPBString(1, uri)]);
     NSMutableArray<SGPBField *> *fields = SGPBParse(sectionTemplate(nil));
     for (SGPBField *field in fields) {
         if (field.number != 5 || field.wire != 2) continue;
@@ -211,6 +236,7 @@ static NSData *lyricsSection(NSString *track) {
 // The player asks for lyrics only when the list has a lyrics section, which the server sends only
 // for tracks Spotify has lyrics for.
 static NSData *amendedCardList(NSData *body, NSString *track) {
+    if (!SGLyricsEnabled()) return body;
     NSMutableArray<SGPBField *> *top = SGPBParse(body);
     SGPBField *structure = SGPBFirst(top, 1);
     NSArray<SGPBField *> *sections = structure.wire == 2 ? SGPBParse(structure.payload) : nil;
@@ -406,6 +432,10 @@ static void answerHeld(id delegate, NSURLSession *session, NSURLSessionDataTask 
 
 static void receivedResponse(id delegate, NSURLSession *session, NSURLSessionDataTask *task, NSURLResponse *response,
                              SGDisposition handler, SGForwardResponse forward) {
+    if (!SGLyricsEnabled()) {
+        forward(response, handler);
+        return;
+    }
     if (objc_getAssociatedObject(task, &kStateKey)) {
         forward(response, handler);
         return;
@@ -551,7 +581,7 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
 
 %end
 
-%group SGLyricsEveryTrack
+%group SGLyricsTrackMetadata
 
 // Spotify's own verdict is noted before it is overridden, for the donor to go by. The getter runs for
 // every track in every list many times a second, so it does a few lookups and nothing more.
@@ -560,6 +590,19 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
     NSDictionary *metadata = %orig;
     NSString *track = trackOf(self);
     if (!track) return metadata;
+    BOOL local = SGKaraokeTrackKeyIsLocal(track);
+    if (local) {
+        if (!SGLyricsEnabled()) return metadata;
+        SGKaraokeRememberTrack(self);
+        if (!SGLyricsMayHave(track)) return metadata;
+        SGLyricsPrefetch(track);
+        if ([metadata[@"has_lyrics"] isEqual:@"true"]) return metadata;
+        NSMutableDictionary *forced = metadata ? [metadata mutableCopy] : [NSMutableDictionary dictionary];
+        forced[@"has_lyrics"] = @"true";
+        return forced;
+    }
+    // Preserve the existing opt-in for ordinary Spotify catalogue tracks.
+    if (!sg_allTracks) return metadata;
     BOOL has = [@"true" isEqual:metadata[@"has_lyrics"]];
     SGLyricsNoteSpotifyHas(track, has);
     SGKaraokeRememberTrack(self);
@@ -571,6 +614,10 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
     return forced;
 }
 %end
+
+%end
+
+%group SGLyricsEveryTrack
 
 %hook NSURLSession
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
@@ -592,9 +639,11 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
 
 %ctor {
     SGLyricsMigrateLegacyKeys();
-    if (!SGLyricsEnabled()) return;
+    // Stay ready for a source enabled in Settings during this app session.
+    sg_allTracks = SGFlag(SGKeyLyricsAllTracks, NO);
     %init(SGLyricsReplies);
-    BOOL everyTrack = SGFlag(SGKeyLyricsAllTracks, NO);
+    %init(SGLyricsTrackMetadata);
+    BOOL everyTrack = sg_allTracks;
     if (everyTrack) {
         // The generator gives a class that only inherits the method an override of its own, which would
         // put a second hook in front of NSURLSession's.
