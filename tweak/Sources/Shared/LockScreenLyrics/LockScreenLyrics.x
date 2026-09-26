@@ -9,6 +9,8 @@
 #import "LockScreenLyrics.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Headers/SPTPlayer.h"
+#import "Shared/Sing/SGSingController.h"
+#import "Shared/Player/PlayerState.h"
 
 static const NSTimeInterval kTick = 0.25;
 // Past a line's sung end by this much, with the next line at least this far off, the artist comes back.
@@ -56,6 +58,9 @@ static NSArray<NSArray<SGKaraokeWord *> *> *piecesOf(SGKaraokeLine *line) {
 
 // Seconds into the track at `now`, run on from what Spotify last reported.
 static double elapsedAt(NSDictionary *info, CFAbsoluteTime reportedAt, CFAbsoluteTime now) {
+    SPTPlayerState *state = SGPlayerState();
+    double position;
+    if ([state.track.trackTitle isEqualToString:info[MPMediaItemPropertyTitle]] && SGSingPosition(state, &position)) return position;
     double rate = [info[MPNowPlayingInfoPropertyPlaybackRate] doubleValue];
     return [info[MPNowPlayingInfoPropertyElapsedPlaybackTime] doubleValue] + rate * (now - reportedAt);
 }

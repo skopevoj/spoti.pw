@@ -5,6 +5,7 @@
 // With a source of the mod's on, the color-lyrics body is Shared/LyricsSources' to answer and it
 // hands the lines over.
 #import "Core/SGCore.h"
+#import "Shared/Sing/SGSingController.h"
 #import "Lyrics.h"
 #import "Shared/LockScreenLyrics/LockScreenLyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
@@ -223,7 +224,9 @@ NSString *SGKaraokePlayingTrack(void) {
 NSInteger SGKaraokePositionMs(void) {
     SPTPlayerState *state = playerState();
     if (!state) return -1;
-    return (NSInteger)((state.isPaused ? state.positionAsOfTimestamp : state.position) * 1000);
+    double position;
+    if (!SGSingPosition(state, &position)) position = state.isPaused ? state.positionAsOfTimestamp : state.position;
+    return (NSInteger)(position * 1000);
 }
 
 void SGKaraokeSeek(NSInteger ms) {

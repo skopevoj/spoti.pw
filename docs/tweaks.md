@@ -110,16 +110,26 @@ Shared:
                   shape the key wants (Apple's 3:4 cover needs none) and kept under a 120 MB cap. Checked on
                   the Mac against harness/lockart/
     Navigation/   the page transition fix (PageTransition.x) and opening a spotify: link (Links.x)
+    Audio/        the mixer connection and RemoteIO render notify owned once (SGAudioPipeline.x): fixed processor slots
+                  run speed and pitch, audio effects, then music haptics. Graph changes and disposal exclude active pulls;
+                  the render thread never waits for them. Unsupported formats retain Spotify's connection. The PCM
+                  packet queue is bounded and generation-stamped. Sing's source read-ahead reads guarded queue metadata
+                  for the verified Spotify binary; PCM still comes through its AudioUnit. Boundary tests are in harness/audio/ and harness/sing/
+    Sing/         the local Core AI / Core ML separator, source-domain audio adapter, worker and player lifecycle. Core ML
+                  can use the GPU in the foreground and its warm CPU model in the background. The audible
+                  clock follows emitted source samples while delayed audio drains. Model loading overlaps source capture;
+                  verified continuous next-track PCM keeps its worker and reserve across a natural transition.
+                  Redesigned/Lyrics owns the
+                  Now Playing microphone control; the model is an optional local Sing.bundle (harness/sing/)
     Player/       the player's open and close announced (PlayerEvents.x), what the player is doing read through
                   one hook for every feature that wants it (PlayerState.x), the lock screen widget's flags, and in the
                   more button's menu Speed and pitch: both done to Spotify's audio by Apple's time and pitch unit, put
-                  between its mixer and its RemoteIO unit by taking over the connection Spotify makes between them
+                  between its mixer and its RemoteIO unit through Audio/SGAudioPipeline's connection
                   (SpeedPitchMenu.x, SpeedPitch.x, SGTimePitch.m). The block goes into Spotify's own context menu sheet
                   and is drawn from its own measures, not the Kit's, so it sits there under either look. Tested on the
                   Mac against harness/pitch/ and in the simulator against harness/speed/ and harness/menu/
-    AudioEffects/ the audio effects on Spotify's sound (AudioEffects.h has the keys and the page's calls): Spotify's
-                  import of AudioOutputUnitStart is rebound, as Music Haptics does, and a render notify on its RemoteIO
-                  unit runs each finished buffer through the mod's own engine, re-blocked to 1024 frames one block late,
+    AudioEffects/ the audio effects on Spotify's sound (AudioEffects.h has the keys and the page's calls): Audio/SGAudioPipeline's
+                  ordered output processor runs each finished buffer through the mod's own engine, re-blocked to 1024 frames one block late,
                   in place (AudioEffects.x, SGDSPEngine.m). The buffers are in the unit's output format, the
                   hardware's, not the client format Spotify sets. The effects are the SGDSP*.m files, on Accelerate,
                   Apple's Reverb2 unit, libbs2b and EEL2 (vendor/audio). Settings apply as they change, on a queue of
@@ -129,8 +139,8 @@ Shared:
     Haptics/      Vibrations (Haptics.h lists its files): a tap of UIKit's feedback generators for the player's and the now
                   playing bar's controls, the scrubber's tenths and ends, cover swipes, gestures and the lyrics page's tap to
                   seek, at the strength set for them (ControlHaptics.x, SGFeedback.m); and Music Haptics, Core Haptics
-                  playing along with the song: Spotify's import of AudioOutputUnitStart is rebound so its RemoteIO output
-                  unit gets a render notify, the samples, in the unit's output format (the hardware's), go through a drum
+                  playing along with the song: Audio/SGAudioPipeline supplies final samples after speed, pitch and audio effects;
+                  in the unit's output format (the hardware's), they go through a drum
                   and bass analyzer on the render thread (SGMusicAnalyzer.m, plain C), and a thread of its own schedules
                   the taps and the rumble for when the sound is heard, at their strength and leaving out what Follows
                   leaves out (MusicHaptics.x). Everything applies at once; nothing plays while Spotify is not the active
@@ -170,14 +180,19 @@ Redesigned:
     NowPlayingBar/ the glass now playing bar (NowPlayingBar.x), with Spotify's device button on it hidden on request
                   (BarConnect.x, its own key and its own Now playing page, apart from the native look's)
     Player/       the redesigned full screen player (Player.h lists its files); its more button is handed to
-                  Shared/Player's Speed and pitch, which draws in the menu it opens
+                  Shared/Player's Speed and pitch, which draws in the menu it opens. The lyrics glyph opens
+                  the existing lyrics overlay; after two idle seconds its bottom controls fade and the lyrics
+                  extend downward, keeping the compact artwork and title. A first touch restores the controls
+                  without seeking. Sing's microphone sits at the trailing edge of this same lyrics surface
     Lyrics/       the full screen lyrics page on glass with Apple Music style lyrics over it, always on (SGRKaraokeView,
                   which the player shows in itself too, Player/PlayerLyrics.x): lines sung over each other lit together,
                   the stack moving on once the first is sung out; an instrumental break of 7 s or more held by three dots
                   that breathe and fill over its length on a Core Animation timeline laid against the song's clock; and
                   a line's pronunciation (under the words it spells) and translation, switched on from a glass button in
                   the lyrics' corner that shows only for a song that has them, in the order of sizes the Lyrics page sets
-                  (LyricsText.h). Laid out on the Mac against harness/lyrics/
+                  (LyricsText.h). SGRLyricsImmersive owns the player's idle and interaction policy; the player retains
+                  its own layout. Browsing, menus, gestures and accessibility focus hold controls visible.
+                  Laid out on the Mac against harness/lyrics/; inactivity and UIKit tests in harness/lyrics-immersive/
     Home/         Home decluttered to music on black (an allow list of its sections: shortcuts, the DJ without its heading and
                   transcript, the shelves of cards), a large title where the filter pills were with the avatar at the trailing
                   edge, the shelves' headings at the Music app's size, each shortcut tile's cover run across it blurred

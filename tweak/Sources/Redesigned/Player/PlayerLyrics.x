@@ -27,6 +27,9 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
+#import "Redesigned/Lyrics/SGRLyricsImmersive.h"
+#import "Redesigned/Lyrics/SGRSingControl.h"
+#import "Shared/Sing/SGSingController.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Player.h"
 
@@ -52,6 +55,7 @@ static BOOL sg_moving;                      // the transition is in flight, so n
 static __weak UIView *sg_host;              // SPTNowPlayingView
 static __weak UIViewController *sg_info, *sg_duration, *sg_floating;
 static __weak UIView *sg_titleElement;      // the arranged element view holding the title and the artist
+static void replace(void);
 
 #pragma mark - the overlay
 
@@ -62,6 +66,8 @@ static __weak UIView *sg_titleElement;      // the arranged element view holding
 @property (nonatomic, readonly) UIImageView *cover;
 @property (nonatomic, readonly) UIView *stage;       // holds the lines' view alone
 @property (nonatomic, readonly) SGRKaraokeView *lyrics;
+@property (nonatomic) SGRLyricsImmersiveController *immersive;
+@property (nonatomic) BOOL expanded;
 @end
 
 @implementation SGRPlayerLyricsOverlay {
@@ -81,6 +87,17 @@ static __weak UIView *sg_titleElement;      // the arranged element view holding
     _cover.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [_thumb addSubview:_cover];
     _stage = [[UIView alloc] initWithFrame:CGRectZero];
+    _stage.accessibilityIdentifier = @"player.lyrics.viewport";
+    UILabel *empty = [UILabel new];
+    empty.text = @"Lyrics aren't available for this song.";
+    empty.textColor = SGRSecondary();
+    empty.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    empty.adjustsFontForContentSizeCategory = YES;
+    empty.textAlignment = NSTextAlignmentCenter;
+    empty.numberOfLines = 0;
+    empty.frame = _stage.bounds;
+    empty.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [_stage addSubview:empty];
     [self addSubview:_stage];
     [self addSubview:_thumb];
     return self;
@@ -240,7 +257,7 @@ static void placeTitleRow(SGRLyricsLayout l) {
 
 BOOL SGRPlayerLyricsAvailable(void) {
     NSString *track = SGKaraokePlayingTrack();
-    return track != nil && SGKaraokeLinesForTrack(track) != nil;
+    return track != nil && (SGKaraokeLinesForTrack(track) != nil || SGSingConfigured());
 }
 
 BOOL SGRPlayerLyricsOpen(void) {
@@ -252,6 +269,8 @@ BOOL SGRPlayerLyricsOpen(void) {
 // runs while it is up leaves it exactly where the eye has it: the two are worked out from one
 // measurement. Bounds and a centre, not a frame, since both views can be under a transform.
 static void place(SGRPlayerLyricsOverlay *overlay, UIView *host, SGRLyricsLayout l) {
+    // Keep the compact artwork and title where the player put them. Only the lower edge grows.
+    if (overlay.expanded) l.stage.size.height = MAX(0, host.bounds.size.height - host.safeAreaInsets.bottom - l.stage.origin.y);
     overlay.frame = CGRectUnion(l.cover, CGRectUnion(l.thumb, l.stage));
     CGRect cover = [overlay convertRect:l.cover fromView:host], stage = [overlay convertRect:l.stage fromView:host];
     overlay.thumb.bounds = (CGRect){CGPointZero, cover.size};
@@ -262,6 +281,27 @@ static void place(SGRPlayerLyricsOverlay *overlay, UIView *host, SGRLyricsLayout
     plate.center = CGPointMake(CGRectGetMidX(overlay.thumb.bounds), CGRectGetMidY(overlay.thumb.bounds));
     overlay.stage.bounds = (CGRect){CGPointZero, stage.size};
     overlay.stage.center = CGPointMake(CGRectGetMidX(stage), CGRectGetMidY(stage));
+}
+
+static void prepareControls(SGRPlayerLyricsOverlay *overlay, UIView *host) {
+    if (!overlay.immersive && SGFlag(SGRKeyLyricsImmersive, YES)) {
+        overlay.immersive = [[SGRLyricsImmersiveController alloc] initWithPage:host lyrics:overlay.lyrics chrome:@[]];
+        __weak SGRPlayerLyricsOverlay *weak = overlay;
+        overlay.immersive.layoutChanged = ^(BOOL expanded) {
+            weak.expanded = expanded;
+            replace();
+        };
+    }
+    // Duration, transport, optional volume and footer share the existing bottom stack. The
+    // information unit is translated beside the thumbnail and must remain visible.
+    UIView *duration = sg_duration.viewIfLoaded;
+    CGFloat top = duration.center.y - duration.bounds.size.height / 2;
+    for (UIView *row in duration.superview.subviews) {
+        if (row == sg_info.viewIfLoaded || row == sg_floating.viewIfLoaded) continue;
+        if (row.center.y - row.bounds.size.height / 2 >= top - 1) [overlay.immersive addChromeView:row];
+    }
+    __weak SGRLyricsImmersiveController *weak = overlay.immersive;
+    SGRSingControlForPage(overlay, overlay.stage, overlay.immersive.immersive, ^(BOOL held) { [weak hold:SGRImmersiveSing active:held]; });
 }
 
 // Where the thumbnail's view has to go to land on `l.thumb`, as a transform about its own centre: the
@@ -300,6 +340,11 @@ static void setOpen(BOOL open, BOOL animated) {
         SGLog(@"redesign player: no artwork read yet, the lyrics stay down");
         return;
     }
+    SGRPlayerLyricsOverlay *existing = objc_getAssociatedObject(host, &kOverlayKey);
+    if (!open) {
+        [existing.immersive setPresented:NO];
+        SGRSingControlDismiss(existing);
+    }
     sg_open = open;
     SGRPlayerLyricsChanged();
 
@@ -314,6 +359,7 @@ static void setOpen(BOOL open, BOOL animated) {
         overlay.stage.alpha = 0;
         overlay.stage.transform = CGAffineTransformMakeScale(kLyricsEnterScale, kLyricsEnterScale);
         [overlay lyrics];
+        prepareControls(overlay, host);
         // Spotify's cover goes the moment the redesign's own takes its place: the same picture at the
         // same size with the same corners, so there is nothing to see in the swap. Coming back it waits
         // for the thumbnail to land on it, or the two would be on screen at once, one of them half size.
@@ -333,7 +379,13 @@ static void setOpen(BOOL open, BOOL animated) {
     };
     void (^settled)(BOOL) = ^(BOOL finished) {
         sg_moving = NO;
-        if (sg_open) return;   // opened again while it was going away
+        if (sg_open) {
+            if (open) {
+                [overlay.immersive setPresented:YES];
+                prepareControls(overlay, host);
+            }
+            return;
+        }
         SGRPlayerCoverList().alpha = 1;
         [overlay removeFromSuperview];
     };
@@ -376,6 +428,7 @@ static void replace(void) {
     overlay.thumb.transform = thumbTransform(l);
     overlay.cover.layer.cornerRadius = thumbRadius(l, YES);
     overlay.lyrics.frame = overlay.stage.bounds;
+    prepareControls(overlay, host);
     SGRPlayerCoverList().alpha = 0;
 }
 
@@ -396,6 +449,22 @@ static void replace(void) {
 // The bar morphs back out of a full size cover as the player closes, so the thumbnail is put away first.
 - (void)viewWillDisappear:(BOOL)animated {
     if (sg_open) setOpen(NO, NO);
+    %orig;
+}
+- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator {
+    SGRPlayerLyricsOverlay *overlay = objc_getAssociatedObject(sg_host, &kOverlayKey);
+    [overlay.immersive setPresented:NO];
+    %orig;
+    [coordinator animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        if (sg_open && overlay.window) [overlay.immersive setPresented:YES];
+    }];
+}
+- (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    [SGRLyricsImmersiveOwner(sg_host) interact];
+    %orig;
+}
+- (void)remoteControlReceivedWithEvent:(UIEvent *)event {
+    [SGRLyricsImmersiveOwner(sg_host) interact];
     %orig;
 }
 %end

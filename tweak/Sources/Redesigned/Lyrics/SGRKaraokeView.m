@@ -1033,6 +1033,22 @@ typedef struct {
 @interface SGRKaraokeView () <UIScrollViewDelegate>
 @end
 
+@interface SGRLyricsExtrasButton : UIButton
+@property (nonatomic, copy) void (^visibilityChanged)(BOOL visible);
+@end
+@implementation SGRLyricsExtrasButton
+- (void)contextMenuInteraction:(UIContextMenuInteraction *)interaction willDisplayMenuForConfiguration:(UIContextMenuConfiguration *)configuration animator:(id<UIContextMenuInteractionAnimating>)animator {
+    [super contextMenuInteraction:interaction willDisplayMenuForConfiguration:configuration animator:animator];
+    if (self.visibilityChanged) self.visibilityChanged(YES);
+}
+- (void)contextMenuInteraction:(UIContextMenuInteraction *)interaction willEndForConfiguration:(UIContextMenuConfiguration *)configuration animator:(id<UIContextMenuInteractionAnimating>)animator {
+    [super contextMenuInteraction:interaction willEndForConfiguration:configuration animator:animator];
+    void (^closed)(void) = ^{ if (self.visibilityChanged) self.visibilityChanged(NO); };
+    if (animator) [animator addCompletion:closed];
+    else closed();
+}
+@end
+
 @implementation SGRKaraokeView {
     UIScrollView *_scroll;
     BOOL _browsing;
@@ -1185,6 +1201,7 @@ typedef struct {
 // Lines are placed for a content offset of 0, so following the song means scrolling back to 0.
 // While the user browses, placement stands still and every line is sharp.
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView {
+    if (self.interactionChanged) self.interactionChanged(1, YES);
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(followSong) object:nil];
     _browsing = YES;
     for (SGRKaraokeLineView *view in _shown.allValues) view.blur = 0;
@@ -1197,16 +1214,19 @@ typedef struct {
 // Plain text has no song to follow back to: it stays where it was scrolled to, as a page of text does.
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
     if (!decelerate && !_plain) [self performSelector:@selector(followSong) withObject:nil afterDelay:kBrowseHold];
+    if (!decelerate && _plain && self.interactionChanged) self.interactionChanged(1, NO);
 }
 
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
     if (!_plain) [self performSelector:@selector(followSong) withObject:nil afterDelay:kBrowseHold];
+    if (_plain && self.interactionChanged) self.interactionChanged(1, NO);
 }
 
 - (void)followSong {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(followSong) object:nil];
     if (!_browsing) return;
     _browsing = NO;
+    if (self.interactionChanged) self.interactionChanged(1, NO);
     [UIView animateWithDuration:0.7 delay:0 usingSpringWithDamping:0.9 initialSpringVelocity:0
                         options:UIViewAnimationOptionAllowUserInteraction
                      animations:^{ self->_scroll.contentOffset = CGPointZero; } completion:nil];
@@ -1218,6 +1238,7 @@ typedef struct {
     if (!self.window) {
         [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(followSong) object:nil];
         _browsing = NO;
+        if (self.interactionChanged) self.interactionChanged(1, NO);
     }
     [self scheduleLink];
 }
@@ -1329,7 +1350,10 @@ typedef struct {
 // until then, since the page shows nothing of its own before it has lines to show.
 - (void)rebuild {
     [self dropLineViews];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(followSong) object:nil];
+    BOOL wasBrowsing = _browsing;
     _browsing = NO;
+    if (wasBrowsing && self.interactionChanged) self.interactionChanged(1, NO);
     _scroll.contentOffset = CGPointZero;
     _builtWidth = self.bounds.size.width;
     CGFloat width = _builtWidth - 2 * _margin;
@@ -1418,7 +1442,12 @@ typedef struct {
         config.image = glyph;
         config.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
         config.baseForegroundColor = UIColor.whiteColor;
-        _extras = [UIButton buttonWithConfiguration:config primaryAction:nil];
+        SGRLyricsExtrasButton *button = [SGRLyricsExtrasButton buttonWithConfiguration:config primaryAction:nil];
+        __weak typeof(self) weak = self;
+        button.visibilityChanged = ^(BOOL visible) {
+            if (weak.interactionChanged) weak.interactionChanged(2, visible);
+        };
+        _extras = button;
         _extras.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
         _extras.showsMenuAsPrimaryAction = YES;
         _extras.preferredMenuElementOrder = UIContextMenuConfigurationElementOrderFixed;
@@ -1440,6 +1469,7 @@ typedef struct {
     }
     _extras.menu = [UIMenu menuWithChildren:items];
     _extras.hidden = NO;
+    _extras.alpha = self.chromeHidden ? 0 : 1;
     [self setNeedsLayout];
 }
 
@@ -1622,6 +1652,13 @@ typedef struct {
     for (UIView *sibling in self.superview.subviews) {
         if (sibling != self) sibling.alpha = showing ? 0 : 1;
     }
+}
+
+- (void)setChromeHidden:(BOOL)hidden {
+    _chromeHidden = hidden;
+    _extras.alpha = hidden ? 0 : 1;
+    _extras.accessibilityElementsHidden = hidden;
+    _credit.alpha = hidden ? 0 : 1;
 }
 
 // The player's position run on by the frame times the display will show and eased toward each new

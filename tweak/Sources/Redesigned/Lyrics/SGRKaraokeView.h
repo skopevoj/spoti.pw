@@ -9,6 +9,9 @@
 #import "Shared/Lyrics/Lyrics.h"
 
 @interface SGRKaraokeView : UIView
+// The player holds its chrome visible while lyric browsing or its menu is active.
+@property (nonatomic, copy) void (^interactionChanged)(NSUInteger reason, BOOL held); // 1 browsing, 2 menu
+@property (nonatomic) BOOL chromeHidden;
 // Hides Spotify's own lyrics next to this view while it has lyrics to show, and brings them back when not.
 - (void)syncSiblings;
 @end

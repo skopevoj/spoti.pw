@@ -33,6 +33,7 @@ APP_ID="${APP_ID#*.}"
 
 sign() {  # sign [bundle id]
   echo "==> signing${1:+ as $1}"
+  python3 "$ROOT/harness/sing/configure_background.py" "$IN" ${1:+--bundle-id "$1"}
   zsign -k "$SIGN_P12" -p "$SIGN_P12_PASSWORD" -m "$SIGN_PROFILE" ${1:+-b "$1"} -z 1 -o "$SIGNED" "$IN" >/dev/null
 }
 

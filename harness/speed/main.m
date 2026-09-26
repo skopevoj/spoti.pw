@@ -55,7 +55,7 @@ static void check(OSStatus status, const char *what) {
     if (status) NSLog(@"[harness] %s failed: %d", what, (int)status);
 }
 
-@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate>
+@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate, UIWindowSceneDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @end
 
@@ -111,8 +111,14 @@ static void check(OSStatus status, const char *what) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)), dispatch_get_main_queue(), block);
 }
 
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
-    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+- (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    UISceneConfiguration *config = [[UISceneConfiguration alloc] initWithName:@"Harness" sessionRole:session.role];
+    config.delegateClass = self.class;
+    return config;
+}
+
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.window.rootViewController = [UIViewController new];
     [self.window makeKeyAndVisible];
     [self startChain];
@@ -141,7 +147,6 @@ static void check(OSStatus status, const char *what) {
         [self report:label];
         exit(0);
     }];
-    return YES;
 }
 
 @end

@@ -68,4 +68,6 @@ NSInteger SGKaraokePositionMs(void) {
     return (NSInteger)at;
 }
 
-void SGKaraokeSeek(NSInteger ms) { SGHarnessStartClock(ms, sg_rate, -1, 0); }
+static NSUInteger sg_seekCount;
+NSUInteger SGHarnessSeekCount(void) { return sg_seekCount; }
+void SGKaraokeSeek(NSInteger ms) { sg_seekCount++; SGHarnessStartClock(ms, sg_rate, -1, 0); }

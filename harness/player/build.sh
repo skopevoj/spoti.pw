@@ -22,8 +22,10 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-ar
     "$SRC"/Redesigned/Kit/SGRTokens.m "$SRC"/Redesigned/Kit/SGRPalette.m "$SRC"/Redesigned/Kit/SGRField.m "$SRC"/Redesigned/Kit/SGRFlow.m \
     "$SRC"/Redesigned/Kit/SGRGlass.m "$SRC"/Redesigned/Kit/SGRGlyph.m "$SRC"/Redesigned/Kit/SGRRestyle.m \
     "$SRC"/Redesigned/Kit/SGRedesign.m \
+    "$SRC"/Redesigned/Lyrics/SGRLyricsImmersive.m "$SRC"/Redesigned/Lyrics/SGRImmersiveState.m "$SRC"/Redesigned/Lyrics/SGRSingControl.m \
+    "$(dirname "$0")/../lyrics-immersive/sing_stubs.m" \
     "$SRC"/Redesigned/Lyrics/SGRKaraokeView.m "$SRC"/Redesigned/Lyrics/LyricsText.m "$SRC"/Shared/Lyrics/KaraokeTiming.m "$SRC"/Shared/Lyrics/Protobuf.m \
-    -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreImage -framework Foundation -framework Symbols \
+    -framework AVFoundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreImage -framework Foundation -framework Symbols \
     -o "$OUT/PlayerHarness.app/PlayerHarness"
 
 cat > "$OUT/PlayerHarness.app/Info.plist" <<'PLIST'

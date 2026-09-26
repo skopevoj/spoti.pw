@@ -1,0 +1,148 @@
+{
+  "repository": "mlboydaisuke/MelBandRoformer-Vocal-CoreAI",
+  "revision": "06f257a0d1d2ee4938595f872a23e9fc4c3fc97d",
+  "license": "MIT",
+  "conversionRevision": "5029e6df8100650fe175d3e276fffb0177754ca1",
+  "checkpointRevision": "ac9b0614ab3cd7f77219e18ba494dfd93956c348",
+  "referenceRevision": "25f44ffb55ee3c301281bba21b2d6d311cb69ae2",
+  "exporterRevision": "c2ef8493e9bb5c4985ad1b1936f597a41e9ce031",
+  "checkpointSHA256": "87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e",
+  "files": [
+    {
+      "rfilename": ".gitattributes",
+      "blobId": "8fd81f1f7a09a332d3126931e38a073faa0b0b3e",
+      "size": 1845
+    },
+    {
+      "rfilename": "README.md",
+      "blobId": "2ae267bd1871c34bfe5f0b8d1b8233b922e4d386",
+      "size": 4798
+    },
+    {
+      "rfilename": "config.json",
+      "blobId": "0e28d4ca9ed2b436049879d76d832b14b1b6847d",
+      "size": 307
+    },
+    {
+      "rfilename": "golden_raw.f32",
+      "blobId": "d5c205cfc3efef12ecae195b4471464794583aef",
+      "size": 2822400,
+      "lfs": {
+        "sha256": "781ce8790bedf51d62b8bb80f06dce5cc1967d9c9aab3e0d5d88ddd207ad75c6",
+        "size": 2822400,
+        "pointerSize": 132
+      }
+    },
+    {
+      "rfilename": "golden_vocals.f32",
+      "blobId": "4f82edb29dc258d22ae204a06aba7e73684d8fc4",
+      "size": 2822400,
+      "lfs": {
+        "sha256": "d72584f5795924b29859b05155775dd920914026f6786bfdb66121689bb609f8",
+        "size": 2822400,
+        "pointerSize": 132
+      }
+    },
+    {
+      "rfilename": "mbr_full_fp16.aimodel/main.hash",
+      "blobId": "3503001ddf5858200364e1478f5922feed0f74ca",
+      "size": 32
+    },
+    {
+      "rfilename": "mbr_full_fp16.aimodel/main.mlirb",
+      "blobId": "ce35882b30c4390bece229d5a39cea9ff7d95e8b",
+      "size": 492607623,
+      "lfs": {
+        "sha256": "bee41aeed2beefaa413bc1531f7dd3aa787655f8053364617fbce76a378e487f",
+        "size": 492607623,
+        "pointerSize": 134
+      }
+    },
+    {
+      "rfilename": "mbr_full_fp16.aimodel/metadata.json",
+      "blobId": "74012eac6af910f142b84144632cb14a9e384bd0",
+      "size": 105
+    },
+    {
+      "rfilename": "mbr_full_fp16.h18p.aimodelc/main-h18p-delegates/MPSGraph/mpsExecutable.mpsgraphpackage/manifest.plist",
+      "blobId": "a3d9f894d58dca20524a3c58cae71122eb4b21f5",
+      "size": 69672
+    },
+    {
+      "rfilename": "mbr_full_fp16.h18p.aimodelc/main-h18p-delegates/MPSGraph/mpsExecutable.mpsgraphpackage/resources.bin",
+      "blobId": "4e02efce059271f992172501a4f846f5d8f300a1",
+      "size": 491825748,
+      "lfs": {
+        "sha256": "4b666d1e5667596af339ae8a44d1a61fe16bbd144aedaad8d4127f533f6a75aa",
+        "size": 491825748,
+        "pointerSize": 134
+      }
+    },
+    {
+      "rfilename": "mbr_full_fp16.h18p.aimodelc/main-h18p-delegates/MPSGraph/mpsExecutable.mpsgraphpackage/specialized_model_0.mpsgraph",
+      "blobId": "af88a7c145121dbfceb4e64fd027b55441badd3b",
+      "size": 1227624,
+      "lfs": {
+        "sha256": "e5fe4c82f98a7b5d9fcd383b65cf6a3f5950916fb8840a0ed6dbde5171f859ec",
+        "size": 1227624,
+        "pointerSize": 132
+      }
+    },
+    {
+      "rfilename": "mbr_full_fp16.h18p.aimodelc/main-h18p.mlirb",
+      "blobId": "0a100df6eedf38b02541ff6dcadc0ca1e87f818f",
+      "size": 2027
+    },
+    {
+      "rfilename": "mbr_full_fp16.h18p.aimodelc/main.hash",
+      "blobId": "905e4efa2fb5b9fb1b101e10f98d496e6a3fb477",
+      "size": 32
+    },
+    {
+      "rfilename": "mbr_full_fp16.h18p.aimodelc/metadata.json",
+      "blobId": "20b6ea75f561766535da9c6e98cf3ea6bf207bbf",
+      "size": 193
+    },
+    {
+      "rfilename": "mbr_full_fp16.h18p.aimodelc/stats.json",
+      "blobId": "6a56f12f77e1ee573873fff77e8c1727172c4073",
+      "size": 1280
+    },
+    {
+      "rfilename": "metadata.json",
+      "blobId": "f10be179922812eb3f0baccb09232b88661a7951",
+      "size": 417
+    }
+  ],
+  "liveProfile": {
+    "sourceHash": "E3D37A687A99632A56CE933CDAEFBEAEB8D8D936EE58A16B6DE0CC36C3B141A3",
+    "windowFrames": 88200,
+    "overlap": 0.25
+  },
+  "cpuProfile": {
+    "backend": "CoreMLCPU",
+    "precision": "MixedFloat16Float32",
+    "float32Operations": [
+      "reduce_l2_norm",
+      "real_div",
+      "maximum",
+      "scaled_dot_product_attention",
+      "softmax",
+      "matmul",
+      "tile"
+    ],
+    "coremltoolsVersion": "9.1.dev1",
+    "torchVersion": "2.9.0",
+    "windowFrames": 88200,
+    "overlap": 0.25,
+    "deviceValidated": false,
+    "payloadHashes": {
+      "model.mil": "b658d3105c88890bfbef55fdc3c7cc3f89d2cdf8981a7a436e84b3c632cd66b0",
+      "weights/weight.bin": "970a99fb4b15724bf76d2918ceb177df592c69265d3e2fabaab6e5ba72738e62"
+    },
+    "referencePayloadHashes": {
+      "model.mil": "79b83bfe1d161e466562dbd49bb6e1c07806dd4a565d52935b0555dade5f6cde",
+      "weights/weight.bin": "e20adb85d15d0a9176657eae540078f750047abcdf34e7aa6f1a1ded8b1891f8"
+    }
+  }
+}

@@ -14,10 +14,11 @@ make -s -C "$VENDOR" PLATFORM=sim -j8
 rm -rf "$OUT"
 mkdir -p "$OUT/gen" "$OUT/AudioEffectsHarness.app"
 "$THEOS/bin/logos.pl" -c generator=internal "$FX/AudioEffects.x" > "$OUT/gen/AudioEffects.m"
+"$THEOS/bin/logos.pl" -c generator=internal "$SRC/Shared/Audio/SGAudioPipeline.x" > "$OUT/gen/SGAudioPipeline.m"
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -g -O1 -isysroot "$SDK" -Wno-deprecated-declarations \
     -I"$SRC" -I"$FX" -isystem "$VENDOR/libbs2b" -isystem "$VENDOR/wdl/eel2" \
-    sim/main.m "$OUT/gen/AudioEffects.m" "$FX/AudioEffectsSettings.m" "$FX/AudioEffectsFiles.m" "$FX"/SGDSPEngine.m "$FX"/SGDSPFilters.m \
+    sim/main.m "$OUT"/gen/*.m "$SRC/Shared/Audio/SGAudioSourceQueue.m" "$FX/AudioEffectsSettings.m" "$FX/AudioEffectsFiles.m" "$FX"/SGDSPEngine.m "$FX"/SGDSPFilters.m \
     "$FX"/SGDSPConvolver.m "$FX"/SGDSPTone.m "$FX"/SGDSPDynamics.m "$FX"/SGDSPCrossfeed.m "$FX"/SGDSPReverb.m "$FX"/SGDSPLiveprog.m \
     "$SRC/Core/SGRebind.m" "$SRC/Core/SGLog.m" "$SRC/Core/SGPrefs.m" "$VENDOR/build/sim/libsgaudio.a" \
     -framework UIKit -framework AudioToolbox -framework AVFoundation -framework Accelerate -framework Foundation \

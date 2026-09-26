@@ -36,8 +36,9 @@ A last word `stress` runs the convolver, the threaded checks, rate changes and L
 
 Spotify's chain rebuilt with real units (a converter fed by a render callback, a mixer, RemoteIO, wired with
 MakeConnection), with `AudioEffects.x` (logos, internal generator), its settings, libraries and engine compiled
-into an app whose main executable is the harness, so its `AudioOutputUnitStart` goes through the rebound import
-slot as Spotify's does. A second render notify, added after the output started and so after the effects', measures
+into an app whose main executable is the harness, so its `AudioOutputUnitStart` goes through the shared
+audio pipeline's rebound import slot as Spotify's does. The effects register in that pipeline after speed/pitch
+and before haptics. A second render notify, added after the output started and so after the effects', measures
 what they left in the buffer while a script flips settings: the switch off and a gain that must not apply, the
 switch on and -12 dB, a Liveprog script from the library swapping the channels, a reverb ringing out after the
 source stops, a file missing from the library and its error, then a 16-bit interleaved client at 48 kHz.
