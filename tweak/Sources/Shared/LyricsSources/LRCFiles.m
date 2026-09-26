@@ -116,7 +116,7 @@ static SGLyricsResult *parseLRC(NSString *content, SGLyricsQuery *query, NSStrin
         result.karaokeLines = SGKaraokeEstimatedLines(starts, texts);
     } else {
         NSMutableArray *plain = [NSMutableArray array];
-        for (NSString *raw in content.componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet) {
+        for (NSString *raw in [content componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
             NSString *line = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
             if (line.length && ![line hasPrefix:@"["]) [plain addObject:line];
         }
