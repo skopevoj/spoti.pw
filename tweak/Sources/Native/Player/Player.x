@@ -24,6 +24,10 @@
 #import "Native/Appearance/Repaint.h"
 #import "NowPlaying.h"
 #import "Native/Appearance/Appearance.h"
+#import "Headers/SPTPlayer.h"
+#import "Shared/Lyrics/Lyrics.h"
+#import "Shared/Player/PlayerState.h"
+#import <MediaPlayer/MediaPlayer.h>
 
 static const CGFloat kButtonMin = 36, kButtonMax = 48;
 static const CGFloat kArtRadius = 12;
@@ -104,6 +108,115 @@ static UIImage *coverInFront(UIScrollView *list) {
     return cover;
 }
 
+// The local track's cover already reaches MPNowPlayingInfoCenter (the queue and lock screen use it),
+// but the native full-screen player can leave its large image view on Spotify's placeholder. Prefer
+// Spotify's cached local image path when the model exposes one, then use the matching system artwork.
+static id objectResultForNoArgumentSelector(id object, SEL selector) {
+    NSMethodSignature *signature = [object methodSignatureForSelector:selector];
+    if (!signature || signature.numberOfArguments != 2 || signature.methodReturnType[0] != '@') return nil;
+    NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+    invocation.target = object;
+    invocation.selector = selector;
+    [invocation invoke];
+    __unsafe_unretained id result = nil;
+    [invocation getReturnValue:&result];
+    return result;
+}
+
+static UIImage *imageAtLocalValue(id value) {
+    if ([value isKindOfClass:UIImage.class]) return value;
+    NSMutableArray *candidates = [NSMutableArray array];
+    if ([value isKindOfClass:NSURL.class]) [candidates addObject:value];
+    if ([value isKindOfClass:NSString.class]) {
+        NSURL *url = [NSURL URLWithString:value];
+        if (url) [candidates addObject:url];
+        [candidates addObject:value];
+    }
+    for (id candidate in candidates) {
+        NSString *path = nil;
+        if ([candidate isKindOfClass:NSURL.class] && [candidate isFileURL]) path = [candidate path];
+        else if ([candidate isKindOfClass:NSString.class] && [candidate hasPrefix:@"/"]) path = candidate;
+        SEL resolver = @selector(spt_localFileImagePath);
+        if (!path && [candidate respondsToSelector:resolver]) {
+            id resolved = objectResultForNoArgumentSelector(candidate, resolver);
+            if ([resolved isKindOfClass:NSURL.class] && [resolved isFileURL]) path = [resolved path];
+            else if ([resolved isKindOfClass:NSString.class] && [resolved hasPrefix:@"/"]) path = resolved;
+        }
+        if (path.length && [NSFileManager.defaultManager fileExistsAtPath:path]) {
+            UIImage *image = [UIImage imageWithContentsOfFile:path];
+            if (image) return image;
+        }
+    }
+    return nil;
+}
+
+static BOOL sameTag(NSString *a, NSString *b) {
+    if (!a.length || !b.length) return YES;
+    return [a compare:b options:NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch] == NSOrderedSame;
+}
+
+static UIImage *localArtworkForTrack(SPTPlayerTrack *track) {
+    NSString *trackKey = SGKaraokeTrackKeyFromURI(track.URI);
+    if (!SGKaraokeTrackKeyIsLocal(trackKey)) return nil;
+
+    static NSString *cachedTrack;
+    static UIImage *cachedImage;
+    if ([cachedTrack isEqualToString:trackKey] && cachedImage) return cachedImage;
+
+    NSDictionary *metadata = [track respondsToSelector:@selector(metadata)] ? track.metadata : nil;
+    for (NSString *field in @[@"image_xlarge_url", @"image_large_url", @"image_url", @"image_small_url"]) {
+        UIImage *image = imageAtLocalValue(metadata[field]);
+        if (image) {
+            cachedTrack = trackKey;
+            cachedImage = image;
+            return image;
+        }
+    }
+
+    NSDictionary *nowPlaying = MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo;
+    NSString *title = track.trackTitle;
+    if (!title.length) {
+        for (NSString *field in @[@"track_title", @"title", @"name"]) {
+            if ([metadata[field] isKindOfClass:NSString.class] && [metadata[field] length]) { title = metadata[field]; break; }
+        }
+    }
+    NSString *artist = track.artistName;
+    if (!artist.length) {
+        for (NSString *field in @[@"artist_name", @"artist"]) {
+            if ([metadata[field] isKindOfClass:NSString.class] && [metadata[field] length]) { artist = metadata[field]; break; }
+        }
+    }
+    NSString *systemTitle = nowPlaying[MPMediaItemPropertyTitle];
+    NSString *systemArtist = nowPlaying[MPMediaItemPropertyArtist];
+    // Without a title to compare, MediaPlayer could still be exposing the previous track's image.
+    if (!title.length || ![systemTitle isKindOfClass:NSString.class] || !systemTitle.length || !sameTag(systemTitle, title) ||
+        !sameTag(systemArtist, artist)) return nil;
+
+    id artwork = nowPlaying[MPMediaItemPropertyArtwork];
+    UIImage *image = [artwork isKindOfClass:UIImage.class] ? artwork :
+        [artwork isKindOfClass:MPMediaItemArtwork.class] ? [(MPMediaItemArtwork *)artwork imageWithSize:CGSizeMake(1200, 1200)] : nil;
+    if (image) {
+        cachedTrack = trackKey;
+        cachedImage = image;
+    }
+    return image;
+}
+
+static UIImageView *coverViewInFront(UIScrollView *list) {
+    CGFloat middle = list.contentOffset.x + list.bounds.size.width / 2;
+    __block UIImageView *cover = nil;
+    __block CGFloat widest = 200;
+    for (UIView *cell in list.subviews) {
+        if (middle < CGRectGetMinX(cell.frame) || middle > CGRectGetMaxX(cell.frame)) continue;
+        SGForEachView(cell, ^(UIView *view) {
+            if (![view isKindOfClass:UIImageView.class] || view.bounds.size.width <= widest) return;
+            widest = view.bounds.size.width;
+            cover = (UIImageView *)view;
+        });
+    }
+    return cover;
+}
+
 static UIView *backdropIn(UIView *plane) {
     UIView *backdrop = objc_getAssociatedObject(plane, &kBackdropKey);
     if (backdrop) return backdrop;
@@ -136,6 +249,13 @@ static UIView *backdropIn(UIView *plane) {
 %hook _TtC35NowPlaying_ContentLayerPlatformImpl24AccessibleCollectionView
 - (void)layoutSubviews {
     %orig;
+    SPTPlayerTrack *track = SGPlayerState().track;
+    UIImage *local = track ? localArtworkForTrack(track) : nil;
+    UIImageView *front = local ? coverViewInFront((UIScrollView *)self) : nil;
+    if (front && front.image != local) {
+        front.image = local;
+        SGLog(@"player: local cached cover filled in the native player for %@", SGURIString(track.URI));
+    }
     if (backdropOn()) showCover(coverInFront((UIScrollView *)self));
 }
 %end

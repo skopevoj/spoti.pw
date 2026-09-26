@@ -69,10 +69,29 @@ static NSString *lyricsTrack(NSURL *url) {
 
 static NSString *cardListTrack(NSURL *url) {
     if (![url.path containsString:kCardListPath]) return nil;
-    for (NSString *component in url.pathComponents) {
-        NSString *uri = component.stringByRemovingPercentEncoding ?: component;
-        if ([uri hasPrefix:kTrackPrefix] && uri.length > kTrackPrefix.length) return [uri substringFromIndex:kTrackPrefix.length];
+    NSString *(^trackInValue)(NSString *) = ^NSString *(NSString *value) {
+        NSString *uri = value;
+        // Some app builds escape the URI once for the URL and again for the query value.
+        for (NSUInteger pass = 0; pass < 2; pass++) {
+            NSString *decoded = uri.stringByRemovingPercentEncoding;
+            if (!decoded || [decoded isEqualToString:uri]) break;
+            uri = decoded;
+        }
+        if ([uri hasPrefix:kTrackPrefix] && uri.length > kTrackPrefix.length)
+            return [uri substringFromIndex:kTrackPrefix.length];
         if ([uri hasPrefix:@"spotify:local:"]) return uri;
+        return nil;
+    };
+    for (NSString *component in url.pathComponents) {
+        NSString *track = trackInValue(component);
+        if (track) return track;
+    }
+    NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+    for (NSURLQueryItem *item in components.queryItems) {
+        // Spotify has used different key names for the item URI; only accept recognized URI values,
+        // regardless of which key currently carries it.
+        NSString *track = trackInValue(item.value);
+        if (track) return track;
     }
     return nil;
 }
