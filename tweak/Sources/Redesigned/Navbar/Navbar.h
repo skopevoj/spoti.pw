@@ -11,7 +11,7 @@
 extern NSString *const SGRNavbarID;      // NSString, the entry's identity
 extern NSString *const SGRNavbarTitle;   // NSString, the name in the settings list and under the icon
 extern NSString *const SGRNavbarURI;     // NSString, the mod's own tabs only: what a tap opens
-extern NSString *const SGRNavbarIcon;    // NSString, an SPTEncoreIcon class method such as "podcasts"
+extern NSString *const SGRNavbarIcon;   // NSString, an SPTEncoreIcon method or `sf:<symbol>`
 extern NSString *const SGRNavbarHidden;  // NSNumber
 NSArray<NSDictionary *> *SGRNavbarLayout(void);
 void SGRSetNavbarLayout(NSArray<NSDictionary *> *layout);

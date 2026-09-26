@@ -11,12 +11,29 @@
 // The greens the app is known to build from literals: the token, and the older brand green the
 // upsell backend still names.
 static const uint32_t kGreens[] = {0x1ED760, 0x1DB954};
+static const NSInteger kAppleMusicAccent = 0xFF375F;
 
 static NSInteger sg_accent = -1;   // 0xRRGGBB once chosen, read at launch
 
+static NSInteger currentChoice(void) {
+    NSInteger choice = SGInt(SGKeyAccentChoice, -1);
+    if (choice >= SGAccentChoiceSpotify && choice <= SGAccentChoiceCustom) return choice;
+    return SGInt(SGKeyAccent, -1) >= 0 ? SGAccentChoiceCustom : SGAccentChoiceSpotify;
+}
+
+NSInteger SGCurrentAccentChoice(void) {
+    return currentChoice();
+}
+
 static NSInteger chosen(void) {
-    NSInteger rgb = SGInt(SGKeyAccent, -1);
-    return rgb >= 0 && rgb <= 0xFFFFFF ? rgb : -1;
+    switch (currentChoice()) {
+        case SGAccentChoiceAppleMusic: return kAppleMusicAccent;
+        case SGAccentChoiceCustom: {
+            NSInteger rgb = SGInt(SGKeyAccent, 0x1ED760);
+            return rgb >= 0 && rgb <= 0xFFFFFF ? rgb : 0x1ED760;
+        }
+        default: return -1;
+    }
 }
 
 static void unpack(uint32_t rgb, CGFloat *r, CGFloat *g, CGFloat *b) {
@@ -34,24 +51,43 @@ UIColor *SGAccentColor(void) {
 }
 
 NSString *SGAccentLabel(void) {
-    NSInteger rgb = chosen();
-    return rgb < 0 ? @"Spotify green" : [NSString stringWithFormat:@"#%06lX", (long)rgb];
+    switch (currentChoice()) {
+        case SGAccentChoiceAppleMusic: return @"#FF375F";
+        case SGAccentChoiceCustom: return [NSString stringWithFormat:@"#%06lX", (long)chosen()];
+        default: return @"#1ED760";
+    }
+}
+
+void SGRefreshAccent(void) {
+    sg_accent = chosen();
 }
 
 #pragma mark - picker
 
 @interface SGAccentPicker : NSObject <UIColorPickerViewControllerDelegate>
+@property (nonatomic, weak) UIColorPickerViewController *activePicker;
 @end
 
 @implementation SGAccentPicker
 
-- (void)colorPickerViewControllerDidFinish:(UIColorPickerViewController *)picker {
+- (void)applyPicker:(UIColorPickerViewController *)picker {
     CGFloat r = 0, g = 0, b = 0, a = 0;
     [picker.selectedColor getRed:&r green:&g blue:&b alpha:&a];
     uint32_t rgb = ((uint32_t)lround(MIN(1, MAX(0, r)) * 255) << 16)
                  | ((uint32_t)lround(MIN(1, MAX(0, g)) * 255) << 8)
                  | (uint32_t)lround(MIN(1, MAX(0, b)) * 255);
     SGSetInt(SGKeyAccent, rgb);
+    SGSetInt(SGKeyAccentChoice, SGAccentChoiceCustom);
+    SGRefreshAccent();
+}
+
+- (void)confirm:(UIBarButtonItem *)item {
+    [self applyPicker:(UIColorPickerViewController *)self.activePicker];
+    [self.activePicker.navigationController dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)colorPickerViewControllerDidFinish:(UIColorPickerViewController *)picker {
+    // The system's close button cancels. The explicit checkmark above is the only way to apply a colour.
 }
 
 @end
@@ -63,12 +99,20 @@ void SGPickAccent(void) {
     picker.supportsAlpha = NO;
     picker.selectedColor = SGAccentColor() ?: [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1];
     picker.delegate = delegate;
-    [SGTopController() presentViewController:picker animated:YES completion:nil];
+    delegate.activePicker = picker;
+    picker.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"checkmark"]
+                                                                                   style:UIBarButtonItemStyleDone
+                                                                                  target:delegate
+                                                                                  action:@selector(confirm:)];
+    UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:picker];
+    navigation.modalPresentationStyle = UIModalPresentationPageSheet;
+    [SGTopController() presentViewController:navigation animated:YES completion:nil];
 }
 
 // A darker green than the token comes out as the accent darkened by the same amount, so the two
 // keep their relation.
 static BOOL swap(CGFloat *r, CGFloat *g, CGFloat *b) {
+    if (sg_accent < 0) return NO;
     for (size_t i = 0; i < sizeof(kGreens) / sizeof(kGreens[0]); i++) {
         CGFloat gr, gg, gb;
         unpack(kGreens[i], &gr, &gg, &gb);
@@ -166,6 +210,6 @@ static id swappedValue(id value) {
 
 %ctor {
     if (!SGNativeUI()) return;
-    sg_accent = chosen();
-    if (sg_accent >= 0) %init;
+    SGRefreshAccent();
+    %init;
 }

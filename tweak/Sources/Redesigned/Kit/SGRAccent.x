@@ -12,15 +12,33 @@
 // The greens the app is known to build from literals: the token, and the older brand green the
 // upsell backend still names.
 static const uint32_t kGreens[] = {0x1ED760, 0x1DB954};
+static const NSInteger kAppleMusicAccent = 0xFF375F;
 
 static NSInteger sg_accent = -1;   // 0xRRGGBB once chosen, read at launch
 
-// The redesign's own green until another is picked; Spotify's is a pick of its own, stored as -1.
+// Preserve the redesign's old custom value while new installs start on Spotify's green.
 static const NSInteger kDefaultAccent = 0x37F200;
 
+static NSInteger currentChoice(void) {
+    NSInteger choice = SGInt(SGRKeyAccentChoice, -1);
+    if (choice >= SGRAccentChoiceSpotify && choice <= SGRAccentChoiceCustom) return choice;
+    id stored = [NSUserDefaults.standardUserDefaults objectForKey:SGRKeyAccent];
+    return stored && [stored integerValue] >= 0 ? SGRAccentChoiceCustom : SGRAccentChoiceSpotify;
+}
+
+NSInteger SGRCurrentAccentChoice(void) {
+    return currentChoice();
+}
+
 static NSInteger chosen(void) {
-    NSInteger rgb = SGInt(SGRKeyAccent, kDefaultAccent);
-    return rgb >= 0 && rgb <= 0xFFFFFF ? rgb : -1;
+    switch (currentChoice()) {
+        case SGRAccentChoiceAppleMusic: return kAppleMusicAccent;
+        case SGRAccentChoiceCustom: {
+            NSInteger rgb = SGInt(SGRKeyAccent, kDefaultAccent);
+            return rgb >= 0 && rgb <= 0xFFFFFF ? rgb : kDefaultAccent;
+        }
+        default: return -1;
+    }
 }
 
 static void unpack(uint32_t rgb, CGFloat *r, CGFloat *g, CGFloat *b) {
@@ -38,24 +56,43 @@ UIColor *SGRAccentColor(void) {
 }
 
 NSString *SGRAccentLabel(void) {
-    NSInteger rgb = chosen();
-    return rgb < 0 ? @"Spotify green" : [NSString stringWithFormat:@"#%06lX", (long)rgb];
+    switch (currentChoice()) {
+        case SGRAccentChoiceAppleMusic: return @"#FF375F";
+        case SGRAccentChoiceCustom: return [NSString stringWithFormat:@"#%06lX", (long)chosen()];
+        default: return @"#1ED760";
+    }
+}
+
+void SGRRefreshAccent(void) {
+    sg_accent = chosen();
 }
 
 #pragma mark - picker
 
 @interface SGRAccentPicker : NSObject <UIColorPickerViewControllerDelegate>
+@property (nonatomic, weak) UIColorPickerViewController *activePicker;
 @end
 
 @implementation SGRAccentPicker
 
-- (void)colorPickerViewControllerDidFinish:(UIColorPickerViewController *)picker {
+- (void)applyPicker:(UIColorPickerViewController *)picker {
     CGFloat r = 0, g = 0, b = 0, a = 0;
     [picker.selectedColor getRed:&r green:&g blue:&b alpha:&a];
     uint32_t rgb = ((uint32_t)lround(MIN(1, MAX(0, r)) * 255) << 16)
                  | ((uint32_t)lround(MIN(1, MAX(0, g)) * 255) << 8)
                  | (uint32_t)lround(MIN(1, MAX(0, b)) * 255);
     SGSetInt(SGRKeyAccent, rgb);
+    SGSetInt(SGRKeyAccentChoice, SGRAccentChoiceCustom);
+    SGRRefreshAccent();
+}
+
+- (void)confirm:(UIBarButtonItem *)item {
+    [self applyPicker:self.activePicker];
+    [self.activePicker.navigationController dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)colorPickerViewControllerDidFinish:(UIColorPickerViewController *)picker {
+    // The system's close button cancels. The explicit checkmark above is the only way to apply a colour.
 }
 
 @end
@@ -67,12 +104,20 @@ void SGRPickAccent(void) {
     picker.supportsAlpha = NO;
     picker.selectedColor = SGRAccentColor() ?: [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1];
     picker.delegate = delegate;
-    [SGTopController() presentViewController:picker animated:YES completion:nil];
+    delegate.activePicker = picker;
+    picker.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"checkmark"]
+                                                                                    style:UIBarButtonItemStyleDone
+                                                                                   target:delegate
+                                                                                   action:@selector(confirm:)];
+    UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:picker];
+    navigation.modalPresentationStyle = UIModalPresentationPageSheet;
+    [SGTopController() presentViewController:navigation animated:YES completion:nil];
 }
 
 // A darker green than the token comes out as the accent darkened by the same amount, so the two
 // keep their relation.
 static BOOL swap(CGFloat *r, CGFloat *g, CGFloat *b) {
+    if (sg_accent < 0) return NO;
     for (size_t i = 0; i < sizeof(kGreens) / sizeof(kGreens[0]); i++) {
         CGFloat gr, gg, gb;
         unpack(kGreens[i], &gr, &gg, &gb);
@@ -170,6 +215,6 @@ static id swappedValue(id value) {
 
 %ctor {
     if (!SGRedesignedUI()) return;
-    sg_accent = chosen();
-    if (sg_accent >= 0) %init;
+    SGRRefreshAccent();
+    %init;
 }

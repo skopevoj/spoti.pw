@@ -47,6 +47,14 @@ static UIColor *itemColor(void) { return [UIColor colorWithWhite:0xB3 / 255.0 al
 // item of the mod's own is drawn the same way as Spotify's. An SF Symbol stands in if the name is
 // not one of them.
 static UIView *iconView(NSString *name) {
+    if ([name hasPrefix:@"sf:"]) {
+        NSString *symbol = [name substringFromIndex:3];
+        UIImage *image = [UIImage systemImageNamed:symbol withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:19 weight:UIImageSymbolWeightSemibold]];
+        UIImageView *view = [[UIImageView alloc] initWithImage:image];
+        view.tintColor = itemColor();
+        view.contentMode = UIViewContentModeCenter;
+        return view;
+    }
     Class icon = NSClassFromString(@"SPTEncoreIcon");
     Class view = NSClassFromString(@"SPTEncoreIconView");
     SEL glyphSel = NSSelectorFromString(name.length ? name : @"star");
