@@ -43,6 +43,12 @@ NSString *SGLRCImport(NSURL *url, NSError **error) {
         name = [[NSString stringWithFormat:@"%@ (%lu)", base, (unsigned long)suffix++] stringByAppendingPathExtension:@"lrc"];
     NSData *utf8 = [text dataUsingEncoding:NSUTF8StringEncoding];
     if (![utf8 writeToFile:[directory stringByAppendingPathComponent:name] options:NSDataWritingAtomic error:error]) return nil;
+    NSMutableArray<NSString *> *order = [SGLyricsOrder() mutableCopy];
+    if (![order containsObject:@"importedlrc"]) [order insertObject:@"importedlrc" atIndex:0];
+    SGLyricsSetOrder(order);
+    SGLyricsInvalidateCache();
+    NSString *playing = SGKaraokePlayingTrack();
+    if (playing) SGLyricsPrefetch(playing);
     return name;
 }
 

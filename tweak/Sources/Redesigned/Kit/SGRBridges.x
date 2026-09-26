@@ -6,6 +6,7 @@
 #import "SGRBridges.h"
 #import "SGRedesign.h"
 #import "SGRRestyle.h"
+#import <MediaPlayer/MediaPlayer.h>
 
 #pragma mark - now playing artwork
 
@@ -113,11 +114,25 @@ static UIImage *localImageFromValue(id value) {
 
 static UIImage *localArtwork(SPTPlayerTrack *track) {
     NSDictionary *metadata = [track respondsToSelector:@selector(metadata)] ? track.metadata : nil;
-    if (![metadata isKindOfClass:NSDictionary.class]) return nil;
-    for (NSString *field in @[@"image_xlarge_url", @"image_large_url", @"image_url", @"image_small_url"]) {
-        UIImage *image = localImageFromValue(metadata[field]);
-        if (image) return image;
+    if ([metadata isKindOfClass:NSDictionary.class]) {
+        for (NSString *field in @[@"image_xlarge_url", @"image_large_url", @"image_url", @"image_small_url"]) {
+            UIImage *image = localImageFromValue(metadata[field]);
+            if (image) return image;
+        }
     }
+    // Spotify already supplies this image to iOS for the lock screen; use it when the local
+    // track metadata has no image URL the redesigned player can resolve.
+    NSDictionary *nowPlaying = MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo;
+    NSString *title = nowPlaying[MPMediaItemPropertyTitle];
+    NSString *artist = nowPlaying[MPMediaItemPropertyArtist];
+    if (title.length && track.trackTitle.length &&
+        [title compare:track.trackTitle options:NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch] != NSOrderedSame) return nil;
+    if (artist.length && track.artistName.length &&
+        [artist compare:track.artistName options:NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch] != NSOrderedSame) return nil;
+    id artwork = nowPlaying[MPMediaItemPropertyArtwork];
+    if ([artwork isKindOfClass:UIImage.class]) return artwork;
+    if ([artwork isKindOfClass:MPMediaItemArtwork.class])
+        return [(MPMediaItemArtwork *)artwork imageWithSize:CGSizeMake(1200, 1200)];
     return nil;
 }
 

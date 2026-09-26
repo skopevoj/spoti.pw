@@ -69,6 +69,8 @@ SGLyricsProvider *SGLyricsProviderFor(NSString *key);
 NSArray<NSString *> *SGLyricsOrder(void);
 void SGLyricsSetOrder(NSArray<NSString *> *keys);
 BOOL SGLyricsEnabled(void);   // any source at all is on
+// Clears cached answers after a source is enabled or local lyrics are imported.
+void SGLyricsInvalidateCache(void);
 
 // Asks the sources in order and merges what they give, on the main queue. nil when none had lyrics.
 void SGLyricsFetch(NSString *trackID, void (^done)(SGLyricsResult *result));

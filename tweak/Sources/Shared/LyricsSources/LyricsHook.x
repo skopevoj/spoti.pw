@@ -95,6 +95,7 @@ static NSURL *urlOf(NSURLSessionTask *task) {
 // Only a real 200 makes the lyrics card show, so a track Spotify has none for is asked for as the
 // donor, whose reply then carries the sources' lines. Everything but the id stays as Spotify sent it.
 static NSURLRequest *donorRequestFor(NSURLRequest *request) {
+    if (!SGLyricsEnabled()) return nil;
     NSString *address = request.URL.absoluteString;
     if (![address containsString:kLyricsPath]) return nil;
     if ([NSURLProtocol propertyForKey:SGLyricsOwnRequestKey inRequest:request] || donorFor(request)) return nil;
@@ -216,6 +217,7 @@ static NSData *lyricsSection(NSString *track) {
 // The player asks for lyrics only when the list has a lyrics section, which the server sends only
 // for tracks Spotify has lyrics for.
 static NSData *amendedCardList(NSData *body, NSString *track) {
+    if (!SGLyricsEnabled()) return body;
     NSMutableArray<SGPBField *> *top = SGPBParse(body);
     SGPBField *structure = SGPBFirst(top, 1);
     NSArray<SGPBField *> *sections = structure.wire == 2 ? SGPBParse(structure.payload) : nil;
@@ -411,6 +413,10 @@ static void answerHeld(id delegate, NSURLSession *session, NSURLSessionDataTask 
 
 static void receivedResponse(id delegate, NSURLSession *session, NSURLSessionDataTask *task, NSURLResponse *response,
                              SGDisposition handler, SGForwardResponse forward) {
+    if (!SGLyricsEnabled()) {
+        forward(response, handler);
+        return;
+    }
     if (objc_getAssociatedObject(task, &kStateKey)) {
         forward(response, handler);
         return;
@@ -567,6 +573,7 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
     if (!track) return metadata;
     BOOL local = SGKaraokeTrackKeyIsLocal(track);
     if (local) {
+        if (!SGLyricsEnabled()) return metadata;
         SGKaraokeRememberTrack(self);
         if (!SGLyricsMayHave(track)) return metadata;
         SGLyricsPrefetch(track);
@@ -613,7 +620,7 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
 
 %ctor {
     SGLyricsMigrateLegacyKeys();
-    if (!SGLyricsEnabled()) return;
+    // Stay ready for a source enabled in Settings during this app session.
     sg_allTracks = SGFlag(SGKeyLyricsAllTracks, NO);
     %init(SGLyricsReplies);
     %init(SGLyricsTrackMetadata);

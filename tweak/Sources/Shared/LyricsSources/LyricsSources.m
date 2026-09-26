@@ -191,7 +191,9 @@ NSArray<NSString *> *SGLyricsOrder(void) {
 }
 
 void SGLyricsSetOrder(NSArray<NSString *> *keys) {
+    NSArray *old = SGLyricsOrder();
     [NSUserDefaults.standardUserDefaults setObject:keys ?: @[] forKey:SGKeyLyricsProviders];
+    if (![old isEqualToArray:keys ?: @[]]) SGLyricsInvalidateCache();
 }
 
 BOOL SGLyricsEnabled(void) {
@@ -248,6 +250,17 @@ static void setUp(void) {
         sg_credits = [NSMutableDictionary dictionary];
         sg_spotifyHas = [NSMutableDictionary dictionary];
     });
+}
+
+void SGLyricsInvalidateCache(void) {
+    setUp();
+    void (^clear)(void) = ^{
+        [sg_kept removeAllObjects];
+        @synchronized (sg_missing) { [sg_missing removeAllObjects]; }
+        @synchronized (sg_credits) { [sg_credits removeAllObjects]; }
+    };
+    if (NSThread.isMainThread) clear();
+    else dispatch_async(dispatch_get_main_queue(), clear);
 }
 
 // Whether the source's lines are better than what the walk already has: any lines beat none, and
