@@ -61,5 +61,14 @@
     "signed_at": "2026-09-25T21:44:00.986Z",
     "pull_request": 151,
     "evidence": "https://github.com/skopevoj/spoti.pw/pull/151"
+  },
+  {
+    "login": "yaniselaouad13-stack",
+    "id": 296628066,
+    "cla": "1.0",
+    "via": "checkbox",
+    "signed_at": "2026-09-26T11:56:21.746Z",
+    "pull_request": 153,
+    "evidence": "https://github.com/skopevoj/spoti.pw/pull/153"
   }
 ]
