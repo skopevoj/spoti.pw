@@ -304,10 +304,10 @@ static UITableView *tableIn(UIView *root, int depth) {
 // the cells on screen and no more, and it is done once per sheet.
 static UIView *curationIn(UIView *page) {
     UIView *held = objc_getAssociatedObject(page, &kToolbarKey);
-    if (held) return held;
+    if (held && held.window) return held;
     UIView *found = SGRFindByIdentifier(page, SGRPlaylistCurationIdentifier, NULL);
     if (found) objc_setAssociatedObject(page, &kToolbarKey, found, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    return found;
+    return found ?: held;
 }
 
 // The page this sheet belongs to, decided once and only from the ⋯ that opened it. What the page has to
@@ -350,7 +350,7 @@ static void install(UIViewController *menu) {
     // reused -- and the curation pill only where it has not, which is how it was found before the header's
     // button was (device 2026-09-20: the pill's glyph did not answer and the row went missing).
     UIView *sort = nil, *mix = nil;
-    pillsIn(objc_getAssociatedObject(page, &kToolbarKey), &sort, &mix);
+    pillsIn(curationIn(page), &sort, &mix);
     sort = objc_getAssociatedObject(page, &kSortKey) ?: sort;
     [block showSort:sort mix:mix];
     // Nothing to show yet is not an answer: the page fills in as it lays out, and the next pass is asked
