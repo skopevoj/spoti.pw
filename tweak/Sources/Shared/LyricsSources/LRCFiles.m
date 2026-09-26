@@ -95,14 +95,28 @@ static SGLyricsResult *parseLRC(NSString *content, SGLyricsQuery *query, NSStrin
     NSString *fileTitle = filename.stringByDeletingPathExtension;
     NSString *title = tagTitle.length ? tagTitle : fileTitle;
     NSString *artist = tagArtist;
-    // Also recognize the common "Artist - Title.lrc" / "Title - Artist.lrc" naming styles.
+    // Also recognize common "Artist - Title.lrc" / "Title - Artist.lrc" naming styles, including
+    // files whose tags expose a title but omit the artist, and Unicode dash separators.
     if (!tagTitle.length && query.title.length && ![fold(query.title) isEqualToString:fold(title)]) {
-        NSArray<NSString *> *parts = [fileTitle componentsSeparatedByString:@" - "];
-        if (parts.count == 2) {
-            if ([fold(parts[0]) isEqualToString:fold(query.artist)] && [fold(parts[1]) isEqualToString:fold(query.title)]) {
-                artist = parts[0]; title = parts[1];
-            } else if ([fold(parts[1]) isEqualToString:fold(query.artist)] && [fold(parts[0]) isEqualToString:fold(query.title)]) {
-                artist = parts[1]; title = parts[0];
+        for (NSString *separator in @[@" - ", @" – ", @" — "]) {
+            NSArray<NSString *> *parts = [fileTitle componentsSeparatedByString:separator];
+            if (parts.count != 2) continue;
+            NSString *left = [parts[0] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            NSString *right = [parts[1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            NSString *leftFold = fold(left), *rightFold = fold(right), *queryTitle = fold(query.title);
+            NSString *queryArtist = fold(query.artist);
+            if ([leftFold isEqualToString:queryArtist] && [rightFold isEqualToString:queryTitle]) {
+                artist = left; title = right;
+                break;
+            } else if ([rightFold isEqualToString:queryArtist] && [leftFold isEqualToString:queryTitle]) {
+                artist = right; title = left;
+                break;
+            } else if (!query.artist.length && [rightFold isEqualToString:queryTitle]) {
+                artist = left; title = right;
+                break;
+            } else if (!query.artist.length && [leftFold isEqualToString:queryTitle]) {
+                artist = right; title = left;
+                break;
             }
         }
     }

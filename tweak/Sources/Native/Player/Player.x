@@ -188,9 +188,10 @@ static UIImage *localArtworkForTrack(SPTPlayerTrack *track) {
     }
     NSString *systemTitle = nowPlaying[MPMediaItemPropertyTitle];
     NSString *systemArtist = nowPlaying[MPMediaItemPropertyArtist];
-    // Without a title to compare, MediaPlayer could still be exposing the previous track's image.
-    if (!title.length || ![systemTitle isKindOfClass:NSString.class] || !systemTitle.length || !sameTag(systemTitle, title) ||
-        !sameTag(systemArtist, artist)) return nil;
+    // MediaPlayer sometimes omits one of these fields for a local item. Compare every field it does
+    // provide, but don't reject its artwork just because Spotify's local model left a tag empty.
+    if ((title.length && systemTitle.length && !sameTag(systemTitle, title)) ||
+        (artist.length && systemArtist.length && !sameTag(systemArtist, artist))) return nil;
 
     id artwork = nowPlaying[MPMediaItemPropertyArtwork];
     UIImage *image = [artwork isKindOfClass:UIImage.class] ? artwork :
@@ -214,6 +215,17 @@ static UIImageView *coverViewInFront(UIScrollView *list) {
             cover = (UIImageView *)view;
         });
     }
+    return cover;
+}
+
+static UIImageView *largeImageViewIn(UIView *root) {
+    __block UIImageView *cover = nil;
+    __block CGFloat widest = 200;
+    SGForEachView(root, ^(UIView *view) {
+        if (![view isKindOfClass:UIImageView.class] || view.bounds.size.width <= widest) return;
+        widest = view.bounds.size.width;
+        cover = (UIImageView *)view;
+    });
     return cover;
 }
 
@@ -265,11 +277,18 @@ static UIView *backdropIn(UIView *plane) {
 %hook _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView
 - (void)layoutSubviews {
     %orig;
-    if (!backdropOn()) return;
     UIView *tilt = (UIView *)self;
     CGSize size = tilt.bounds.size;
     // The player's cover only; the bar downstairs carries a 40pt one of its own.
     if (size.width < 200) return;
+    SPTPlayerTrack *track = SGPlayerState().track;
+    UIImage *local = track ? localArtworkForTrack(track) : nil;
+    UIImageView *cover = local ? largeImageViewIn(tilt) : nil;
+    if (cover && cover.image != local) {
+        cover.image = local;
+        SGLog(@"player: local cached cover filled in CoverArtTiltView for %@", SGURIString(track.URI));
+    }
+    if (!backdropOn()) return;
     SGForEachView(tilt, ^(UIView *view) {
         if (view == tilt || !CGSizeEqualToSize(view.bounds.size, size)) return;
         view.layer.cornerRadius = kArtRadius;
