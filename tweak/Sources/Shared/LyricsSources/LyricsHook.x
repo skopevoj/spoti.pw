@@ -615,6 +615,7 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
     return forced;
 }
 %end
+%end
 
 // Spotify 9.1.74's native lyrics control reads this service's hasLyrics state. Updating track
 // metadata alone is too late for the already-built now-playing control, so an assigned local LRC
@@ -627,8 +628,6 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
     if (SGLyricsEnabled() && SGLRCHasAssignedLyrics(track)) return YES;
     return %orig;
 }
-%end
-
 %end
 
 %end
