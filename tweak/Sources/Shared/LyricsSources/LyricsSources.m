@@ -148,7 +148,9 @@ NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void) {
             provider.detail = detail;
             // A source that matches by Spotify's own track id has everything it needs from the
             // start; the rest wait for the player to name the track before they can search.
-            provider.needsName = ![key isEqualToString:@"musixmatch"];
+            // Imported files can be pinned to a local URI, so they remain searchable even when
+            // Spotify has not exposed that file's title or artist yet.
+            provider.needsName = ![key isEqualToString:@"musixmatch"] && ![key isEqualToString:@"importedlrc"];
             provider.ask = ask;
             return provider;
         };

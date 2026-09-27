@@ -6,6 +6,8 @@ static NSString *libraryPath(void) {
     return [documents stringByAppendingPathComponent:@"spoti.pw/Lyrics"];
 }
 
+static NSString *const kAssignedLRCFiles = @"spotifyglass.lyrics.assignedLRCFiles";
+
 NSArray<NSString *> *SGLRCFiles(void) {
     NSArray *names = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:libraryPath() error:nil];
     NSPredicate *lrc = [NSPredicate predicateWithBlock:^BOOL(NSString *name, NSDictionary *bindings) {
@@ -55,7 +57,27 @@ NSString *SGLRCImport(NSURL *url, NSError **error) {
 BOOL SGLRCDelete(NSString *name) {
     if (![name.pathExtension.lowercaseString isEqualToString:@"lrc"] || ![name.lastPathComponent isEqualToString:name]) return NO;
     NSString *path = [libraryPath() stringByAppendingPathComponent:name];
-    return [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+    BOOL removed = [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+    if (removed) {
+        NSMutableDictionary *assignments = [NSUserDefaults.standardUserDefaults dictionaryForKey:kAssignedLRCFiles].mutableCopy ?: [NSMutableDictionary dictionary];
+        for (NSString *trackID in assignments.allKeys.copy) if ([assignments[trackID] isEqualToString:name]) [assignments removeObjectForKey:trackID];
+        [NSUserDefaults.standardUserDefaults setObject:assignments forKey:kAssignedLRCFiles];
+        SGLyricsInvalidateCache();
+    }
+    return removed;
+}
+
+void SGLRCAssignToTrack(NSString *name, NSString *trackID) {
+    if (!SGKaraokeTrackKeyIsLocal(trackID) || ![SGLRCFiles() containsObject:name]) return;
+    NSMutableDictionary *assignments = [NSUserDefaults.standardUserDefaults dictionaryForKey:kAssignedLRCFiles].mutableCopy ?: [NSMutableDictionary dictionary];
+    assignments[trackID] = name;
+    [NSUserDefaults.standardUserDefaults setObject:assignments forKey:kAssignedLRCFiles];
+    NSMutableArray<NSString *> *order = [SGLyricsOrder() mutableCopy];
+    [order removeObject:@"importedlrc"];
+    [order insertObject:@"importedlrc" atIndex:0];
+    SGLyricsSetOrder(order);
+    SGLyricsInvalidateCache();
+    SGLyricsPrefetch(trackID);
 }
 
 static NSString *fold(NSString *text) {
@@ -69,7 +91,7 @@ static NSString *fold(NSString *text) {
     return result;
 }
 
-static SGLyricsResult *parseLRC(NSString *content, SGLyricsQuery *query, NSString *filename) {
+static SGLyricsResult *parseLRC(NSString *content, SGLyricsQuery *query, NSString *filename, BOOL assigned) {
     NSString *tagTitle = nil, *tagArtist = nil;
     NSInteger offset = 0;
     NSMutableArray<NSDictionary *> *entries = [NSMutableArray array];
@@ -120,15 +142,15 @@ static SGLyricsResult *parseLRC(NSString *content, SGLyricsQuery *query, NSStrin
             }
         }
     }
-    if (query.title.length && ![fold(query.title) isEqualToString:fold(title)]) return nil;
-    if (query.artist.length && artist.length && ![fold(query.artist) isEqualToString:fold(artist)]) return nil;
-    if (!query.title.length) return nil;
+    if (!assigned && query.title.length && ![fold(query.title) isEqualToString:fold(title)]) return nil;
+    if (!assigned && query.artist.length && artist.length && ![fold(query.artist) isEqualToString:fold(artist)]) return nil;
+    if (!assigned && !query.title.length) return nil;
     [entries sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) { return [a[@"start"] compare:b[@"start"]]; }];
     NSMutableArray *starts = [NSMutableArray array], *texts = [NSMutableArray array];
     for (NSDictionary *entry in entries) { [starts addObject:entry[@"start"]]; [texts addObject:entry[@"text"]]; }
     SGLyricsResult *result = [SGLyricsResult new];
-    result.title = title;
-    result.artist = artist ?: @"";
+    result.title = assigned && !tagTitle.length ? (query.title ?: title) : title;
+    result.artist = assigned && !artist.length ? (query.artist ?: @"") : (artist ?: @"");
     if (entries.count) {
         result.synced = YES;
         result.starts = starts;
@@ -150,11 +172,20 @@ static SGLyricsResult *parseLRC(NSString *content, SGLyricsQuery *query, NSStrin
 SGLyricsAsk SGImportedLRCAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *)) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         SGLyricsResult *found = nil;
-        for (NSString *name in SGLRCFiles()) {
+        NSString *assigned = [NSUserDefaults.standardUserDefaults dictionaryForKey:kAssignedLRCFiles][query.trackID];
+        NSArray<NSString *> *files = SGLRCFiles();
+        if (assigned && [files containsObject:assigned]) {
+            NSString *path = [libraryPath() stringByAppendingPathComponent:assigned];
+            NSString *content = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+            if (content) found = parseLRC(content, query, assigned, YES);
+        }
+        for (NSString *name in files) {
+            if (found) break;
+            if ([name isEqualToString:assigned]) continue;
             NSString *path = [libraryPath() stringByAppendingPathComponent:name];
             NSString *content = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
             if (!content) continue;
-            found = parseLRC(content, query, name);
+            found = parseLRC(content, query, name, NO);
             if (found) break;
         }
         dispatch_async(dispatch_get_main_queue(), ^{ done(found); });
