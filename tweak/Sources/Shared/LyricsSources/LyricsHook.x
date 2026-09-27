@@ -620,6 +620,16 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
 // Spotify 9.1.74's native lyrics control reads this service's hasLyrics state. Updating track
 // metadata alone is too late for the already-built now-playing control, so an assigned local LRC
 // also makes the service report availability for the currently playing local URI.
+static IMP sg_originalNPVHasLyrics;
+
+// Keep a callable Objective-C implementation under the Swift class even when this Spotify build
+// exposes the getter only through Swift. Logos can then hook the selector consistently, and the
+// fallback preserves Spotify's original result wherever one was available.
+static BOOL SGOriginalNPVHasLyrics(id self, SEL selector) {
+    IMP original = sg_originalNPVHasLyrics;
+    return original ? ((BOOL (*)(id, SEL))original)(self, selector) : NO;
+}
+
 %group SGLyricsServiceAvailability
 
 %hook _TtC25Lyrics_NPVElementsKitImpl25NPVElementsKitServiceImpl
@@ -659,13 +669,21 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
     %init(SGLyricsReplies);
     %init(SGLyricsTrackMetadata);
     Class lyricsService = objc_getClass("_TtC25Lyrics_NPVElementsKitImpl25NPVElementsKitServiceImpl");
-    // The Swift service may inherit its Objective-C getter. Checking only its own method list skips
-    // that valid selector and silently leaves Spotify's availability state unchanged.
-    if (lyricsService && class_getInstanceMethod(lyricsService, @selector(hasLyrics))) {
+    SEL hasLyrics = @selector(hasLyrics);
+    if (lyricsService) {
+        Method own = ownMethod(lyricsService, hasLyrics);
+        Method inherited = class_getInstanceMethod(lyricsService, hasLyrics);
+        if (!own) {
+            // Add a local forwarding getter if Swift did not export one to the ObjC runtime. This
+            // also shadows an inherited getter without changing its superclass implementation.
+            sg_originalNPVHasLyrics = inherited ? method_getImplementation(inherited) : NULL;
+            const char *types = inherited ? method_getTypeEncoding(inherited) : "B@:";
+            class_addMethod(lyricsService, hasLyrics, (IMP)SGOriginalNPVHasLyrics, types);
+        }
         %init(SGLyricsServiceAvailability);
-        SGLog(@"lyrics: assigned local LRC enables NPV hasLyrics service");
+        SGLog(@"lyrics: NPV availability hook installed (local LRC override ready)");
     } else {
-        SGLog(@"lyrics: NPV hasLyrics service selector was not present, metadata fallback remains active");
+        SGLog(@"lyrics: Spotify NPV lyrics service class was not found");
     }
     BOOL everyTrack = sg_allTracks;
     if (everyTrack) {
