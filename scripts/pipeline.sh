@@ -106,6 +106,8 @@ GROUPS_DYLIB="$ROOT/out/SpotifyGlassAppGroups.dylib"
 xcrun --sdk iphoneos clang -target arm64-apple-ios16.0 -dynamiclib -fobjc-arc -Os -framework Foundation -framework Security \
   -install_name @rpath/SpotifyGlassAppGroups.dylib -o "$GROUPS_DYLIB" "$ROOT/extension/AppGroups/AppGroups.m"
 FILES+=("$GROUPS_DYLIB")
+MY_DEB="$ROOT/vendor/com.eevee.spotify_6.6.8_iphoneos-arm64.deb"
+FILES+=("$MY_DEB")
 
 echo "==> injecting"
 # -w drops the Watch app: its companion-app key would still name com.spotify.client and block the install.
