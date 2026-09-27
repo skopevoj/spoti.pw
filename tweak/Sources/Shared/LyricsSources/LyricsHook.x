@@ -622,7 +622,7 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
 // also makes the service report availability for the currently playing local URI.
 %group SGLyricsServiceAvailability
 
-%hook _TtC25Lyrics_NPVElementsKitImpl26NPVElementsKitServiceImpl
+%hook _TtC25Lyrics_NPVElementsKitImpl25NPVElementsKitServiceImpl
 - (BOOL)hasLyrics {
     NSString *track = SGKaraokePlayingTrack();
     if (SGLyricsEnabled() && SGLRCHasAssignedLyrics(track)) return YES;
@@ -658,7 +658,7 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
     sg_allTracks = SGFlag(SGKeyLyricsAllTracks, NO);
     %init(SGLyricsReplies);
     %init(SGLyricsTrackMetadata);
-    Class lyricsService = objc_getClass("_TtC25Lyrics_NPVElementsKitImpl26NPVElementsKitServiceImpl");
+    Class lyricsService = objc_getClass("_TtC25Lyrics_NPVElementsKitImpl25NPVElementsKitServiceImpl");
     // The Swift service may inherit its Objective-C getter. Checking only its own method list skips
     // that valid selector and silently leaves Spotify's availability state unchanged.
     if (lyricsService && class_getInstanceMethod(lyricsService, @selector(hasLyrics))) {
