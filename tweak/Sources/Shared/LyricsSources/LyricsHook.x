@@ -5,6 +5,7 @@
 #import "LyricsSources.h"
 #import "Shared/Lyrics/Protobuf.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "LRCFiles.h"
 #import "Headers/SPTPlayer.h"
 #import <os/lock.h>
 
@@ -615,6 +616,21 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
 }
 %end
 
+// Spotify 9.1.74's native lyrics control reads this service's hasLyrics state. Updating track
+// metadata alone is too late for the already-built now-playing control, so an assigned local LRC
+// also makes the service report availability for the currently playing local URI.
+%group SGLyricsServiceAvailability
+
+%hook _TtC25Lyrics_NPVElementsKitImpl26NPVElementsKitServiceImpl
+- (BOOL)hasLyrics {
+    NSString *track = SGKaraokePlayingTrack();
+    if (SGLyricsEnabled() && SGLRCHasAssignedLyrics(track)) return YES;
+    return %orig;
+}
+%end
+
+%end
+
 %end
 
 %group SGLyricsEveryTrack
@@ -643,6 +659,13 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
     sg_allTracks = SGFlag(SGKeyLyricsAllTracks, NO);
     %init(SGLyricsReplies);
     %init(SGLyricsTrackMetadata);
+    Class lyricsService = objc_getClass("_TtC25Lyrics_NPVElementsKitImpl26NPVElementsKitServiceImpl");
+    if (lyricsService && ownMethod(lyricsService, @selector(hasLyrics))) {
+        %init(SGLyricsServiceAvailability);
+        SGLog(@"lyrics: assigned local LRC enables NPV hasLyrics service");
+    } else {
+        SGLog(@"lyrics: NPV hasLyrics service selector was not present, metadata fallback remains active");
+    }
     BOOL everyTrack = sg_allTracks;
     if (everyTrack) {
         // The generator gives a class that only inherits the method an override of its own, which would

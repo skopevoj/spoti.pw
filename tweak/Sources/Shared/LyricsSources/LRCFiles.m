@@ -77,7 +77,17 @@ void SGLRCAssignToTrack(NSString *name, NSString *trackID) {
     [order insertObject:@"importedlrc" atIndex:0];
     SGLyricsSetOrder(order);
     SGLyricsInvalidateCache();
-    SGLyricsPrefetch(trackID);
+    // Keep the parsed lines in the karaoke cache too. A prefetch fills the provider cache, but the
+    // player glyph reads KaraokeSource's cache directly before it decides whether it is tappable.
+    SGKaraokeRequestLyrics(trackID);
+}
+
+BOOL SGLRCHasAssignedLyrics(NSString *trackID) {
+    if (!SGKaraokeTrackKeyIsLocal(trackID)) return NO;
+    NSString *name = [NSUserDefaults.standardUserDefaults dictionaryForKey:kAssignedLRCFiles][trackID];
+    if (![name isKindOfClass:NSString.class] || ![name.pathExtension.lowercaseString isEqualToString:@"lrc"] ||
+        ![name.lastPathComponent isEqualToString:name]) return NO;
+    return [NSFileManager.defaultManager fileExistsAtPath:[libraryPath() stringByAppendingPathComponent:name]];
 }
 
 static NSString *fold(NSString *text) {

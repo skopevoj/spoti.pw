@@ -189,7 +189,7 @@ void SGKaraokeAskSpotifyForTiming(NSString *trackID) {
 
 void SGKaraokeRequestLyrics(NSString *trackID) {
     if (!trackID || sg_lyrics[trackID] || [sg_requested containsObject:trackID]) return;
-    if (!sg_ownSources) {
+    if (!SGLyricsEnabled()) {
         requestFromSpotify(trackID);
         return;
     }
