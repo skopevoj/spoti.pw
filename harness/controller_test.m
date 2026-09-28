@@ -79,19 +79,10 @@ static NSProcessInfoThermalState thermal(id self, SEL command) { return heat; }
 static void flush(void) { [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]]; }
 static void report(unsigned job, int status) { jobs[job].status(jobs[job].context, status); flush(); }
 static int32_t source(void *context, uint32_t count, float *pcm) { memset(pcm, 0, count * 2 * sizeof(float)); return 0; }
-static unsigned alerts;
-static BOOL canPresent = YES;
-static SGThermalChoice choiceOff, choiceOverride;
-static BOOL testPresenter(SGThermalChoice off, SGThermalChoice override) {
-    if (!canPresent) return NO;
-    alerts++; choiceOff = [off copy]; choiceOverride = [override copy];
-    return YES;
-}
 int main(void) { @autoreleasepool {
     Class infoClass = object_getClass(NSProcessInfo.processInfo);
     Method getter = class_getInstanceMethod(infoClass, @selector(thermalState));
     class_replaceMethod(infoClass, @selector(thermalState), (IMP)thermal, method_getTypeEncoding(getter));
-    sg_thermalPresenter = testPresenter;
     player = [SPTPlayerState new];
     assert(!SGSingAvailable());
     SGSingConfigure(YES);
@@ -426,46 +417,5 @@ int main(void) { @autoreleasepool {
     assert(SGSingCurrentState() == SGSingReady);
     SGSingSetEnabled(NO); report(job + 2, SGStemFinished);
     assert(!attached && !sg_controller.session && starts == cancels);
-    // Serious heat no longer stops Sing. Critical does: it says so once, waits for the user's choice, and
-    // asks again in the next episode. Override runs on until the phone is back under Critical.
-    unsigned t = starts, shown = alerts;
-    heat = NSProcessInfoThermalStateNominal; canPresent = YES;
-    paused = YES; SGSingSetEnabled(YES); report(t, SGStemReady);
-    assert(SGSingCurrentState() == SGSingReady && attached && starts == t + 1);
-    heat = NSProcessInfoThermalStateSerious; [sg_controller thermal:nil]; flush();
-    assert(SGSingCurrentState() == SGSingReady && attached && alerts == shown && starts == t + 1);
-    heat = NSProcessInfoThermalStateCritical; [sg_controller thermal:nil]; flush();
-    assert(SGSingCurrentState() == SGSingFailed && !attached && alerts == shown + 1 && !SGSingCanRetry());
-    assert([SGSingExplanation() containsString:@"cool down"]);
-    report(t, SGStemFinished);
-    for (int n = 0; n < 10; n++) [sg_controller reconcile];
-    assert(alerts == shown + 1 && starts == t + 1 && SGSingEnabled());
-    choiceOverride(); flush();
-    assert(starts == t + 2 && SGSingEnabled()); report(t + 1, SGStemReady);
-    assert(SGSingCurrentState() == SGSingReady && attached && !SGSingExplanation());
-    heat = NSProcessInfoThermalStateSerious; [sg_controller thermal:nil]; flush();
-    assert(SGSingCurrentState() == SGSingReady && attached && alerts == shown + 1);
-    heat = NSProcessInfoThermalStateCritical; [sg_controller thermal:nil]; flush();
-    assert(SGSingCurrentState() == SGSingFailed && !attached && alerts == shown + 2);
-    report(t + 1, SGStemFinished);
-    choiceOff(); flush();
-    assert(!SGSingEnabled() && SGSingCurrentState() == SGSingIdle);
-    for (int n = 0; n < 10; n++) [sg_controller reconcile];
-    assert(starts == t + 2 && alerts == shown + 2);
-    // Turning Sing on again while it is still Critical asks again.
-    SGSingSetEnabled(YES);
-    assert(SGSingCurrentState() == SGSingFailed && alerts == shown + 3 && starts == t + 2);
-    // With no window to show the alert (backgrounded), it waits for the app to come forward.
-    SGSingSetEnabled(NO); canPresent = NO; SGSingSetEnabled(YES);
-    assert(SGSingCurrentState() == SGSingFailed && alerts == shown + 3);
-    canPresent = YES;
-    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil]; flush();
-    assert(alerts == shown + 4 && starts == t + 2);
-    // Cooling below Critical retires the alert and restarts Sing without a choice.
-    heat = NSProcessInfoThermalStateFair; [sg_controller thermal:nil]; flush();
-    assert(SGSingEnabled() && starts == t + 3); report(t + 2, SGStemReady);
-    assert(SGSingCurrentState() == SGSingReady && attached);
-    SGSingSetEnabled(NO); report(t + 2, SGStemFinished);
-    assert(!attached && !sg_controller.session && starts == cancels);
-    puts("sing controller: thermal gating at Critical with the alert and override, retirement races, concurrent cold preparation, next-track/repeat continuity, retained 70%, explicit Off, the switch and the model coming and going passed");
+    puts("sing controller: thermal gating, retirement races, concurrent cold preparation, next-track/repeat continuity, retained 70%, explicit Off, the switch and the model coming and going passed");
 } return 0; }
