@@ -8,6 +8,6 @@ UIViewController *SGLyricsSourcesPage(void) {
     }
     return SGOrderPage(@"Lyrics sources", items, ^NSArray<NSString *> *{ return SGLyricsOrder(); },
                        ^(NSArray<NSString *> *order) { SGLyricsSetOrder(order); },
-                       @"Asked top to bottom until one has word timing. Sources get only the track, never "
+                       @"Asked top to bottom until one has synced lyrics. Sources get only the track, never "
                         "your account.");
 }

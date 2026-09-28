@@ -21,7 +21,7 @@ static NSDictionary<NSString *, NSString *> *headers(void) {
 // [00:34.30] Look — the timestamp in minutes, seconds and hundredths, or thousandths where a line
 // carries three digits. A line may be stamped more than once when it is sung more than once, and
 // the tags LRC opens with ([ar:…], [length:…]) are not timestamps, so they fall out on their own.
-static NSArray<SGKaraokeLine *> *linesFromLRC(NSString *lrc) {
+NSArray<SGKaraokeLine *> *SGLyricsLinesFromLRC(NSString *lrc) {
     static NSRegularExpression *stamp;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -70,7 +70,7 @@ static SGLyricsResult *resultFrom(NSDictionary *record) {
     result.instrumental = [record[@"instrumental"] boolValue];
     if (result.instrumental) return result;
     id synced = record[@"syncedLyrics"], plain = record[@"plainLyrics"];
-    NSArray<SGKaraokeLine *> *lines = [synced isKindOfClass:NSString.class] ? linesFromLRC(synced) : nil;
+    NSArray<SGKaraokeLine *> *lines = [synced isKindOfClass:NSString.class] ? SGLyricsLinesFromLRC(synced) : nil;
     if (lines) {
         result.synced = YES;
         result.karaokeLines = lines;

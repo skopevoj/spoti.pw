@@ -84,8 +84,11 @@ Shared:
                   BiniLyrics.m and Unison.m, read by SGTTML.m, which carries a second voice and the
                   backing vocals, and in its head Apple's translation and its pronunciation of a line, the pronunciation
                   timed word by word (the translation taken in the Lyrics page's language); Musixmatch.m, matched by
-                  Spotify's track id with an anonymous token, word timed where it has richsync; NetEase.m, word timing from yrc for what the others only line time; LrcLib.m, open and
-                  keyless and timed by the line, the floor under the rest. color-lyrics is answered with whichever won
+                  Spotify's track id with an anonymous token, word timed where it has richsync and with available
+                  crowd translations matched to their original lines; NetEase.m, word timing from yrc for what the others
+                  only line time; LrcLib.m, open and keyless and timed by the line; QQMusic.m, line-timed LRC from QQ's
+                  musicu API; KuGou.m, word-timed KRC decoded in the tweak. QQ Music and KuGou are added at the end
+                  of existing orders as optional fallbacks. color-lyrics is answered with whichever won
                   (LyricsHook.x): Spotify's own 200 gets our lines swapped in; a track Spotify's metadata says has none has
                   its request sent to a donor track that does, so the reply is a real 200 (a 404 answered as a 200 in the
                   delegate alone never showed the card on 9.1.78); a 404 for a track not seen yet is held until the chain

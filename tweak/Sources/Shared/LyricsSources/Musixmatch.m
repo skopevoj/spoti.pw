@@ -257,6 +257,55 @@ static SGLyricsResult *withTrack(SGLyricsResult *lyrics, id track) {
     return result;
 }
 
+// Musixmatch attaches translations to the original text, not to a timestamp. Only an exact
+// normalized match is safe: assigning one by row number can put the wrong words under a repeat.
+static NSString *comparable(NSString *text) {
+    NSString *value = [text isKindOfClass:NSString.class] ? text : @"";
+    return [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].lowercaseString;
+}
+
+static void applyTranslations(SGLyricsResult *lyrics, id list) {
+    if (![list isKindOfClass:NSArray.class] || !lyrics.karaokeLines.count) return;
+    NSMutableDictionary<NSString *, NSString *> *byLine = [NSMutableDictionary dictionary];
+    for (NSDictionary *item in list) {
+        id value = [item isKindOfClass:NSDictionary.class] ? item[@"translation"] : nil;
+        NSDictionary *translation = [value isKindOfClass:NSDictionary.class] ? value : nil;
+        NSString *original = comparable(translation[@"matched_line"]);
+        NSString *rendered = [translation[@"description"] isKindOfClass:NSString.class] ? translation[@"description"] : nil;
+        if (original.length && rendered.length) byLine[original] = rendered;
+    }
+    NSMutableDictionary<NSNumber *, NSString *> *originalAt = [NSMutableDictionary dictionary];
+    for (NSUInteger i = 0; i < MIN(lyrics.starts.count, lyrics.texts.count); i++) {
+        if ([lyrics.starts[i] isKindOfClass:NSNumber.class] && [lyrics.texts[i] isKindOfClass:NSString.class])
+            originalAt[lyrics.starts[i]] = lyrics.texts[i];
+    }
+    for (SGKaraokeLine *line in lyrics.karaokeLines) {
+        NSString *original = SGKaraokeLineText(line);
+        NSString *rendered = byLine[comparable(original)] ?: byLine[comparable(originalAt[@(line.start)])];
+        if (rendered.length && ![comparable(rendered) isEqualToString:comparable(original)])
+            line.translation = rendered;
+    }
+}
+
+static void withTranslations(SGLyricsResult *lyrics, id track, NSString *token, void (^done)(SGLyricsResult *)) {
+    id trackID = [track isKindOfClass:NSDictionary.class] ? track[@"track_id"] : nil;
+    if (!lyrics.karaokeLines.count || !([trackID isKindOfClass:NSString.class] || [trackID isKindOfClass:NSNumber.class])) {
+        done(lyrics);
+        return;
+    }
+    NSString *language = SGLyricsTranslationLanguage() ?: NSLocale.preferredLanguages.firstObject ?: @"en";
+    language = [language componentsSeparatedByString:@"-"].firstObject.lowercaseString;
+    if (!language.length) language = @"en";
+    call(@"crowd.track.translations.get", @{
+        @"usertoken": token, @"track_id": [trackID description], @"selected_language": language,
+        @"translation_fields_set": @"minimal", @"comment_format": @"text", @"part": @"user"
+    }, ^(NSDictionary *message) {
+        if ([dig(message, @"header/status_code") integerValue] == 200)
+            applyTranslations(lyrics, dig(message, @"body/translations_list"));
+        done(lyrics);
+    });
+}
+
 static void ask(NSString *trackID, BOOL renewToken) {
     withToken(^(NSString *token) {
         if (!token) {
@@ -288,7 +337,12 @@ static void ask(NSString *trackID, BOOL renewToken) {
                   : lyrics.wordTimed ? [NSString stringWithFormat:@"%lu word timed lines", (unsigned long)lyrics.karaokeLines.count]
                   : lyrics.synced ? [NSString stringWithFormat:@"%lu line timed lines", (unsigned long)lyrics.karaokeLines.count]
                   : [NSString stringWithFormat:@"%lu untimed lines", (unsigned long)lyrics.texts.count]);
-            finish(trackID, withTrack(lyrics, dig(calls, @"matcher.track.get/message/body/track")), YES);
+            id track = dig(calls, @"matcher.track.get/message/body/track");
+            SGLyricsResult *named = withTrack(lyrics, track);
+            if (lyrics) withTranslations(named, track, token, ^(SGLyricsResult *translated) {
+                finish(trackID, translated, YES);
+            });
+            else finish(trackID, named, YES);
         });
     });
 }

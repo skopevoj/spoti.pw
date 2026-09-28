@@ -111,6 +111,8 @@ BOOL SGLyricsReplyFailed(NSURLResponse *response, NSError *error);
 // line's translation and pronunciation added where the head has them; nil when the document holds no
 // line the page could show.
 NSArray<SGKaraokeLine *> *SGTTMLLines(NSString *xml);
+// LRC line timestamps, shared by LRCLIB and QQ Music.
+NSArray<SGKaraokeLine *> *SGLyricsLinesFromLRC(NSString *lrc);
 
 // The languages a translation can be asked for in, as language tags ("en", "es"), the first one ""
 // for whatever the source has; SGKeyLyricsTranslationLanguage indexes it, so it only ever grows at
@@ -126,6 +128,8 @@ extern SGLyricsAsk SGBiniLyricsAsk;
 extern SGLyricsAsk SGMusixmatchAsk;
 extern SGLyricsAsk SGUnisonAsk;
 extern SGLyricsAsk SGNetEaseAsk;
+extern SGLyricsAsk SGQQMusicAsk;
+extern SGLyricsAsk SGKuGouAsk;
 extern SGLyricsAsk SGLrcLibAsk;
 
 UIViewController *SGLyricsSourcesPage(void);   // the ordered list on the Lyrics page
