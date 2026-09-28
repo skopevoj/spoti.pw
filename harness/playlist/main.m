@@ -3,6 +3,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import "../download-mock.h"
+#import "../faces-mock.h"
 
 #pragma mark - Spotify's classes, by name
 
@@ -76,9 +77,6 @@
 
 @interface _TtC44PlaylistCuration_ExpandableTextElementKit18ExpandableTextView : UITextView @end
 @implementation _TtC44PlaylistCuration_ExpandableTextElementKit18ExpandableTextView @end
-
-@interface _TtCE13Encore_FaceKitO16EncoreFoundation6Encore12FacepileView : UIView @end
-@implementation _TtCE13Encore_FaceKitO16EncoreFoundation6Encore12FacepileView @end
 
 @interface _TtC28EncoreConsumerMobile_BaseKit14PlayButtonView : UIView @end
 @implementation _TtC28EncoreConsumerMobile_BaseKit14PlayButtonView @end
@@ -486,6 +484,7 @@ static void buildLikedSongs(UIViewController *page, CGFloat W) {
     if ([NSProcessInfo.processInfo.arguments containsObject:@"liked"]) {
         buildLikedSongs(page, W);
         [self.window makeKeyAndVisible];
+        at(3.4, ^{ NSLog(@"[harness] liked: faces: %@", facesReport(page.view)); });
         return YES;
     }
 
@@ -574,16 +573,25 @@ static void buildLikedSongs(UIViewController *page, CGFloat W) {
     description.textContainerInset = UIEdgeInsetsZero;
     description.textContainer.lineFragmentPadding = 0;
 
+    // The creator's button with its facepile (trees/clean/playlist/01.txt:690-706); one's own playlist has a
+    // glyph disc before the face (own-playlist/01.txt:757). `facelate` on the launch line: the picture lands at
+    // 3 s, over a header already drawn; `noface`: a creator with no picture, only Spotify's initial.
+    NSArray<NSString *> *args = NSProcessInfo.processInfo.arguments;
+    BOOL facelate = [args containsObject:@"facelate"], noface = [args containsObject:@"noface"];
+    BOOL own = ![args containsObject:@"other"] && !mix;
+    CGFloat creatorWidth = own ? 130.07 : 109.67;
     UIView *creatorRow = box(column, UIView.class, CGRectMake(0, 69, columnWidth, 34), nil);
-    UIButton *creator = (UIButton *)box(creatorRow, UIButton.class, CGRectMake(0, 0, 109.67, 34),
+    UIButton *creator = (UIButton *)box(creatorRow, UIButton.class, CGRectMake(0, 0, creatorWidth, 34),
                                         @"Components.PlaylistHeader.collaboratorsButton");
     creator.accessibilityLabel = @"Playlist created by The Weeknd";
     [creator addTarget:page action:@selector(sgr_creatorFired) forControlEvents:UIControlEventTouchUpInside];
-    UIView *face = box(creator, _TtCE13Encore_FaceKitO16EncoreFoundation6Encore12FacepileView.class, CGRectMake(0, 5, 24, 24), nil);
-    face.backgroundColor = [UIColor colorWithWhite:0.8 alpha:1];
-    face.layer.cornerRadius = 12;
-    label(creator, CGRectMake(32, 9, 77, 16), @"The Weeknd", 13, UIColor.whiteColor, @"Encore.Label");
-    box(creatorRow, UIView.class, CGRectMake(109.67, 0, columnWidth - 109.67, 34), nil);
+    UIView *creatorStack = box(box(creator, UIView.class, creator.bounds, nil), _TtC19LegacyUI_ECMCoreKit19AutoLayoutStackView.class,
+                               CGRectMake(0, 0, creatorWidth, 32), nil);
+    UIView *creatorLine = box(creatorStack, UIView.class, CGRectMake(0, 4, creatorWidth, 24), nil);
+    UIImageView *face = mockFacepile(creatorLine, CGPointZero, @[@"T"], own).firstObject;
+    if (!facelate && !noface) face.image = mockFace(0.58);
+    label(creatorLine, CGRectMake(own ? 52.4 : 32, 4.33, 77, 15.33), @"The Weeknd", 11, UIColor.whiteColor, @"Encore.Label");
+    box(creatorRow, UIView.class, CGRectMake(creatorWidth, 0, columnWidth - creatorWidth, 34), nil);
 
     UIView *lengthRow = box(column, UIView.class, CGRectMake(0, 107, columnWidth, 15.33), nil);
     UIView *length = box(lengthRow, UIView.class, CGRectMake(0, 0, 126.33, 15.33), nil);
@@ -706,6 +714,33 @@ static void buildLikedSongs(UIViewController *page, CGFloat W) {
         downloadScript();
         return YES;
     }
+    // The creator's face on its own, the header at rest and nothing else scripted over it (issue #149).
+    if (facelate || noface) {
+        at(1, ^{ setState(@"rest"); });
+        if (facelate) {
+            at(3, ^{
+                face.image = mockFace(0.58);
+                NSLog(@"[harness] faces: the creator's picture landed");
+            });
+        }
+        for (NSNumber *when in @[@2.5, @4]) {
+            at(when.doubleValue, ^{ NSLog(@"[harness] faces at %@s: %@", when, facesReport(page.view)); });
+        }
+        at(4.2, ^{
+            NSMutableArray<UIView *> *walk = [NSMutableArray arrayWithObject:page.view];
+            while (walk.count) {
+                UIView *v = walk.lastObject;
+                [walk removeLastObject];
+                if ([NSStringFromClass(v.class) isEqualToString:@"SGRHeaderInfo"]) {
+                    [v performSelector:NSSelectorFromString(@"sgr_creatorTapped")];
+                    break;
+                }
+                [walk addObjectsFromArray:v.subviews];
+            }
+        });
+        return YES;
+    }
+    at(3.4, ^{ NSLog(@"[harness] faces: %@", facesReport(page.view)); });
     for (NSUInteger i = 0; i < 3; i++) {
         NSString *state = @[@"rest", @"collapsed", @"pulled"][i];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((4 + i * 4) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{

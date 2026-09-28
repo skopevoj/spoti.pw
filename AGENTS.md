@@ -20,11 +20,11 @@ sources, gestures, blocked artists, flags, Vibrations, Speed and pitch, and the 
 last three were the redesign's until they moved to `Shared/`, so their keys lost the `.redesign.` and
 `Core/SGPrefs.h`'s `SGMigrateKey` carries the old ones over at launch.
 
-**The redesign needs iOS 26.** It is Liquid Glass, which the system draws from 26 on and no older OS
-can be given, so `SGRedesignAvailable()` (`Core/SGUIMode.h`) holds it there: below 26 both
-`SGRedesignedUI()` and `SGRedesignedUIStored()` answer NO whatever is stored, the switch becomes a
-"Needs iOS 26" row and the tour greys its card out. The native look's floor is iOS 16.1, which is
-Spotify 9.1.78's own.
+**The redesign is tested on iOS 26 only.** It is Liquid Glass, which the system draws from 26 on;
+below that `SGRedesignTested()` (`Core/SGUIMode.h`) answers NO and the switch and the tour's card warn
+before it is picked (`SGRedesignUntestedWarning()`). The redesign runs there only when
+`SGKeyRedesignUntested` was set along with the switch, so one stored before the warning is dropped at
+launch. The native look's floor is iOS 16.1, which is Spotify 9.1.78's own.
 
 ## Where code goes (`tweak/Sources/`)
 
@@ -61,10 +61,25 @@ Rules:
 - Device log: `make log` (`[spotifyglass]` lines).
 - Releases: Release Please (`.github/workflows/release.yml`). Commit as `feat:` / `fix:` (they bump
   `version.txt` and fill `CHANGELOG.md`; `chore:`, `refactor:` and `docs:` stay out). Merging its
-  release PR tags `vX.Y.Z` and attaches the `.deb`. Never edit `version.txt` by hand.
+  release PR tags `vX.Y.Z` and attaches the `.deb`. Never edit `version.txt` by hand. `beta` releases
+  `vX.Y.Z-beta.N` pre-releases the same way (`release-please-config.beta.json`); only beta builds are
+  offered them. When `beta` merges into `main`, keep `main`'s `version.txt`.
+- Moving to a new Spotify version: change `SGSupportedSpotifyVersion` in `Settings/SGPageStyle.m`. Any
+  other version gets the "isn't supported" alert and red row (`App/About/Compatibility.m`), so a bump
+  without it warns everyone. Update the README (badge and text), `.github/ISSUE_TEMPLATE/bug_report.yml`,
+  the iOS floor above and the web's `content/site.ts` with it. `Shared/Audio/SGAudioSourceQueue.m` pins
+  the 9.1.78 binary by UUID and offsets and stands down on any other until they are read off again.
 - Known traps: anything pushed onto Spotify's nav stack must conform to `SPTPageController`
   (`Settings/SGPage.m`). Setting `hidden` on views inside Spotify's `OverflowStackView` or its Encore
   stacks crashes, so use alpha. A `CADisplayLink` capped at 60 Hz drags the player's 120 Hz
   transitions down with it. Glass takes the appearance it inherits, and outside Spotify's navigation
   stacks (the tab bar, the now playing bar, the player) that is the system's: set every pane of the
   mod's to `overrideUserInterfaceStyle = UIUserInterfaceStyleDark`, or it goes light in light mode.
+
+## Ending a task
+
+The owner runs about ten sessions at once, each on a different task, and reads each final message with
+no context. End every task with what they have to do next to verify it, as the last thing in the
+message: one sentence, or a short list when there are several steps. Make it stand on its own: the
+command to run (`make install`, a restart), which look and iOS version, which screen to open, and what
+should look or behave differently. When nothing needs checking on their side, say so in one line.

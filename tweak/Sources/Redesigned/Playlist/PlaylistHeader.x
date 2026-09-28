@@ -178,6 +178,7 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
     _picture.image = image;
     // The page's field takes its colour from the same picture.
     SGRPlaylistSetArtwork(self, image);
+    SGRRevealMark(SGRPlaylistPageOf(self), SGRRevealPicture);
     static BOOL logged;
     if (late && !logged) {
         logged = YES;
@@ -332,14 +333,18 @@ static void showPlaylist(SGRHeaderInfo *info, UIView *block, UIView *root, id mo
 
     // Whoever made the playlist, opened from the line that names them. Spotify's own button carries the
     // facepile and the name and takes the tap to a profile -- or, for a playlist several people are on, to
-    // the picker it opens itself (issue #56).
-    [info showCreatorLink:SGRFindByIdentifier(block, @"Components.PlaylistHeader.collaboratorsButton", &kCreatorKey)];
+    // the picker it opens itself (issue #56). Liked Songs has no such button, so no faces either.
+    UIView *creator = SGRFindByIdentifier(block, @"Components.PlaylistHeader.collaboratorsButton", &kCreatorKey);
+    [info showCreatorLink:creator];
+    [info showFacesIn:creator];
 
     // More, pinned over the page rather than left in the block, which is concealed and scrolls away; and
     // Spotify's own Sort, from the find-on-page toolbar this header conceals, for the ⋯ sheet to fire.
     UIView *page = SGRPlaylistPageOf(root);
     SGRPinnedMore(page, &kPinnedMoreKey, SGRFindByIdentifier(block, @"Components.UI.ContextMenuButton*", &kMoreKey));
     SGRPlaylistTakeSort(page, SGRFindByIdentifier(root, @"Components.Header.UI.Toolbar.Button", &kSortKey));
+    // The name and Play are what the header waits for; the row's other buttons fade in on their own when late.
+    if (title && play) SGRRevealMark(page, SGRRevealHeader);
 
     static BOOL logged;
     if (!logged && info.window && (title || play)) {

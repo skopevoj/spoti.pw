@@ -1068,8 +1068,10 @@ typedef struct {
     BOOL _showing;
     CAGradientLayer *_fade;
     UILabel *_credit;
+    SGLyricsCredit *_credited;   // what the lines are credited to, nil while the page asks every frame
     CGFloat _fontSize, _margin, _lineGap, _blurPerLine, _maxBlur;
-    BOOL _crediting;   // the switch is read once: the page asks for the source on every frame until it has one
+    BOOL _crediting;   // Show source, read once
+    BOOL _asksCredit;  // with a source of the mod's on, a credit its terms require shows either way
     double _clock;
     NSInteger _reported;
     CFTimeInterval _clockTime;
@@ -1077,6 +1079,9 @@ typedef struct {
     BOOL _plain;             // the song has no timing at all: every line lit, nothing follows the clock
     NSDictionary<NSNumber *, NSArray<SGLyricsMeaning *> *> *_meanings;   // Genius's, by line
     NSUInteger _meaningsAsked;
+    // The room the lines have (lineInsets), and the fade's edges on their way to it from _bandFrom.
+    UIEdgeInsets _band, _bandFrom;
+    CFTimeInterval _bandSince, _bandFor;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -1108,7 +1113,9 @@ typedef struct {
     _credit.font = [UIFont systemFontOfSize:kCreditSize weight:UIFontWeightSemibold];
     _credit.textColor = [UIColor colorWithWhite:1 alpha:kCreditAlpha];
     _credit.hidden = YES;
+    _credit.numberOfLines = 2;
     _crediting = SGFlag(SGKeyLyricsCredit, NO);
+    _asksCredit = _crediting || SGLyricsActive();
     _sweepsEstimates = SGFlag(SGKeyLyricsSimulateWords, NO);
     [self addSubview:_credit];
     [self addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapped:)]];
@@ -1130,7 +1137,12 @@ typedef struct {
 }
 
 - (void)tapped:(UITapGestureRecognizer *)tap {
+    if (self.takesTap && !self.takesTap()) return;
     if (_extras && !_extras.hidden && CGRectContainsPoint(_extras.frame, [tap locationInView:self])) return;
+    if (_credited.links.count && !_credit.hidden && CGRectContainsPoint(CGRectInset(_credit.frame, -8, -8), [tap locationInView:self])) {
+        SGLyricsOpenCredit(_credited);
+        return;
+    }
     CGPoint point = [tap locationInView:_scroll];
     for (SGRKaraokeLineView *view in _shown.allValues) {
         CGRect target = view.bubbleTarget;
@@ -1259,9 +1271,14 @@ typedef struct {
 // it is put back over the visible part on every frame, where the presentation layer says the
 // content is: that holds through a drag and through the animated scroll home alike. Left where
 // layout put it, it covered the first screenful of lines only, and a scroll past them showed nothing.
+//
+// It covers the lines' room alone, and while that grows or shrinks it is moved on every frame too, so
+// its edges travel with the room instead of jumping to where it ends up.
 - (void)alignFade {
     CALayer *shown = (CALayer *)_scroll.layer.presentationLayer ?: _scroll.layer;
-    CGRect frame = CGRectMake(0, shown.bounds.origin.y, self.bounds.size.width, self.bounds.size.height);
+    UIEdgeInsets band = [self shownBand];
+    CGRect frame = CGRectMake(0, shown.bounds.origin.y + band.top, self.bounds.size.width,
+                              MAX(0, self.bounds.size.height - band.top - band.bottom));
     if (CGRectEqualToRect(frame, _fade.frame)) return;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
@@ -1273,14 +1290,57 @@ typedef struct {
     [super layoutSubviews];
     [self alignFade];
     _scroll.contentSize = self.bounds.size;
-    [_credit sizeToFit];
-    _credit.frame = CGRectMake(_margin, self.bounds.size.height - _credit.bounds.size.height - kCreditBottom,
+    BOOL extras = _extras && !_extras.hidden;
+    CGFloat room = MAX(0, self.bounds.size.width - 2 * _margin - (extras ? kExtrasSide + kExtrasCreditGap : 0));
+    CGSize fits = [_credit sizeThatFits:CGSizeMake(room, CGFLOAT_MAX)];
+    _credit.bounds = CGRectMake(0, 0, MIN(fits.width, room), fits.height);
+    CGFloat bottom = self.bounds.size.height - _band.bottom;
+    _credit.frame = CGRectMake(_margin, bottom - _credit.bounds.size.height - kCreditBottom,
                                _credit.bounds.size.width, _credit.bounds.size.height);
-    if (_extras && !_extras.hidden) {
-        _extras.frame = CGRectMake(_margin, self.bounds.size.height - kExtrasSide - kExtrasBottom, kExtrasSide, kExtrasSide);
+    if (extras) {
+        _extras.frame = CGRectMake(_margin, bottom - kExtrasSide - kExtrasBottom, kExtrasSide, kExtrasSide);
         _credit.center = CGPointMake(CGRectGetMaxX(_extras.frame) + kExtrasCreditGap + _credit.bounds.size.width / 2, _extras.center.y);
     }
     if (_lines && self.bounds.size.width != _builtWidth) [self rebuild];
+}
+
+#pragma mark - the lines' room
+
+- (UIEdgeInsets)lineInsets {
+    return _band;
+}
+
+// The lines spring to the anchor of the new room the way they move on to a new line, the ones further
+// down a beat later, while the fade's edges and the credit travel over `duration`.
+- (void)setLineInsets:(UIEdgeInsets)insets duration:(NSTimeInterval)duration {
+    if (UIEdgeInsetsEqualToEdgeInsets(insets, _band)) return;
+    BOOL animated = duration > 0 && self.window && !SGRReduceMotion();
+    _bandFrom = animated ? [self shownBand] : insets;
+    _bandSince = CACurrentMediaTime();
+    _bandFor = animated ? duration : 0;
+    _band = insets;
+    _sightArrangement = NSUIntegerMax;   // which lines are in sight is worked out again for the new room
+    [self placeLinesAnimated:animated];
+    [self setNeedsLayout];
+    if (animated) {
+        [UIView animateWithDuration:duration delay:0
+                            options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
+                         animations:^{ [self layoutIfNeeded]; } completion:nil];
+    }
+    [self alignFade];
+}
+
+// The room as the fade draws it at this moment, eased from where it was to where it is going.
+- (UIEdgeInsets)shownBand {
+    double p = _bandFor > 0 ? smoothstep((CACurrentMediaTime() - _bandSince) / _bandFor) : 1;
+    return UIEdgeInsetsMake(_bandFrom.top + (_band.top - _bandFrom.top) * p, 0,
+                            _bandFrom.bottom + (_band.bottom - _bandFrom.bottom) * p, 0);
+}
+
+// Only the room takes touches: the rest of the view can lie over its host's controls.
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if (!CGRectContainsPoint(UIEdgeInsetsInsetRect(self.bounds, _band), point)) return nil;
+    return [super hitTest:point withEvent:event];
 }
 
 - (void)dropLineViews {
@@ -1446,7 +1506,8 @@ typedef struct {
 // Where a line starts on the page, for the stack as it is arranged now: an open break holds the room
 // of one row at the anchor, and the lines from the one after it on are moved down by it.
 - (CGFloat)topOfLine:(NSInteger)index {
-    CGFloat top = self.bounds.size.height * kAnchor + _tops[index].doubleValue - _focusTop;
+    CGFloat room = self.bounds.size.height - _band.top - _band.bottom;
+    CGFloat top = _band.top + room * kAnchor + _tops[index].doubleValue - _focusTop;
     return _openBreak >= 0 && index >= _openBreak ? top + [self breakRoom] : top;
 }
 
@@ -1498,8 +1559,9 @@ typedef struct {
     _sightOffset = offset;
     _sightFocus = _focusTop;
     _sightArrangement = _arrangement;
-    CGFloat height = self.bounds.size.height;
-    CGFloat from = offset - kSightBehind * height, to = offset + (1 + kSightAhead) * height, slack = kSightSlack * height;
+    // Sight is measured from the lines' room, not the whole view, which can be much taller.
+    CGFloat height = MAX(0, self.bounds.size.height - _band.top - _band.bottom), seen = offset + _band.top;
+    CGFloat from = seen - kSightBehind * height, to = seen + (1 + kSightAhead) * height, slack = kSightSlack * height;
     NSMutableArray<NSNumber *> *gone = [NSMutableArray array];
     for (NSNumber *key in _shown) {
         NSInteger index = key.integerValue;
@@ -1521,7 +1583,7 @@ typedef struct {
     }
     // A few a frame, the nearest the middle of the visible part first, so a page scrolled by hand
     // fills in what is in view before what is not; the next frame picks up where this one left off.
-    CGFloat middle = offset + height / 2;
+    CGFloat middle = seen + height / 2;
     [wanted sortUsingComparator:^NSComparisonResult(NSNumber *a, NSNumber *b) {
         CGFloat da = fabs([self topOfLine:a.integerValue] - middle), db = fabs([self topOfLine:b.integerValue] - middle);
         return da < db ? NSOrderedAscending : da > db ? NSOrderedDescending : NSOrderedSame;
@@ -1600,8 +1662,9 @@ typedef struct {
     _dots.frame = CGRectMake(_margin, top, _builtWidth - 2 * _margin, _dots.bounds.size.height);
 }
 
-- (void)creditTo:(NSString *)source {
-    NSString *text = source.length && _crediting ? [NSString stringWithFormat:@"Lyrics from %@", source] : nil;
+- (void)creditTo:(SGLyricsCredit *)credit {
+    _credited = credit;
+    NSString *text = credit.text.length && (_crediting || credit.required) ? [NSString stringWithFormat:@"Lyrics from %@", credit.text] : nil;
     if (text == _credit.text || [text isEqualToString:_credit.text]) return;
     _credit.text = text;
     _credit.hidden = !_showing || !text.length;
@@ -1669,7 +1732,7 @@ typedef struct {
     }
     [self setShowing:_tops != nil];
     // The source is settled a moment after the lines are, so it is asked for until it answers.
-    if (_crediting && _lines && !_credit.text.length) [self creditTo:SGLyricsCreditFor(track)];
+    if (_asksCredit && _lines && !_credited) [self creditTo:SGLyricsCreditFor(track)];
     if (!_tops) return;
     [self alignFade];
     if (_plain) {

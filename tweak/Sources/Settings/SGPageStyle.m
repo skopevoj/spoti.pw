@@ -171,6 +171,43 @@ CGFloat SGSectionFooterHeight(UITableView *table, NSString *text) {
     return kFooterTop + footerTextHeight(table, text) + kFooterBottom;
 }
 
+static NSString *linkShown(NSString *url) {
+    NSURL *link = [NSURL URLWithString:url];
+    return link.host ?: url;
+}
+
+NSString *SGLinkedFooterText(NSString *text, NSString *url) {
+    return [NSString stringWithFormat:@"%@ %@", text, linkShown(url)];
+}
+
+@interface SGLinkFooter : UIView
+@property (nonatomic, copy) NSString *url;
+@end
+
+@implementation SGLinkFooter
+- (void)tapped {
+    SGOpenURL(self.url);
+}
+@end
+
+UIView *SGLinkedSectionFooter(UITableView *table, NSString *text, NSString *url) {
+    NSString *whole = SGLinkedFooterText(text, url);
+    UIView *plain = SGSectionFooter(table, whole);
+    UILabel *label = plain.subviews.firstObject;
+    NSMutableAttributedString *styled = [[NSMutableAttributedString alloc] initWithString:whole attributes:@{
+        NSFontAttributeName: SGSubtitleFont(), NSForegroundColorAttributeName: SGGrey()}];
+    [styled addAttribute:NSForegroundColorAttributeName value:SGGreen() range:NSMakeRange(whole.length - linkShown(url).length, linkShown(url).length)];
+    label.attributedText = styled;
+    SGLinkFooter *footer = [[SGLinkFooter alloc] initWithFrame:plain.frame];
+    footer.url = url;
+    [footer addSubview:label];
+    [footer addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:footer action:@selector(tapped)]];
+    footer.isAccessibilityElement = YES;
+    footer.accessibilityLabel = whole;
+    footer.accessibilityTraits = UIAccessibilityTraitLink;
+    return footer;
+}
+
 UITableViewCell *SGDequeueCell(UITableView *table, NSString *identifier) {
     return [table dequeueReusableCellWithIdentifier:identifier]
         ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:identifier];
@@ -211,6 +248,7 @@ UIViewController *SGTopController(void) {
 NSString *const SGSiteURL = @"https://spoti.pw";
 NSString *const SGRepoURL = @"https://github.com/skopevoj/spoti.pw";
 NSString *const SGDiscordURL = @"https://discord.gg/9e4GR8TKMj";
+NSString *const SGSupportedSpotifyVersion = @"9.1.78";
 
 void SGOpenURL(NSString *url) {
     NSURL *target = url ? [NSURL URLWithString:url] : nil;

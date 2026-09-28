@@ -16,7 +16,8 @@
 //               (a sublayerTransform does not move it), and faded in over the first part of the growth;
 //   the bar     Spotify's stand-in riding the sheet's top edge, gone by a quarter of the way;
 //   the cover   a copy flown from the card's artwork to the player's cover, moved within the sheet,
-//               the player's own cover and shadow hidden meanwhile.
+//               the player's own cover and shadow hidden meanwhile. Over a clip, where the player
+//               shows no cover, it fades out as it grows and in as it shrinks.
 // All of it is taken down in -destroyTransitioningContext, which Spotify calls from -animationEnded:.
 //
 // Skipped on a regular width (Spotify's iPad branch), with Reduce Motion on, or while the bar has no
@@ -35,6 +36,8 @@
 @end
 
 static const CGFloat kScreenRadiusFallback = 55;
+// Over a clip the flown cover fades out between these points of the growth.
+static const CGFloat kCoverFadeFrom = 0.05, kCoverFadeTo = 0.5;
 
 static CGFloat lerp(CGFloat a, CGFloat b, CGFloat t) {
     return a + (b - a) * t;
@@ -192,6 +195,10 @@ static CGFloat screenRadius(void) {
                 to = CGRectOffset(to, -sheet.origin.x, -sheet.origin.y);
                 self->_cover.frame = CGRectOffset(lerpRect(from, to, t), sheet.origin.x, sheet.origin.y);
                 self->_cover.layer.cornerRadius = lerp(from.size.width / 2, SGRRadiusArtwork * scale, t);
+                // By how much of the clip is drawn, so one fading in or out mid-flight is followed.
+                CGFloat clip = 0;
+                SGRPlayerAnimatedShowing(&clip, NULL);
+                self->_cover.alpha = 1 - clip * ramp(kCoverFadeFrom, kCoverFadeTo, t);
             }
         }
     }];

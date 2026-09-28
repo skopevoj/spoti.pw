@@ -1,8 +1,13 @@
 #import "Core/SGCore.h"
+#import "Core/SGSFSymbolCatalog.h"
 #import "Settings/SGPage.h"
 #import "Settings/SGPageStyle.h"
+#import "Redesigned/NowPlayingBar/NowPlayingBar.h"
 #import "Navbar.h"
 #import "Shared/Navigation/Links.h"
+#import "Headers/SPTEncoreIconView.h"
+#import <objc/message.h>
+#import <objc/runtime.h>
 
 // What "Add a tab" offers: URIs Spotify's own router resolves to a page of its own, each with the
 // name of the SPTEncoreIcon class method that draws its glyph. Playlists was spotify:collection:playlists
@@ -60,11 +65,8 @@ static void appendTab(NSDictionary *tab) {
     SGRRefreshTabBar();
 }
 
-@interface SGRTabPickerPage : SGPage
-@end
-
 // The presets the dispatcher can send somewhere, each verdict logged. When it cannot be asked (not set
-// up yet, or 9.1.78's registry is not where it was) every preset stays, as before.
+// up yet, or 9.1.78's registry is not where it was) every preset stays.
 static NSArray<NSDictionary *> *openablePresets(void) {
     NSMutableArray<NSDictionary *> *kept = [NSMutableArray array];
     for (NSDictionary *tab in tabPresets()) {
@@ -77,72 +79,206 @@ static NSArray<NSDictionary *> *openablePresets(void) {
     return kept;
 }
 
-@implementation SGRTabPickerPage {
-    UIView *_footer;
-    NSArray<NSDictionary *> *_presets;
+// Set in the draft once an icon is picked by hand, so choosing a page afterwards keeps it.
+static NSString *const kIconChosen = @"iconChosen";
+
+// An icon as the bar draws it: an SPTEncoreIcon method name, or `sf:` and an SF Symbol's.
+static UIView *iconPreview(NSString *name, CGFloat size) {
+    if ([name hasPrefix:@"sf:"]) {
+        UIImage *image = [UIImage systemImageNamed:[name substringFromIndex:3] withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:18 weight:UIImageSymbolWeightMedium]];
+        UIImageView *preview = [[UIImageView alloc] initWithImage:[image imageWithTintColor:UIColor.whiteColor renderingMode:UIImageRenderingModeAlwaysOriginal]];
+        preview.contentMode = UIViewContentModeScaleAspectFit;
+        preview.frame = CGRectMake(0, 0, size, size);
+        return preview;
+    }
+    Class iconClass = NSClassFromString(@"SPTEncoreIcon");
+    Class viewClass = NSClassFromString(@"SPTEncoreIconView");
+    SEL selector = NSSelectorFromString(name.length ? name : @"star");
+    if (iconClass && viewClass && [iconClass respondsToSelector:selector]) {
+        id icon = ((id (*)(id, SEL))objc_msgSend)(iconClass, selector);
+        SPTEncoreIconView *preview = icon ? [[viewClass alloc] initWithIcon:icon] : nil;
+        if (preview) {
+            preview.frame = CGRectMake(0, 0, size, size);
+            [preview setForegroundColor:UIColor.whiteColor];
+            [preview setIsActive:NO];
+            return preview;
+        }
+    }
+    UIImageView *fallback = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"star.fill"]];
+    fallback.tintColor = UIColor.whiteColor;
+    fallback.frame = CGRectMake(0, 0, size, size);
+    return fallback;
 }
 
-- (instancetype)init {
+static NSString *iconDescription(NSString *name) {
+    if ([name hasPrefix:@"sf:"]) return [NSString stringWithFormat:@"SF Symbols · %@", [name substringFromIndex:3]];
+    return [NSString stringWithFormat:@"Spotify Encore · %@", name.length ? name : @"star"];
+}
+
+static UIView *iconAccessory(NSString *name) {
+    UIView *accessory = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 52, 28)];
+    UIView *preview = iconPreview(name, 24);
+    preview.frame = CGRectMake(0, 2, 24, 24);
+    [accessory addSubview:preview];
+    UIImageView *chevron = SGSymbolView(@"chevron.right", 12, UIImageSymbolWeightRegular, 16);
+    chevron.tintColor = SGGrey();
+    chevron.frame = CGRectMake(34, 6, 16, 16);
+    [accessory addSubview:chevron];
+    return accessory;
+}
+
+@interface SGRTabLinkPickerPage : SGPage
+- (instancetype)initWithDraft:(NSMutableDictionary *)draft;
+@end
+
+@interface SGRTabIconPickerPage : SGPage <UISearchBarDelegate, UISearchResultsUpdating>
+- (instancetype)initWithDraft:(NSMutableDictionary *)draft;
+@end
+
+// Add a tab: a name, a link and an icon, in a sheet of its own.
+@interface SGRTabEditorPage : SGPage <UITextFieldDelegate>
+@property (nonatomic, copy) void (^added)(void);
+- (instancetype)initWithDraft:(NSMutableDictionary *)draft;
+@end
+
+@implementation SGRTabEditorPage {
+    NSMutableDictionary *_draft;
+    UITextField *_nameField;
+}
+
+- (instancetype)initWithDraft:(NSMutableDictionary *)draft {
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
+    _draft = draft;
     self.title = @"Add a Tab";
-    _presets = openablePresets();
     return self;
-}
-
-// Said here rather than by Spotify's alert on the bar later, every time the tab is tapped.
-- (void)refuse:(NSString *)uri {
-    NSString *message = [NSString stringWithFormat:@"Spotify has nowhere to open %@, so it would not work as a tab.", uri];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Can't open that link" message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    _footer = SGNote(@"Paste a share link or a spotify: URI. Icons: home, search, collection, heart, "
-                   "playlist, album, artist, podcasts, audiobook, downloaded, bookmark, browse, star, "
-                   "user, events, queue, plus, radio, gears, spotifyLogo.");
-    self.tableView.tableFooterView = _footer;
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(cancel)];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Add" style:UIBarButtonItemStyleDone target:self action:@selector(add)];
 }
 
-- (void)viewWillLayoutSubviews {
-    [super viewWillLayoutSubviews];
-    SGFitNote(self.tableView, _footer, 16, 24);
+// The link and icon pages write into the draft, so it is read again on the way back.
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    _nameField.text = _draft[SGRNavbarTitle];
+    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationNone];
+    self.navigationItem.rightBarButtonItem.enabled = [_draft[SGRNavbarURI] length] > 0;
 }
 
-- (void)viewDidLayoutSubviews {
-    [super viewDidLayoutSubviews];
-    SGInsetForBars(self.tableView);
-}
-
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)table {
-    return 2;
-}
-
-- (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
-    return section == 0 ? (NSInteger)_presets.count : 1;
-}
-
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)table { return 2; }
+- (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section { return section == 0 ? 1 : 2; }
 - (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
-    return SGSectionHeader(table, section == 0 ? @"Spotify's pages" : @"Anywhere else");
+    return SGSectionHeader(table, section == 0 ? @"Name" : @"Customize");
 }
-
-- (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section {
-    return SGSectionHeaderHeight;
-}
-
-- (CGFloat)tableView:(UITableView *)table heightForFooterInSection:(NSInteger)section {
-    return CGFLOAT_MIN;
-}
+- (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section { return SGSectionHeaderHeight; }
+- (CGFloat)tableView:(UITableView *)table heightForFooterInSection:(NSInteger)section { return CGFLOAT_MIN; }
+- (CGFloat)tableView:(UITableView *)table heightForRowAtIndexPath:(NSIndexPath *)path { return path.section == 0 ? 56 : UITableViewAutomaticDimension; }
 
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
-    UITableViewCell *cell = SGDequeueCell(table, @"pick");
+    if (path.section == 0) {
+        UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+        cell.backgroundColor = SGCardBackground();
+        UITextField *field = [UITextField new];
+        field.translatesAutoresizingMaskIntoConstraints = NO;
+        field.textColor = UIColor.whiteColor;
+        field.tintColor = SGGreen();
+        field.placeholder = @"Name";
+        field.clearButtonMode = UITextFieldViewModeWhileEditing;
+        field.autocorrectionType = UITextAutocorrectionTypeNo;
+        field.returnKeyType = UIReturnKeyDone;
+        field.delegate = self;
+        field.text = _draft[SGRNavbarTitle];
+        [field addTarget:self action:@selector(nameChanged:) forControlEvents:UIControlEventEditingChanged];
+        [cell.contentView addSubview:field];
+        [NSLayoutConstraint activateConstraints:@[
+            [field.leadingAnchor constraintEqualToAnchor:cell.contentView.layoutMarginsGuide.leadingAnchor],
+            [field.trailingAnchor constraintEqualToAnchor:cell.contentView.layoutMarginsGuide.trailingAnchor],
+            [field.centerYAnchor constraintEqualToAnchor:cell.contentView.centerYAnchor],
+        ]];
+        _nameField = field;
+        return cell;
+    }
+    UITableViewCell *cell = SGDequeueCell(table, @"tab-editor");
+    if (path.row == 0) {
+        NSString *uri = _draft[SGRNavbarURI];
+        SGFillCell(cell, @"Link", uri.length ? uri : @"Choose a Spotify page or enter a custom link", nil, nil);
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    } else {
+        SGFillCell(cell, @"Icon", iconDescription(_draft[SGRNavbarIcon]), nil, nil);
+        cell.accessoryView = iconAccessory(_draft[SGRNavbarIcon]);
+        cell.accessoryType = UITableViewCellAccessoryNone;
+    }
+    cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+    return cell;
+}
+
+- (void)nameChanged:(UITextField *)field {
+    _draft[SGRNavbarTitle] = field.text ?: @"";
+}
+
+- (BOOL)textFieldShouldReturn:(UITextField *)field {
+    [field resignFirstResponder];
+    return YES;
+}
+
+- (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
+    [table deselectRowAtIndexPath:path animated:YES];
+    if (path.section != 1) return;
+    [_nameField resignFirstResponder];
+    UIViewController *page = path.row == 0 ? [[SGRTabLinkPickerPage alloc] initWithDraft:_draft]
+                                           : [[SGRTabIconPickerPage alloc] initWithDraft:_draft];
+    [self.navigationController pushViewController:page animated:YES];
+}
+
+- (void)cancel {
+    [_nameField resignFirstResponder];
+    [self.navigationController dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)add {
+    [_nameField resignFirstResponder];
+    NSString *uri = _draft[SGRNavbarURI];
+    if (!uri.length) return;
+    NSString *title = [_draft[SGRNavbarTitle] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    appendTab(@{SGRNavbarTitle: title.length ? title : uri, SGRNavbarURI: uri, SGRNavbarIcon: _draft[SGRNavbarIcon] ?: @"star"});
+    if (self.added) self.added();
+    [self.navigationController dismissViewControllerAnimated:YES completion:nil];
+}
+
+@end
+
+@implementation SGRTabLinkPickerPage {
+    NSMutableDictionary *_draft;
+    NSArray<NSDictionary *> *_presets;
+}
+
+- (instancetype)initWithDraft:(NSMutableDictionary *)draft {
+    if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
+    _draft = draft;
+    _presets = openablePresets();
+    self.title = @"Choose a Link";
+    return self;
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)table { return 2; }
+- (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section { return section == 0 ? (NSInteger)_presets.count : 1; }
+- (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
+    return SGSectionHeader(table, section == 0 ? @"Spotify's pages" : @"Custom link");
+}
+- (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section { return SGSectionHeaderHeight; }
+- (CGFloat)tableView:(UITableView *)table heightForFooterInSection:(NSInteger)section { return CGFLOAT_MIN; }
+
+- (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
+    UITableViewCell *cell = SGDequeueCell(table, @"tab-link");
     if (path.section == 0) {
         NSDictionary *tab = _presets[(NSUInteger)path.row];
         SGFillCell(cell, tab[SGRNavbarTitle], tab[SGRNavbarURI], nil, nil);
     } else {
-        SGFillCell(cell, @"Any link…", nil, nil, @"link");
+        SGFillCell(cell, @"Enter a custom link…", @"Paste a Spotify share link or spotify: URI", nil, @"link");
     }
+    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     return cell;
 }
@@ -150,42 +286,302 @@ static NSArray<NSDictionary *> *openablePresets(void) {
 - (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
     [table deselectRowAtIndexPath:path animated:YES];
     if (path.section == 0) {
-        appendTab(_presets[(NSUInteger)path.row]);
+        NSDictionary *tab = _presets[(NSUInteger)path.row];
+        _draft[SGRNavbarURI] = tab[SGRNavbarURI];
+        if (![_draft[SGRNavbarTitle] length]) _draft[SGRNavbarTitle] = tab[SGRNavbarTitle];
+        if (![_draft[kIconChosen] boolValue]) _draft[SGRNavbarIcon] = tab[SGRNavbarIcon];
         [self.navigationController popViewControllerAnimated:YES];
         return;
     }
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Any link" message:@"Where the tab goes, and the glyph on it." preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) { field.placeholder = @"Name"; }];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Custom link" message:@"Paste a Spotify share link or enter a spotify: URI." preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.placeholder = @"spotify:playlist:…";
+        field.placeholder = @"spotify:playlist:… or open.spotify.com/…";
+        field.text = self->_draft[SGRNavbarURI];
         field.autocapitalizationType = UITextAutocapitalizationTypeNone;
         field.autocorrectionType = UITextAutocorrectionTypeNo;
-    }];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.placeholder = @"Icon";
-        field.text = @"star";
-        field.autocapitalizationType = UITextAutocapitalizationTypeNone;
-        field.autocorrectionType = UITextAutocorrectionTypeNo;
+        field.keyboardType = UIKeyboardTypeURL;
     }];
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Add" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        NSString *title = alert.textFields[0].text, *icon = alert.textFields[2].text;
-        NSString *uri = SGSpotifyURIFromText(alert.textFields[1].text).absoluteString;
-        if (!uri.length) return;
-        NSString *via = nil;
-        SGLinkRoute route = SGSpotifyURIRoute([NSURL URLWithString:uri], &via);
-        SGLog(@"navbar: custom %@ -> %@", uri, route == SGLinkRouteOpens ? via : route == SGLinkRouteNone ? @"no handler" : @"unknown");
-        if (route == SGLinkRouteNone) {
-            [self refuse:uri];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Use Link" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSURL *url = SGSpotifyURIFromText(alert.textFields.firstObject.text);
+        if (!url) {
+            [self showLinkError:@"Enter a Spotify share link or spotify: URI."];
             return;
         }
-        appendTab(@{SGRNavbarTitle: title.length ? title : uri, SGRNavbarURI: uri, SGRNavbarIcon: icon.length ? icon : @"star"});
+        NSString *via = nil;
+        SGLinkRoute route = SGSpotifyURIRoute(url, &via);
+        SGLog(@"navbar: custom %@ -> %@", url.absoluteString,
+              route == SGLinkRouteOpens ? via : route == SGLinkRouteNone ? @"no handler" : @"unknown");
+        // Said here rather than by Spotify's alert on the bar later, every time the tab is tapped.
+        if (route == SGLinkRouteNone) {
+            [self showLinkError:[NSString stringWithFormat:@"Spotify has nowhere to open %@.", url.absoluteString]];
+            return;
+        }
+        self->_draft[SGRNavbarURI] = url.absoluteString;
+        if (![self->_draft[SGRNavbarTitle] length]) self->_draft[SGRNavbarTitle] = url.absoluteString;
         [self.navigationController popViewControllerAnimated:YES];
     }]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+- (void)showLinkError:(NSString *)message {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Can't use that link" message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 @end
+
+static BOOL encoreHasGlyph(Class iconClass, NSString *name) {
+    SEL selector = NSSelectorFromString(name);
+    if (!iconClass || ![iconClass respondsToSelector:selector]) return NO;
+    id icon = ((id (*)(id, SEL))objc_msgSend)(iconClass, selector);
+    return icon && [icon respondsToSelector:@selector(name)];
+}
+
+// Every glyph SPTEncoreIcon has, one argumentless class method each, the ones a tab is likeliest to
+// want first.
+static NSArray<NSString *> *encoreIconNames(void) {
+    static NSArray<NSString *> *names;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSArray<NSString *> *priority = @[
+            @"home", @"search", @"collection", @"heart", @"playlist", @"album", @"artist", @"podcasts", @"audiobook", @"downloaded",
+            @"bookmark", @"browse", @"star", @"user", @"events", @"queue", @"plus", @"radio", @"gears", @"spotifyLogo",
+            @"play", @"pause", @"previous", @"next", @"shuffle", @"repeat", @"devices", @"download", @"headphones", @"microphone",
+            @"lyrics", @"clock", @"history", @"folder", @"music", @"musicNote", @"musicNoteList", @"userPlus", @"add", @"link",
+            @"menu", @"more", @"settings", @"volume", @"volumeDown", @"volumeUp", @"volumeOff", @"checkmark", @"close", @"list",
+        ];
+        Class iconClass = NSClassFromString(@"SPTEncoreIcon");
+        NSMutableArray<NSString *> *available = [NSMutableArray array];
+        NSMutableArray<NSString *> *remaining = [NSMutableArray array];
+        for (NSString *name in priority) if (encoreHasGlyph(iconClass, name)) [available addObject:name];
+
+        unsigned int methodCount = 0;
+        Method *methods = iconClass ? class_copyMethodList(object_getClass(iconClass), &methodCount) : NULL;
+        for (unsigned int i = 0; i < methodCount; i++) {
+            NSString *name = NSStringFromSelector(method_getName(methods[i]));
+            if ([name containsString:@":"] || [name hasPrefix:@"_"] || [available containsObject:name]) continue;
+            if (encoreHasGlyph(iconClass, name)) [remaining addObject:name];
+        }
+        free(methods);
+        [remaining sortUsingSelector:@selector(compare:)];
+        [available addObjectsFromArray:remaining];
+        names = [available copy];
+    });
+    return names;
+}
+
+static const NSUInteger kSymbolMatches = 200;
+
+// Keep the initial SF Symbols list focused on common tab icons; search still covers the full catalog.
+static NSArray<NSString *> *symbolNames(void) {
+    static NSArray<NSString *> *names;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSArray<NSString *> *candidates = @[
+            @"house.fill", @"magnifyingglass", @"square.stack.3d.up.fill", @"heart.fill", @"music.note.list", @"music.note", @"music.mic", @"person.crop.circle.fill", @"mic.fill", @"headphones",
+            @"arrow.down.circle.fill", @"bookmark.fill", @"sparkles", @"star.fill", @"person.2.fill", @"dot.radiowaves.left.and.right", @"gearshape.fill", @"plus", @"link", @"list.bullet",
+            @"clock", @"clock.arrow.circlepath", @"tray.and.arrow.down.fill", @"folder.fill", @"waveform", @"chart.bar.fill", @"globe.americas.fill", @"flame.fill", @"moon.stars.fill", @"sun.max.fill",
+            @"bolt.fill", @"play.circle.fill", @"shuffle", @"repeat", @"antenna.radiowaves.left.and.right", @"ear", @"guitar", @"pianokeys", @"drum", @"ticket.fill",
+            @"calendar", @"mappin.and.ellipse", @"bag.fill", @"tv.fill", @"video.fill", @"speaker.wave.2.fill", @"airplayaudio", @"ellipsis.circle.fill", @"clock.fill", @"arrow.up.right.circle.fill",
+        ];
+        NSMutableArray<NSString *> *available = [NSMutableArray array];
+        for (NSString *name in candidates) if ([UIImage systemImageNamed:name]) [available addObject:name];
+        names = [available copy];
+    });
+    return names;
+}
+
+@implementation SGRTabIconPickerPage {
+    NSMutableDictionary *_draft;
+    UISegmentedControl *_catalog;
+    UILabel *_symbolHint;
+    UISearchController *_searchController;
+    NSArray<NSString *> *_encore;
+    NSArray<NSString *> *_symbols;
+    NSArray<NSString *> *_displayedIcons;
+    NSUInteger _searchGeneration;
+}
+
+- (instancetype)initWithDraft:(NSMutableDictionary *)draft {
+    if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
+    _draft = draft;
+    _encore = encoreIconNames();
+    _symbols = symbolNames();
+    self.title = @"Choose an Icon";
+    return self;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.tableView.tintColor = UIColor.whiteColor;
+
+    UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.tableView.bounds.size.width, 48)];
+    _catalog = [[UISegmentedControl alloc] initWithItems:@[@"Spotify Encore", @"SF Symbols"]];
+    _catalog.selectedSegmentIndex = 0;
+    _catalog.backgroundColor = [UIColor colorWithWhite:1 alpha:0.06];
+    _catalog.selectedSegmentTintColor = [UIColor colorWithWhite:1 alpha:0.16];
+    [_catalog setTitleTextAttributes:@{NSForegroundColorAttributeName: SGGrey()} forState:UIControlStateNormal];
+    [_catalog setTitleTextAttributes:@{NSForegroundColorAttributeName: UIColor.whiteColor} forState:UIControlStateSelected];
+    [_catalog addTarget:self action:@selector(catalogChanged) forControlEvents:UIControlEventValueChanged];
+    [header addSubview:_catalog];
+    self.tableView.tableHeaderView = header;
+
+    _symbolHint = [UILabel new];
+    _symbolHint.text = @"Use search to find any SF Symbol";
+    _symbolHint.textColor = SGGrey();
+    _symbolHint.font = [UIFont systemFontOfSize:13];
+    _symbolHint.textAlignment = NSTextAlignmentCenter;
+    _symbolHint.numberOfLines = 2;
+
+    _searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
+    _searchController.searchResultsUpdater = self;
+    _searchController.obscuresBackgroundDuringPresentation = NO;
+    _searchController.hidesNavigationBarDuringPresentation = NO;
+    _searchController.searchBar.placeholder = @"Search all icons";
+    _searchController.searchBar.tintColor = UIColor.whiteColor;
+    _searchController.searchBar.delegate = self;
+    self.navigationItem.searchController = _searchController;
+    self.navigationItem.hidesSearchBarWhenScrolling = NO;
+    self.definesPresentationContext = YES;
+    // From 26 the field folds into a button on the toolbar, out of the way of the list.
+    if (@available(iOS 26.0, *)) {
+        self.navigationItem.preferredSearchBarPlacement = UINavigationItemSearchBarPlacementIntegratedButton;
+        self.navigationItem.searchBarPlacementAllowsToolbarIntegration = YES;
+        UIBarButtonItem *space = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+        self.toolbarItems = @[space, self.navigationItem.searchBarPlacementBarButtonItem];
+    }
+
+    [self updateSymbolHint];
+    [self refreshIconResults];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    if (!self.toolbarItems.count) return;
+    self.navigationController.toolbar.tintColor = UIColor.whiteColor;
+    [self.navigationController setToolbarHidden:NO animated:NO];
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    _searchGeneration++;
+    _searchController.active = NO;
+    [self.navigationController setToolbarHidden:YES animated:NO];
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    UIView *header = self.tableView.tableHeaderView;
+    CGFloat width = self.tableView.bounds.size.width;
+    if (header && header.bounds.size.width != width) {
+        header.frame = CGRectMake(0, 0, width, 48);
+        self.tableView.tableHeaderView = header;
+    }
+    CGFloat controlWidth = MIN(MAX(0, width - 32), 280);
+    _catalog.frame = CGRectMake((width - controlWidth) / 2, 7, controlWidth, 34);
+    if (_symbolHint.frame.size.width != width) {
+        _symbolHint.frame = CGRectMake(0, 0, width, 52);
+        if (self.tableView.tableFooterView == _symbolHint) self.tableView.tableFooterView = _symbolHint;
+    }
+}
+
+- (void)updateSymbolHint {
+    _symbolHint.frame = CGRectMake(0, 0, self.tableView.bounds.size.width, 52);
+    self.tableView.tableFooterView = _catalog.selectedSegmentIndex == 1 ? _symbolHint : nil;
+}
+
+// Typing is let settle for a moment before the catalog is searched again.
+- (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
+    NSUInteger generation = ++_searchGeneration;
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.18 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        typeof(self) page = weakSelf;
+        if (!page || generation != page->_searchGeneration) return;
+        [page refreshIconResults];
+        [page.tableView reloadData];
+    });
+}
+
+- (void)searchBarSearchButtonClicked:(UISearchBar *)bar {
+    [bar resignFirstResponder];
+}
+
+- (void)catalogChanged {
+    _searchGeneration++;
+    [self refreshIconResults];
+    [self.tableView reloadData];
+    [self updateSymbolHint];
+}
+
+- (BOOL)showsSymbols {
+    return _catalog.selectedSegmentIndex == 1;
+}
+
+- (void)refreshIconResults {
+    NSString *query = [_searchController.searchBar.text ?: @"" stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (!query.length) {
+        _displayedIcons = [self showsSymbols] ? _symbols : _encore;
+        return;
+    }
+    BOOL symbols = [self showsSymbols];
+    NSMutableArray<NSString *> *matches = [NSMutableArray array];
+    for (NSString *name in symbols ? SGSFSymbolCatalog() : _encore) {
+        if ([name rangeOfString:query options:NSCaseInsensitiveSearch].location == NSNotFound) continue;
+        // The catalog runs ahead of older systems, and asking about every name of a one letter query
+        // held the page for seconds, so the list stops at the first few hundred.
+        if (symbols && ![UIImage systemImageNamed:name]) continue;
+        [matches addObject:name];
+        if (symbols && matches.count == kSymbolMatches) break;
+    }
+    _displayedIcons = [matches copy];
+}
+
+- (NSString *)iconAt:(NSIndexPath *)path {
+    NSString *name = _displayedIcons[(NSUInteger)path.row];
+    return [self showsSymbols] ? [@"sf:" stringByAppendingString:name] : name;
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)table { return 1; }
+- (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section { return (NSInteger)_displayedIcons.count; }
+- (CGFloat)tableView:(UITableView *)table heightForFooterInSection:(NSInteger)section { return CGFLOAT_MIN; }
+- (CGFloat)tableView:(UITableView *)table heightForRowAtIndexPath:(NSIndexPath *)path { return 52; }
+
+- (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
+    UITableViewCell *cell = SGDequeueCell(table, @"tab-icon");
+    SGFillCell(cell, _displayedIcons[(NSUInteger)path.row], nil, nil, nil);
+    cell.accessoryView = iconPreview([self iconAt:path], 28);
+    return cell;
+}
+
+- (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
+    _draft[SGRNavbarIcon] = [self iconAt:path];
+    _draft[kIconChosen] = @YES;
+    [self.navigationController popViewControllerAnimated:YES];
+}
+
+@end
+
+// A sheet over the Navbar page, which is told once a tab is added since a sheet leaves it on screen.
+static void presentTabEditor(UIViewController *owner, void (^added)(void)) {
+    NSMutableDictionary *draft = [@{SGRNavbarTitle: @"", SGRNavbarURI: @"", SGRNavbarIcon: @"star"} mutableCopy];
+    SGRTabEditorPage *editor = [[SGRTabEditorPage alloc] initWithDraft:draft];
+    editor.added = added;
+    UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:editor];
+    navigation.modalPresentationStyle = UIModalPresentationPageSheet;
+    navigation.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    UISheetPresentationController *sheet = navigation.sheetPresentationController;
+    UISheetPresentationControllerDetent *compact = [UISheetPresentationControllerDetent customDetentWithIdentifier:@"spotifyglass.custom-tab.compact"
+        resolver:^CGFloat(id<UISheetPresentationControllerDetentResolutionContext> context) {
+            return MIN(context.maximumDetentValue, MIN(360.0, MAX(280.0, context.maximumDetentValue * 0.44)));
+        }];
+    sheet.detents = @[compact, UISheetPresentationControllerDetent.largeDetent];
+    sheet.selectedDetentIdentifier = compact.identifier;
+    sheet.prefersGrabberVisible = YES;
+    sheet.prefersScrollingExpandsWhenScrolledToEdge = YES;
+    [owner presentViewController:navigation animated:YES completion:nil];
+}
 
 typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     SGRNavbarSectionSwitch,
@@ -221,9 +617,7 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     _entries = navbarEntries();
 }
 
-// The Add page writes straight to the layout, so the list is read again on the way back.
-- (void)viewWillAppear:(BOOL)animated {
-    [super viewWillAppear:animated];
+- (void)reload {
     _entries = navbarEntries();
     [self.tableView reloadData];
 }
@@ -248,7 +642,7 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
 }
 
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
-    if (section == SGRNavbarSectionSwitch) return 2;
+    if (section == SGRNavbarSectionSwitch) return 3;
     return section == SGRNavbarSectionTabs ? (NSInteger)_entries.count : 1;
 }
 
@@ -274,12 +668,13 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     UITableViewCell *cell = SGDequeueCell(table, @"navbar");
     switch (path.section) {
         case SGRNavbarSectionSwitch: {
-            BOOL labels = path.row == 1;
-            SGFillCell(cell, labels ? @"Hide labels" : @"Custom navbar", labels ? @"Icons only" : nil, nil, nil);
+            BOOL labels = path.row == 1, inlinePlayer = path.row == 2;
+            if (inlinePlayer) SGFillCell(cell, @"Apple Music style player", @"Moves in beside the tabs on scroll. Restart to apply", nil, nil);
+            else SGFillCell(cell, labels ? @"Hide labels" : @"Custom navbar", labels ? @"Icons only" : nil, nil, nil);
             UISwitch *toggle = [UISwitch new];
             toggle.onTintColor = SGGreen();
             toggle.tag = path.row;
-            toggle.on = labels ? SGHidden(SGRKeyNavbarHideLabels) : SGEnabled(SGRKeyNavbar);
+            toggle.on = inlinePlayer ? SGHidden(SGRKeyInlinePlayer) : labels ? SGHidden(SGRKeyNavbarHideLabels) : SGEnabled(SGRKeyNavbar);
             [toggle addTarget:self action:@selector(toggled:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = toggle;
             break;
@@ -344,13 +739,19 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
         [self save];
         [table reloadRowsAtIndexPaths:@[path] withRowAnimation:UITableViewRowAnimationNone];
     } else if (path.section == SGRNavbarSectionAdd) {
-        [self.navigationController pushViewController:[SGRTabPickerPage new] animated:YES];
+        __weak typeof(self) weakSelf = self;
+        presentTabEditor(self, ^{ [weakSelf reload]; });
     } else if (path.section == SGRNavbarSectionReset) {
         [self reset];
     }
 }
 
 - (void)toggled:(UISwitch *)toggle {
+    // The mini player is read at launch.
+    if (toggle.tag == 2) {
+        SGSetEnabled(SGRKeyInlinePlayer, toggle.on);
+        return;
+    }
     SGSetEnabled(toggle.tag == 1 ? SGRKeyNavbarHideLabels : SGRKeyNavbar, toggle.on);
     SGRRefreshTabBar();
 }
@@ -363,8 +764,7 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     [alert addAction:[UIAlertAction actionWithTitle:@"Reset" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         SGRSetNavbarLayout(@[]);
         SGRRefreshTabBar();
-        self->_entries = navbarEntries();
-        [self.tableView reloadData];
+        [self reload];
     }]];
     [self presentViewController:alert animated:YES completion:nil];
 }

@@ -174,6 +174,7 @@ static UIView *containerOf(UIView *header) {
     _picture.image = image;
     // The page's field takes its colour from the same picture.
     SGRArtistSetArtwork(self, image);
+    SGRRevealMark(SGRArtistPageOf(self), SGRRevealPicture);
     static BOOL logged;
     if (late && !logged) {
         logged = YES;
@@ -245,7 +246,10 @@ static UIView *keepBar(UIView *header) {
 static void applyHeader(UIView *header) {
     UIView *container = containerOf(header);
     UIView *artwork = SGRFindByIdentifier(header, @"Components.Header.UI.ArtworkImage", &kArtworkKey);
-    if (!container || !artwork || !SGRArtistPageOf(container)) return;
+    UIView *page = SGRArtistPageOf(container);
+    if (!container || !artwork || !page) return;
+    // The photo header the redesign lays out: the page's curtain waits for all of it (ArtistField.x put it up).
+    SGRRevealHold(page, SGRRevealPage);
 
     UIView *bar = keepBar(header);
     for (UIView *sub in header.subviews) {
@@ -256,7 +260,7 @@ static void applyHeader(UIView *header) {
     if (!info) {
         info = [[SGRHeaderInfo alloc] initWithFrame:CGRectZero];
         // Follow's only state is its title in the app's language, so the glyph takes it from the collection.
-        __weak UIView *weakPage = SGRArtistPageOf(container);
+        __weak UIView *weakPage = page;
         __weak SGRHeaderInfo *weakInfo = info;
         __weak UIView *weakHeader = header;
         info.trailingState = ^BOOL(BOOL *on) {
@@ -272,19 +276,21 @@ static void applyHeader(UIView *header) {
 
     UIView *title = SGRFindByIdentifier(header, @"Encore.AdaptiveTitle", &kTitleKey);
     UIView *listeners = SGRFindByIdentifier(header, @"Components.Header.UI.Metadata", &kMetaKey);
-    NSString *name = firstText(title) ?: firstText(bar);
-    [info showTitle:name creator:nil length:firstText(listeners) about:nil];
+    NSString *name = firstText(title) ?: firstText(bar), *listening = firstText(listeners);
+    [info showTitle:name creator:nil length:listening about:nil];
 
     UIView *shuffle = SGRFindByIdentifier(header, @"Components.UI.ShuffleButton", &kShuffleKey);
     UIView *play = SGRFindByIdentifier(header, @"header-play-button", &kPlayKey);
     UIView *follow = SGRFindByIdentifier(header, @"Curation.FollowButtonElementKit.FollowButton", &kFollowKey);
     [info showShuffle:shuffle play:play trailing:follow trailingFallback:nil playColor:SGRArtistFieldColor(container)];
+    // The listeners are waited for with the name and Play: arriving late they pushed the name up by a line.
+    if (name && play && listening) SGRRevealMark(page, SGRRevealHeader);
 
     // More, in the top trailing corner of the page itself rather than of the container, which scrolls away
     // with the photo: pinned there it is the same button in the same place on the album and the playlist,
     // and the page keeps it however far down the list one is (issue #57).
     UIView *more = SGRFindByIdentifier(header, @"Components.UI.ContextMenuButton*", &kMoreKey);
-    SGRPinnedMore(SGRArtistPageOf(container), &kMoreButtonKey, more);
+    SGRPinnedMore(page, &kMoreButtonKey, more);
 
     // Collapsing, the text would pass over Spotify's bar with the name in it: it goes over the last kFade of
     // the collapse, from the header's own height, which this pass runs on every step of. More stays: it is

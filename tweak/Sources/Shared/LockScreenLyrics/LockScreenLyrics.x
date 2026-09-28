@@ -9,6 +9,8 @@
 #import "LockScreenLyrics.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Headers/SPTPlayer.h"
+#import "Shared/Sing/SGSingController.h"
+#import "Shared/Player/PlayerState.h"
 
 static const NSTimeInterval kTick = 0.25;
 // Past a line's sung end by this much, with the next line at least this far off, the artist comes back.
@@ -56,6 +58,9 @@ static NSArray<NSArray<SGKaraokeWord *> *> *piecesOf(SGKaraokeLine *line) {
 
 // Seconds into the track at `now`, run on from what Spotify last reported.
 static double elapsedAt(NSDictionary *info, CFAbsoluteTime reportedAt, CFAbsoluteTime now) {
+    SPTPlayerState *state = SGPlayerState();
+    double position;
+    if ([state.track.trackTitle isEqualToString:info[MPMediaItemPropertyTitle]] && SGSingPosition(state, &position)) return position;
     double rate = [info[MPNowPlayingInfoPropertyPlaybackRate] doubleValue];
     return [info[MPNowPlayingInfoPropertyElapsedPlaybackTime] doubleValue] + rate * (now - reportedAt);
 }
@@ -87,7 +92,8 @@ static NSString *lineFor(NSDictionary *info, double elapsed) {
 
 static NSDictionary *withLine(NSDictionary *info, NSString *line, double elapsed) {
     NSMutableDictionary *shown = [info mutableCopy];
-    shown[MPMediaItemPropertyArtist] = line;
+    if (line) shown[MPMediaItemPropertyArtist] = line;
+    // iOS reads a resent elapsed time as the position now, so Spotify's older one would jump the bar back.
     shown[MPNowPlayingInfoPropertyElapsedPlaybackTime] = @(elapsed);
     return shown;
 }
@@ -106,7 +112,7 @@ static void tick(void) {
     if (line == sg_shownLine || [line isEqualToString:sg_shownLine]) return;
     sg_shownLine = line;
     sg_resending = YES;
-    MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = line ? withLine(info, line, elapsed) : info;
+    MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = withLine(info, line, elapsed);
     sg_resending = NO;
 }
 
@@ -154,7 +160,7 @@ static BOOL playingBy(NSDictionary *info) {
     double elapsed = elapsedAt(info, now, now);
     NSString *line = lineFor(info, elapsed);
     sg_shownLine = line;
-    %orig(line ? withLine(info, line, elapsed) : info);
+    %orig(withLine(info, line, elapsed));
 }
 
 - (NSDictionary *)nowPlayingInfo {

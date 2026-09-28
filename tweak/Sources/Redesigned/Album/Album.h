@@ -15,10 +15,16 @@
 //     AlbumRows.x      the track rows on the field with no surface of their own and a hairline between them
 //     AlbumSections.x  everything under the tracks dropped but the album's own line and its copyright: no
 //                      more by the artist, no videos, no concerts, no merch, no you might also like
+//     AlbumSettings.m  the Albums page of Mod Settings
 //
 // Every hook installs only while Redesigned UI is on (SGRedesignedUI); the native look's do not then.
 // Threading: main thread only.
 #import <UIKit/UIKit.h>
+
+// Apple Music's animated cover at the top of an album (AlbumHeader.x); on until switched off.
+#define SGRKeyAnimatedCovers @"spotifyglass.redesign.animatedcovers"
+
+UIViewController *SGRAlbumSettingsPage(void);
 
 // The album page `view` is on, or nil: the CreativeWorkTemplateView that carries the header, the list and
 // the two floating controls (trees/clean/album/01.txt:22).
@@ -32,6 +38,3 @@ UIView *SGRAlbumPageOf(UIView *view);
 UIColor *SGRAlbumFieldColor(UIView *view);
 // The cover of the page `view` is on, for its field to take its colour from. The same image again is a no-op.
 void SGRAlbumSetArtwork(UIView *view, UIImage *image);
-// The colour Spotify picked for the album, read off the wash it paints behind the header: the field takes it
-// over the one read from the cover's bottom edge. The same colour again is a no-op.
-void SGRAlbumSetSpotifyColor(UIView *view, UIColor *color);

@@ -95,6 +95,8 @@ SGKaraokeTiming SGKaraokeLinesTiming(NSArray<SGKaraokeLine *> *lines);
 
 NSArray<SGKaraokeLine *> *SGKaraokeLinesForTrack(NSString *trackID);   // nil until the lyrics came
 void SGKaraokeKeepLines(NSString *trackID, NSArray<SGKaraokeLine *> *lines);
+// Posted on the main queue when a track's lines are kept, with the track's id as the object.
+extern NSNotificationName const SGKaraokeLinesDidChangeNotification;
 // Asks spclient for a track's lyrics once, with the headers of Spotify's own requests, for when no
 // page of Spotify's has asked for them, e.g. with the app in the background.
 void SGKaraokeRequestLyrics(NSString *trackID);

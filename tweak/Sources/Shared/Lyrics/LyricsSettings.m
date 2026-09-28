@@ -15,7 +15,9 @@ SGModSection *SGLyricsSourcesSection(BOOL namingSource) {
     NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObjects:sources,
         SGOptionRow(@"Lyrics for every track", @"Even where Spotify has none", SGKeyLyricsAllTracks), nil];
     if (namingSource) [rows addObject:SGOptionRow(@"Show source", nil, SGKeyLyricsCredit)];
-    return SGSection(@"Sources", rows);
+    if (!SGLyricsEeveeReplaces()) return SGSection(@"Sources", rows);
+    return SGNotedSection(@"Sources", rows, @"EeveeSpotify is replacing lyrics, so these sources stay off. To use them, "
+                          "turn on Do Not Replace Lyrics in EeveeSpotify's lyrics settings and restart Spotify.");
 }
 
 SGModRow *SGLockScreenLyricsRow(void) {

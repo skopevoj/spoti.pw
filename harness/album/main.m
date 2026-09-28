@@ -3,6 +3,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import "../download-mock.h"
+#import "../faces-mock.h"
 
 #pragma mark - Spotify's classes, by name
 
@@ -244,7 +245,11 @@ static NSString *trailingLabel(UIView *root) {
     UIView *coverElement = box(artRow, UIView.class, CGRectMake(round((W - 248) / 2), 0, 248, 248), nil);
     UIView *cover = box(coverElement, UIView.class, coverElement.bounds, @"CreativeWorkPlatform.Components.UI.ArtWorkElement.WithCoverArt");
     UIImageView *coverPicture = [[UIImageView alloc] initWithFrame:cover.bounds];
-    coverPicture.image = artwork();
+    // `apple` on the launch line: a real album, looked up at Apple Music for its animated cover, with the cover
+    // read from SG_HARNESS_COVER (SIMCTL_CHILD_SG_HARNESS_COVER=<path> before simctl launch).
+    BOOL apple = [NSProcessInfo.processInfo.arguments containsObject:@"apple"];
+    NSString *coverPath = NSProcessInfo.processInfo.environment[@"SG_HARNESS_COVER"];
+    coverPicture.image = (apple && coverPath ? [UIImage imageWithContentsOfFile:coverPath] : nil) ?: artwork();
     coverPicture.contentMode = UIViewContentModeScaleAspectFill;
     coverPicture.clipsToBounds = YES;
     coverPicture.accessibilityIdentifier = @"Encore.ImageView";
@@ -254,15 +259,50 @@ static NSString *trailingLabel(UIView *root) {
     _titleBlock = box(groupStack, UIView.class, CGRectMake(0, 264, 215.33, 57.33), nil);
     _titleStack = box(_titleBlock, UIStackView.class, CGRectMake(16, 0, 183.33, 57.33), nil);
     label(_titleStack, CGRectZero, @"", 17, UIColor.whiteColor, @"CreativeWorkPlatform.Components.UI.PreTitleRow");
-    label(_titleStack, CGRectMake(0, 0, 183.33, 25.33), @"Hurry Up Tomorrow", 21, UIColor.whiteColor,
+    NSString *album = apple ? @"Graduation" : @"Hurry Up Tomorrow", *artist = apple ? @"Kanye West" : @"The Weeknd";
+    label(_titleStack, CGRectMake(0, 0, 183.33, 25.33), album, 21, UIColor.whiteColor,
           @"CreativeWorkPlatform.Components.UI.TitleRow");
-    UIView *parentElement = box(_titleStack, UIView.class, CGRectMake(0, 33.33, 96, 24), nil);
-    UIView *parentRow = box(parentElement, MockEncoreButton.class, parentElement.bounds, @"CreativeWorkPlatform.Components.UI.ParentRow");
-    parentRow.accessibilityLabel = @"The Weeknd";
-    UIView *avatar = box(parentRow, UIView.class, CGRectMake(0, 0, 24, 24), @"Encore.ImageView");
-    avatar.backgroundColor = [UIColor colorWithWhite:0.8 alpha:1];
-    avatar.layer.cornerRadius = 12;
-    label(parentRow, CGRectMake(32, 4.33, 72, 15.33), @"The Weeknd", 11, UIColor.whiteColor, @"Encore.Label");
+    // The artist line with its facepile (trees/clean/album/01.txt:62-86). `facelate` on the launch line: the
+    // picture lands at 2 s, after the header and the curtain; `faces3` three artists; `noface` an artist with
+    // no picture, only Spotify's initial.
+    NSArray<NSString *> *args = NSProcessInfo.processInfo.arguments;
+    BOOL faces3 = [args containsObject:@"faces3"];
+    if (faces3) artist = @"The Weeknd, Justice, Anitta";
+    UIView *parentElement = box(_titleStack, UIView.class, CGRectMake(0, 33.33, faces3 ? 210 : 96, 24), nil);
+    UIControl *parentRow = (UIControl *)box(parentElement, MockEncoreButton.class, parentElement.bounds, @"CreativeWorkPlatform.Components.UI.ParentRow");
+    parentRow.accessibilityLabel = artist;
+    [parentRow addTarget:self action:@selector(sgr_parentFired) forControlEvents:UIControlEventTouchUpInside];
+    UIView *parentStack = box(parentRow, UIView.class, parentRow.bounds, @"Encore.StackView");
+    UIView *faceButton = box(parentStack, UIView.class, CGRectMake(0, 0, faces3 ? 64.8 : 24, 24), nil);
+    NSArray<UIImageView *> *faces = mockFacepile(faceButton, CGPointZero, faces3 ? @[@"T", @"J", @"A"] : @[@"T"], NO);
+    NSArray<UIImage *> *pictures = @[mockFace(0.58), mockFace(0.08), mockFace(0.33)];
+    BOOL facelate = [args containsObject:@"facelate"], noface = [args containsObject:@"noface"];
+    if (!facelate && !noface) {
+        for (NSUInteger i = 0; i < faces.count; i++) faces[i].image = pictures[i];
+    }
+    label(parentStack, CGRectMake(faces3 ? 72.8 : 32, 4.33, faces3 ? 137 : 64, 15.33), artist, 11, UIColor.whiteColor, @"Encore.Label");
+    if (facelate) {
+        at(2, ^{
+            faces[0].image = pictures[0];
+            NSLog(@"[harness] faces: the artist's picture landed");
+        });
+        at(2.2, ^{ NSLog(@"[harness] faces mid fade: %@", facesReport(root.view)); });
+    }
+    for (NSNumber *when in @[@1.6, @3]) {
+        at(when.doubleValue, ^{ NSLog(@"[harness] faces at %@s: %@", when, facesReport(root.view)); });
+    }
+    at(3.2, ^{
+        NSMutableArray<UIView *> *walk = [NSMutableArray arrayWithObject:root.view];
+        while (walk.count) {
+            UIView *v = walk.lastObject;
+            [walk removeLastObject];
+            if ([NSStringFromClass(v.class) isEqualToString:@"SGRHeaderInfo"]) {
+                [v performSelector:NSSelectorFromString(@"sgr_creatorTapped")];
+                break;
+            }
+            [walk addObjectsFromArray:v.subviews];
+        }
+    });
 
     UIView *bottomGroup = box(outer, UIView.class, CGRectMake(0, 329.33, W, 71.33), nil);
     UIStackView *bottomStack = (UIStackView *)box(bottomGroup, UIStackView.class, bottomGroup.bounds, nil);
@@ -507,6 +547,10 @@ static NSString *trailingLabel(UIView *root) {
               NSStringFromCGRect(self->_titleStack.frame), NSStringFromCGRect(self->_actionRow.frame));
     });
     return YES;
+}
+
+- (void)sgr_parentFired {
+    NSLog(@"[harness] the artist line fired ParentRow");
 }
 
 // Every footer cell asked for its height the way the collection's self-sizing asks, then stacked under the

@@ -5,10 +5,14 @@
 // With a source of the mod's on, the color-lyrics body is Shared/LyricsSources' to answer and it
 // hands the lines over.
 #import "Core/SGCore.h"
+#import "Shared/Sing/SGSingController.h"
 #import "Lyrics.h"
 #import "Shared/LockScreenLyrics/LockScreenLyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
+#import "Shared/Player/PlayerState.h"
 #import "Headers/SPTPlayer.h"
+
+NSNotificationName const SGKaraokeLinesDidChangeNotification = @"spotifyglass.karaokeLinesDidChange";
 
 static const NSUInteger kKeptTracks = 40;
 static const NSUInteger kSeenTracks = 200;
@@ -88,6 +92,7 @@ static void keep(NSString *track, NSArray<SGKaraokeLine *> *lines) {
         }
     }
     sg_lyrics[track] = lines;
+    [NSNotificationCenter.defaultCenter postNotificationName:SGKaraokeLinesDidChangeNotification object:track];
 }
 
 void SGKaraokeKeepLines(NSString *track, NSArray<SGKaraokeLine *> *lines) {
@@ -138,7 +143,8 @@ NSString *SGKaraokeSpotifyAuthorization(void) {
     return sg_spclientHeaders[@"authorization"];
 }
 
-static void requestFromSpotify(NSString *trackID) {
+// `retry`: the sources' walk failed on the way, so an answer with no lines is not final either.
+static void requestFromSpotify(NSString *trackID, BOOL retry) {
     NSDictionary<NSString *, NSString *> *headers = sg_spclientHeaders;
     if (!headers) return;
     [sg_requested addObject:trackID];
@@ -161,7 +167,7 @@ static void requestFromSpotify(NSString *trackID) {
         // spclient request brings a fresh one.
         BOOL lost = SGLyricsReplyFailed(response, error) || status == 401 || status == 403;
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (lost) {
+            if (lost || (retry && !lines)) {
                 askAgainLater(trackID);
                 return;
             }
@@ -172,7 +178,7 @@ static void requestFromSpotify(NSString *trackID) {
             NSArray<SGKaraokeLine *> *kept = sg_lyrics[trackID];
             if (kept && SGKaraokeLinesTiming(kept) <= SGKaraokeLinesTiming(lines)) return;
             keep(trackID, lines);
-            SGLyricsSetCredit(trackID, @"Spotify");
+            SGLyricsSetCredit(trackID, SGLyricsCreditNamed(@"Spotify"));
         });
     }] resume];
 }
@@ -180,14 +186,14 @@ static void requestFromSpotify(NSString *trackID) {
 void SGKaraokeAskSpotifyForTiming(NSString *trackID) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!trackID || [sg_requested containsObject:trackID]) return;
-        requestFromSpotify(trackID);
+        requestFromSpotify(trackID, NO);
     });
 }
 
 void SGKaraokeRequestLyrics(NSString *trackID) {
     if (!trackID || sg_lyrics[trackID] || [sg_requested containsObject:trackID]) return;
     if (!sg_ownSources) {
-        requestFromSpotify(trackID);
+        requestFromSpotify(trackID, NO);
         return;
     }
     [sg_requested addObject:trackID];
@@ -196,12 +202,12 @@ void SGKaraokeRequestLyrics(NSString *trackID) {
         [sg_asking removeObject:trackID];
         if (lyrics.karaokeLines) {
             keep(trackID, lyrics.karaokeLines);   // on the main queue, where the fetch answers
-            SGLyricsSetCredit(trackID, lyrics.provider);
+            SGLyricsSetCredit(trackID, lyrics.credit);
             // Plain text is shown while Spotify is asked whether it has the song timed.
             if (SGKaraokeLinesTiming(lyrics.karaokeLines) != SGKaraokeTimingNone) return;
         }
         [sg_requested removeObject:trackID];
-        requestFromSpotify(trackID);
+        requestFromSpotify(trackID, !lyrics && SGLyricsMayHave(trackID));
     });
 }
 
@@ -223,7 +229,9 @@ NSString *SGKaraokePlayingTrack(void) {
 NSInteger SGKaraokePositionMs(void) {
     SPTPlayerState *state = playerState();
     if (!state) return -1;
-    return (NSInteger)((state.isPaused ? state.positionAsOfTimestamp : state.position) * 1000);
+    double position;
+    if (!SGSingPosition(state, &position)) position = state.isPaused ? state.positionAsOfTimestamp : state.position;
+    return (NSInteger)(position * 1000);
 }
 
 void SGKaraokeSeek(NSInteger ms) {
@@ -295,6 +303,19 @@ static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *s
 }
 %end
 
+// A new track is noticed where the player is asked for its state, and with nothing on screen nothing
+// may ask: the player's own report of the change asks it, so the walk starts at the skip.
+@interface SGKaraokeTrackWatcher : NSObject <SGPlayerStateObserver>
+@end
+
+@implementation SGKaraokeTrackWatcher
+- (void)playerStateDidChange:(SPTPlayerState *)state {
+    playerState();
+}
+@end
+
+static SGKaraokeTrackWatcher *sg_trackWatcher;
+
 %hook SPTDataLoaderService
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveData:(NSData *)data {
     received(session, task, data);
@@ -320,14 +341,24 @@ static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *s
 %ctor {
     // The sources that search by name learn the name from the player, so the player is caught
     // whenever one is on, not only for the redesign's lyrics and the lock screen.
-    if (!SGRedesignedUI() && !SGFlag(SGKeyLockScreenLyrics, NO) && !SGLyricsEnabled()) return;
+    if (!SGRedesignedUI() && !SGFlag(SGKeyLockScreenLyrics, NO) && !SGLyricsActive()) return;
     sg_seenTracks = [NSMutableDictionary dictionary];
     sg_lyrics = [NSMutableDictionary dictionary];
     sg_requested = [NSMutableSet set];
     sg_asking = [NSMutableSet set];
     sg_losses = [NSMutableDictionary dictionary];
-    sg_ownSources = SGLyricsEnabled();
+    sg_ownSources = SGLyricsActive();
     %init;
+    sg_trackWatcher = [SGKaraokeTrackWatcher new];
+    SGAddPlayerStateObserver(sg_trackWatcher);
+    // Spotify's lyrics request can wait for the app to come back, and a walk that failed in the
+    // background was not kept, so it runs again now, ahead of that request.
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil
+                                                     queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+        SPTPlayerState *state = playerState();
+        NSString *trackID = idOf(state.track);
+        if (trackID) prefetch(state.track, trackID, state);
+    }];
     SGLog(@"karaoke: on");
     SGRequireClasses(@[
         @"SPTEsperantoPlayer", @"SPTPlayerState",
