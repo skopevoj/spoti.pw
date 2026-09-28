@@ -4,6 +4,7 @@
 #import <objc/runtime.h>
 #import "../download-mock.h"
 #import "../faces-mock.h"
+void SGRRunAlbumChecks(UIView *page, NSArray<UICollectionViewCell *> *footer, BOOL native);
 
 #pragma mark - Spotify's classes, by name
 
@@ -194,7 +195,7 @@ static NSString *trailingLabel(UIView *root) {
 
 #pragma mark - the page
 
-@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate>
+@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate, UIWindowSceneDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @property (nonatomic, strong) SGRMetaSource *meta;
 @end
@@ -209,7 +210,22 @@ static NSString *trailingLabel(UIView *root) {
 }
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
-    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    return YES;
+}
+
+- (UISceneConfiguration *)application:(UIApplication *)application
+    configurationForConnectingSceneSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    UISceneConfiguration *configuration = [[UISceneConfiguration alloc] initWithName:@"Album" sessionRole:session.role];
+    configuration.delegateClass = SGRHarnessDelegate.class;
+    return configuration;
+}
+
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    [self buildPageInScene:(UIWindowScene *)scene];
+}
+
+- (BOOL)buildPageInScene:(UIWindowScene *)scene {
+    self.window = [[UIWindow alloc] initWithWindowScene:scene];
     CGFloat W = self.window.bounds.size.width, H = self.window.bounds.size.height;
 
     UIViewController *root = [UIViewController new];
@@ -355,7 +371,7 @@ static NSString *trailingLabel(UIView *root) {
                                                @[@"I Can't Fucking Sing", @"The Weeknd"],
                                                @[@"São Paulo (feat. Anitta)", @"The Weeknd, Anitta"],
                                                @[@"Until We're Skin & Bones", @"The Weeknd"],
-                                               @[@"Baptized In Fear", @"The Weeknd"]];
+                                               @[@"Timeless", @"The Weeknd, Playboi Carti"]];
     CGFloat y = 8;
     for (NSArray<NSString *> *track in tracks) {
         UICollectionViewCell *cell = [[_TtC12Element_List18CollectionViewCell alloc] initWithFrame:CGRectMake(0, y, W, 56)];
@@ -365,14 +381,28 @@ static NSString *trailingLabel(UIView *root) {
         UIView *row = box(content, UIView.class, content.bounds, @"Components.UI.RetrievalRowElementUI");
         row.backgroundColor = [UIColor colorWithWhite:0.07 alpha:1];
         label(row, CGRectMake(16, 8, W - 90, 18), track[0], 13, UIColor.whiteColor, @"EncoreConsumerMobile.View.Granular.Title");
-        label(row, CGRectMake(16, 30, W - 90, 15.33), track[1], 11, UIColor.whiteColor, @"EncoreConsumerMobile.View.Granular.Subtitle");
+        UIView *subtitle = box(row, UIView.class, CGRectMake(16, 30, W - 90, 15.33),
+                              @"EncoreConsumerMobile.View.Granular.Subtitle");
+        subtitle.clipsToBounds = YES;
+        BOOL explicit = [tracks indexOfObject:track] >= 1 && [tracks indexOfObject:track] <= 3;
+        CGFloat inset = explicit ? 15 : 0;
+        label(subtitle, CGRectMake(inset, 0, subtitle.bounds.size.width - inset, 15.33),
+              track[1], 11, UIColor.whiteColor, nil);
+        if (explicit) {
+            UIView *badge = box(row, UIView.class, CGRectMake(16, 32, 11, 11), @"Components.UI.ExplicitIcon");
+            badge.backgroundColor = UIColor.lightGrayColor;
+            badge.layer.cornerRadius = 2;
+            UILabel *glyph = label(badge, badge.bounds, @"E", 9, UIColor.blackColor, nil);
+            glyph.font = [UIFont boldSystemFontOfSize:9];
+            glyph.textAlignment = NSTextAlignmentCenter;
+        }
         actionButton(row, CGRectMake(W - 64, 4, 48, 48), @"Components.UI.ContextMenuButton-5673WA8EEUSPx1ir26lhGW", @"ellipsis", @"More options");
         y += 56;
     }
     _tracksBottom = y;
 
-    // and under it the footer Spotify sends: the album's own line, the copyright, and the sections the
-    // redesign drops -- each with the 16pt spacer Spotify puts between them.
+    // and under it the footer Spotify sends: the album's own line, the copyright, and discovery sections, each
+    // with the 16pt spacer Spotify puts between them.
     _footerCells = [NSMutableArray array];
     NSArray *footer = @[@[@"", @16], @[@"Album.ConsumptionExperience", @15.33], @[@"", @16],
                         @[@"heading:More by The Weeknd", @52.67], @[@"cards", @194.33], @[@"", @16],
@@ -498,9 +528,10 @@ static NSString *trailingLabel(UIView *root) {
     }
 
     // The list is measured the way the page's collection measures it: every cell is asked how tall it wants
-    // to be, which is where AlbumSections.x answers 0 for what the redesign drops, and the answers are
+    // to be, which preserves Spotify's natural heights, and the answers are
     // stacked. Done a beat after launch, so the header has laid out at least once first.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        SGRRunAlbumChecks(page, self->_footerCells, [NSProcessInfo.processInfo.arguments containsObject:@"native"]);
         [self measureFooter:W];
         NSLog(@"[harness] hero %@, title stack %@, action row %@",
               NSStringFromCGRect([cover.window convertRect:cover.bounds fromView:cover]),
@@ -577,7 +608,8 @@ static NSString *trailingLabel(UIView *root) {
 
 // Before every %ctor, so the redesign's gate reads on.
 __attribute__((constructor(101))) static void sgr_harnessDefaults(void) {
-    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"spotifyglass.redesign"];
+    [NSUserDefaults.standardUserDefaults setBool:![NSProcessInfo.processInfo.arguments containsObject:@"native"]
+                                         forKey:@"spotifyglass.redesign"];
 }
 
 int main(int argc, char *argv[]) {

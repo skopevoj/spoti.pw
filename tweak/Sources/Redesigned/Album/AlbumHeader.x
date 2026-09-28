@@ -415,6 +415,7 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page) {
     UIView *metadata = SGRFindByIdentifier(header, @"Components.UI.MetadataRow", &kMetaKey);
     NSString *name = firstText(title), *length = metadataText(metadata);
     NSString *artist = firstText(parent) ?: trimmed(parent.accessibilityLabel);
+    SGRAlbumSetArtist(page, artist);
     [info showTitle:name creator:artist length:length about:nil];
     [(SGRAlbumHero *)objc_getAssociatedObject(header, &kHeroKey) findMotionOf:name by:artist];
     // The kind and the date are cells the metadata row's collection view makes on its own pass, after the

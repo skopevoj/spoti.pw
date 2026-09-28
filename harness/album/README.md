@@ -9,7 +9,11 @@ on the Mac without the phone.
     xcrun simctl launch booted com.vojta.albumharness
     xcrun simctl io booted screenshot shot.png
 
-`build.sh` runs `logos.pl -c generator=internal` over the four `.x` files and links them with the
+Run the behavioral checks for redesigned, native and late-loading pages:
+
+    THEOS=$HOME/theos python3 test.py SIMULATOR_UDID
+
+`build.sh` runs `logos.pl -c generator=internal` over the four album `.x` files and `PlaylistField.x`, linking them with the
 real `Core/` and `Redesigned/Kit/` sources; `stubs.m` stands in for the two hook files the harness
 does not compile (`SGRAccent.x`, `SGRRepaint.x`).
 
@@ -20,10 +24,25 @@ explore, add, download and more, the two controls Spotify floats over the page o
 line, the copyright, and the headings and carousels of more by, videos, merch and you might also like,
 each with the 16pt spacer between them.
 
-At 1.5 s it measures the footer the way the page's collection does, asking every cell
-`preferredLayoutAttributesFittingAttributes:` and stacking the answers: that is where `AlbumSections.x`
-answers 0 for what it drops, and the log says how much footer was left (108pt of 1230pt, the album's
-own line and its copyright).
+At 1.5 s it runs `checks.m` against the production hooks and measures the footer through
+`preferredLayoutAttributesFittingAttributes:`. All 1203pt of the mock footer stay at their natural
+height, including headings, carousels and spacers. The checks cover conservative artist matching,
+late header metadata, co-artists, guest credits, Unicode, inline badges, long titles, RTL,
+repeated layout, cell reuse, non-album rows and footer accessibility. They also reproduce the nested
+album-card backing and the plain UIKit playlist recommendation cell captured on device, checking
+paint cleanup after reuse/reload while preserving artwork, badges and non-base colors.
+A failure aborts; success logs `[album-checks] PASS`.
+
+`native` on the launch line starts with Redesigned UI off and checks that the same rows and footer
+remain untouched. The app uses the scene lifecycle so it also launches with the iOS 27 SDK.
+
+The first five visual rows have no repeated artist line; `Timeless` retains its uncredited guest.
+The three explicit tracks use label-backed `Components.UI.ExplicitIcon` siblings, as captured on
+the phone. They show beside the title. Concealing the subtitle wrapper also survives Encore
+refreshing its internal label's alpha after the parent layout pass.
+Row heights stay Spotify's: removing text must not shrink the existing controls or break the
+Element framework's sizing. Artist credits remain in Spotify's original text/accessibility model.
+No new glass or animations are added to content.
 
 Since 2026-09-18 the header is the Kit's `SGRHeaderInfo` over Spotify's blanked column, so what follows no
 longer tests anything the redesign moves; it still shows Spotify's column staying blank. The metadata row's

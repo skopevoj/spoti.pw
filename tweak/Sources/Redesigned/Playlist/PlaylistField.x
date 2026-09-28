@@ -86,8 +86,15 @@ static SGRArtworkField *fieldIn(UIView *page) {
 %hook _TtC35ListUXPlatform_FreeTierPlaylistImpl32FTPTouchCancellingCollectionView
 - (void)layoutSubviews {
     %orig;
-    UIScrollView *list = (UIScrollView *)self;
+    UICollectionView *list = (UICollectionView *)self;
     if (list.backgroundColor && SGIsBaseSurface(list.backgroundColor.CGColor)) list.backgroundColor = UIColor.clearColor;
+    // The recommendations heading is a plain UICollectionViewCell, unlike the track/extender
+    // cells handled by PlaylistRows.x. Its Encore.Label arrives already painted black (device,
+    // 2026-09-24). These footer cells attach directly to the list, outside its managed visibleCells.
+    // Clear the mounted plain cells after layout; track-cell subclasses have their own cleanup.
+    for (UIView *view in list.subviews) {
+        if ([view isMemberOfClass:UICollectionViewCell.class]) SGRClearCellPaint(view);
+    }
 }
 %end
 

@@ -13,8 +13,7 @@
 //     AlbumHeader.x    the header: the cover full bleed at the top dissolving into the field, and the Kit's
 //                      SGRHeaderInfo over it -- title, artist, kind and date, shuffle, a white Play, add
 //     AlbumRows.x      the track rows on the field with no surface of their own and a hairline between them
-//     AlbumSections.x  everything under the tracks dropped but the album's own line and its copyright: no
-//                      more by the artist, no videos, no concerts, no merch, no you might also like
+//     AlbumSections.x  Spotify's discovery sections and spacing kept; album length and copyright subdued
 //     AlbumSettings.m  the Albums page of Mod Settings
 //
 // Every hook installs only while Redesigned UI is on (SGRedesignedUI); the native look's do not then.
@@ -29,6 +28,10 @@ UIViewController *SGRAlbumSettingsPage(void);
 // The album page `view` is on, or nil: the CreativeWorkTemplateView that carries the header, the list and
 // the two floating controls (trees/clean/album/01.txt:22).
 UIView *SGRAlbumPageOf(UIView *view);
+
+// AlbumRows.x. Header credits belong to this page, including while its header is off screen.
+// A late/changed credit refreshes only the rows this page has already displayed.
+void SGRAlbumSetArtist(UIView *page, NSString *artist);
 
 // AlbumField.x. The field belongs to the page `view` is on, found by walking up from it, so two album pages
 // on the navigation stack keep a field each.

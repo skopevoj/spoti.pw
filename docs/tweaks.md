@@ -262,13 +262,17 @@ Redesigned:
                   Laid out on the Mac against harness/playlist/
     Album/        the album page laid out the same way, on the page the Creative Work Platform builds rather than the
                   playlist's, so it shares nothing with Playlist/ but the Kit: the cover full bleed dissolving into the
-                  field, the title, the artist after their picture and the kind and date centred under it, and the
-                  same row of glass controls -- play and shuffle float over the album page outside its header, so they
-                  are concealed there and the row carries the Kit's stand-ins, which draw their glyph and fire them. Under the tracks
-                  everything the server sends is dropped -- more by the artist, videos, concerts, merch, you might also
-                  like, and whatever it adds next -- but the album's own line and its copyright (Album.h lists its
-                  files). A podcast's episode page is the same template, so it is given the same field, and what it
-                  paints over it is taken off. Laid out on the Mac against harness/album/
+                  field, the title, the artist after their picture and the kind and date centred under it, and the same row of glass
+                  controls -- play and shuffle float over the album page outside its header, so they are concealed
+                  there and the row carries the Kit's stand-ins, which draw their glyph and fire them. Under the tracks
+                  Spotify's discovery sections, their order and their spacing are kept, including more by the artist,
+                  related videos and recommendations; the album's length and copyright stay subdued. Track artist
+                  lines are hidden only when they repeat the album artist, or repeat an explicit featured credit
+                  in the title. The header's bullet-separated co-artists match comma-separated track credits.
+                  Other collaborators, compilations and uncertain credits keep their artist line. Spotify still
+                  sizes the rows; its explicit badge sits inline beside titles whose artist text is omitted
+                  (Album.h lists its files). A podcast's episode
+                  page is the same template, so it is given the same field, and what it paints over it is taken off. Laid out on the Mac against harness/album/
 
 App:
 
