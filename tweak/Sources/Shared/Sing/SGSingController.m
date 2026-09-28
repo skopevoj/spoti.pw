@@ -25,7 +25,7 @@ static const NSTimeInterval kCommandWait = 5;
 static NSString *trackOf(SPTPlayerState *state) { return SGURIString(state.track.URI); }
 static BOOL isSong(NSString *uri) { return [uri hasPrefix:@"spotify:track:"]; }
 static BOOL notPlaying(SPTPlayerState *state) { return state.isPaused || !state.isPlaying; }
-static BOOL overheated(void) { return NSProcessInfo.processInfo.thermalState >= NSProcessInfoThermalStateSerious; }
+static BOOL overheated(void) { return NSProcessInfo.processInfo.thermalState >= NSProcessInfoThermalStateCritical; }
 // Everything between the source and the ear, in source seconds: the output route, and speed and pitch's unit.
 static double downstreamLatency(void) {
     return (AVAudioSession.sharedInstance.outputLatency + SGPlayerAudioLatency()) * SGPlayerSpeed();
