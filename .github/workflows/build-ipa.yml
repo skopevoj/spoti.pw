@@ -3,7 +3,7 @@ name: Build IPA from your own Spotify IPA
 on:
   workflow_dispatch:
     inputs:
-      ipa_url:
+      ipa_url:https://decrypt.34306.lol/api/v1/download/com.spotify.client?region=vn
         description: "Direct link to a decrypted Spotify IPA"
         required: true
         type: string
