@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.22.0](https://github.com/skopevoj/spoti.pw/compare/v0.21.1...v0.22.0) (2026-09-23)
+
+
+### Features
+
+* Apple Music's animated album cover on the lock screen where the track has no Canvas ([e0d5538](https://github.com/skopevoj/spoti.pw/commit/e0d55383bc26149d7f3f5c803d07df0d0cf0e8bc))
+* audio effects run on the mod's own engine, libjamesdsp is gone ([413b2d3](https://github.com/skopevoj/spoti.pw/commit/413b2d3e5647822961b3f9eed317c9accf729a4c))
+* find in playlist as a glass search bar above the header, shown on pull-down ([#81](https://github.com/skopevoj/spoti.pw/issues/81)) ([36ed0a7](https://github.com/skopevoj/spoti.pw/commit/36ed0a798fb2f7756e8e62f2e0ee893b8329a1b8))
+* line meanings from Genius on the lyrics, a bubble for the artist's own and an underline for the rest, opened in a sheet ([950baf7](https://github.com/skopevoj/spoti.pw/commit/950baf778f6aa342176f293bc2ab00f0e960640a))
+* Mod &gt; Licenses shows the mod's license and the full text of the third-party ones ([c790445](https://github.com/skopevoj/spoti.pw/commit/c790445c70fcf6d0dea07b9550fa6d64a7fb87b7))
+* play the track's Canvas as the lock screen's animated artwork ([c4b75e3](https://github.com/skopevoj/spoti.pw/commit/c4b75e3785de5a49407cd6762fb8cc30c26cf5fa))
+* the artist's Follow is a glyph that turns into a checkmark, as add to library does ([#88](https://github.com/skopevoj/spoti.pw/issues/88)) ([f10bf8d](https://github.com/skopevoj/spoti.pw/commit/f10bf8d88e7d4a126ad143a77280999a64ab1c58))
+
+
+### Fixes
+
+* a long note under a settings section shows in full instead of ending in an ellipsis ([a6b1876](https://github.com/skopevoj/spoti.pw/commit/a6b187684356c83dad10cda2213f933886d6cc69))
+* add to library turns into a checkmark, and Follow no longer flips from a glyph to a word ([#86](https://github.com/skopevoj/spoti.pw/issues/86), [#88](https://github.com/skopevoj/spoti.pw/issues/88)) ([e524034](https://github.com/skopevoj/spoti.pw/commit/e524034ed886ff624761ca2299940d7b143e380f))
+* the player's more menu no longer hangs on loading and greys out lyrics for tracks no source has lyrics for ([#93](https://github.com/skopevoj/spoti.pw/issues/93)) ([283ac30](https://github.com/skopevoj/spoti.pw/commit/283ac308180468a1e124a3fb1e7a2ab9633d9241))
+* the playlist's cover keeps its size and its fade after the page is pulled down past the top ([a83562c](https://github.com/skopevoj/spoti.pw/commit/a83562cd928fa7a710d8a28ddd32c9e7486a0fa7))
+* the redesigned player can no longer be scrolled up ([#83](https://github.com/skopevoj/spoti.pw/issues/83)) ([62eee33](https://github.com/skopevoj/spoti.pw/commit/62eee3363981310b0e3d3c79e60acb2f9c309182))
+
 ## [0.21.1](https://github.com/skopevoj/spoti.pw/compare/v0.21.0...v0.21.1) (2026-09-21)
 
 

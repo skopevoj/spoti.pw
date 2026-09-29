@@ -1,4 +1,4 @@
-// Music Haptics on Spotify's audio chain rebuilt with real Core Audio units in the simulator (as harness/jamesdsp/sim
+// Music Haptics on Spotify's audio chain rebuilt with real Core Audio units in the simulator (as harness/audio-effects/sim
 // does: a converter fed by a render callback, a mixer and RemoteIO, wired with MakeConnection, slices of 4096),
 // with MusicHaptics.x, the analyzer and the Vibrations settings compiled in and fakehaptics.m standing in for Core
 // Haptics. The harness is the main executable, so its AudioOutputUnitStart goes through the rebound import slot as

@@ -42,7 +42,7 @@ static const CGFloat kMinHero = 120, kMinCover = 80;
 
 static char kCoverKey, kMetaKey, kPlayKey, kLayoutKey, kToolbarKey, kScrimKey, kBarScrimKey;
 static char kShuffleKey, kAddKey, kDownloadKey, kInfoKey, kBlockHeightKey, kBlockWatchedKey;
-static char kHeroKey, kHeroHeightKey, kRowKey, kRowWatchedKey, kMoreKey, kCreatorKey, kPinnedMoreKey, kSortKey;
+static char kHeroKey, kHeroHeightKey, kRestPlaneKey, kRowKey, kRowWatchedKey, kMoreKey, kCreatorKey, kPinnedMoreKey, kSortKey;
 
 #pragma mark - finding things
 
@@ -100,12 +100,11 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
 
 #pragma mark - the cover, full bleed
 
-// The picture across the top of the page with the field showing through the bottom of it. Two gradients
-// rather than a mask or a blur: a scrim over the top for the status bar, and under it a fade from the
-// picture to the very colour the page's field is drawing, so the two meet with nothing to see.
+// The picture across the top of the page, a scrim over its top for the status bar, and its bottom masked
+// away so the field shows through whatever colour it is at that height: pulled down, the hero ends where
+// the field is already fading to black, and a fade to the field's flat colour showed as an edge.
 @interface SGRPlaylistHero : UIView
 @property (nonatomic, readonly) UIImageView *picture;
-@property (nonatomic, copy) UIColor *fieldColor;
 @property (nonatomic) CGFloat coverPixels;   // the widest copy of the artwork it has been shown
 // The cover in Spotify's artwork view, and every cover it puts there afterwards: the hero keeps itself
 // right, rather than being handed a picture on each of the header's passes and staying empty between them.
@@ -113,7 +112,7 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
 @end
 
 @implementation SGRPlaylistHero {
-    CAGradientLayer *_scrim, *_dissolve;
+    CAGradientLayer *_scrim, *_dissolve;   // the dissolve is the layer's mask
     __weak UIImageView *_cover;
 }
 
@@ -136,35 +135,10 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
     [self.layer addSublayer:_scrim];
 
     _dissolve = [CAGradientLayer layer];
-    _dissolve.zPosition = 2;
-    [self.layer addSublayer:_dissolve];
-    self.fieldColor = SGRNeutralField();
-    // The colour is read off the main thread, so it can land after the last layout pass of the page.
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(sgr_fieldColorDidChange)
-                                               name:SGRFieldColorDidChangeNotification object:nil];
+    _dissolve.colors = @[(id)UIColor.blackColor.CGColor, (id)UIColor.blackColor.CGColor,
+                         (id)[UIColor colorWithWhite:0 alpha:0.28].CGColor, (id)UIColor.clearColor.CGColor];
+    self.layer.mask = _dissolve;
     return self;
-}
-
-- (void)dealloc {
-    [NSNotificationCenter.defaultCenter removeObserver:self];
-}
-
-- (void)sgr_fieldColorDidChange {
-    if (self.superview) self.fieldColor = SGRPlaylistFieldColor(self);
-}
-
-- (void)setFieldColor:(UIColor *)color {
-    if (!color || [_fieldColor isEqual:color]) return;
-    _fieldColor = [color copy];
-    // The clear end is the same colour with no alpha rather than +clearColor, so the fade keeps its hue
-    // instead of going through grey.
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    _dissolve.colors = @[(id)[color colorWithAlphaComponent:0].CGColor,
-                         (id)[color colorWithAlphaComponent:0.72].CGColor,
-                         (id)color.CGColor];
-    _dissolve.locations = @[@0, @0.62, @1];
-    [CATransaction commit];
 }
 
 - (void)layoutSubviews {
@@ -173,8 +147,9 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _scrim.frame = CGRectMake(0, 0, bounds.size.width, MIN(kTopScrim, bounds.size.height));
-    CGFloat fade = round(bounds.size.height * kDissolve);
-    _dissolve.frame = CGRectMake(0, bounds.size.height - fade, bounds.size.width, fade);
+    CGFloat height = MAX(1, bounds.size.height), fade = round(height * kDissolve);
+    _dissolve.frame = bounds;
+    _dissolve.locations = @[@0, @((height - fade) / height), @((height - fade * 0.38) / height), @1];
     [CATransaction commit];
 }
 
@@ -226,23 +201,10 @@ static UIImageView *coverImageIn(UIView *cover) {
     return found ?: empty;
 }
 
-// The hero belongs in the plane Spotify's own colour wash is drawn on: that plane keeps its full height and
-// slides up out of the clipping view as the header collapses, and the container above it fades it out as the
-// navigation bar takes over (trees/continuous/2.txt: the wash at {0, -364} 402x474 inside a 110pt container
-// at a=0.00). So the picture needs no help to move -- Core Animation carries it with the plane, in the same
-// frame, with nothing to recompute and so nothing to flicker.
-//
-// Which is the whole design: the hero is measured once, when the header is first laid out whole, and its
-// frame never changes again. Everything else the page does to it -- the collapse, the snap, the bounce at
-// the top -- is the plane's movement, which is Spotify's to make and ours to sit still inside. Reading the
-// header's geometry on every frame instead is what made it flicker: the numbers it is built from move under
-// their own animations, and a redesign reading them is always a frame behind.
-//
-// Its height is where the header's text begins, taken in the plane's own space, and a little past. Below that the page's field
-// is already drawing the very colour the picture dissolves into, so the hero simply stops there: pulled down
-// past the top, where Spotify moves its text down and leaves a gap, that gap is the same colour and there is
-// no seam to see.
-static void applyHero(UIView *layout, UIView *cover, UIView *plane, UIView *block, CGFloat reach) {
+// The hero sits in the plane Spotify's colour wash is drawn on, which slides away as the header collapses, so
+// Core Animation carries it and its frame is only measured at rest: reading the header per frame flickers.
+// Pulled down past the top the plane grows and the hero stretches with it, bottom kept in place.
+static void applyHero(UIView *layout, UIView *cover, UIView *plane, UIView *block, CGFloat reach, CGFloat stretch) {
     if (!plane || !block) return;
     SGRPlaylistHero *hero = objc_getAssociatedObject(plane, &kHeroKey);
     if (!hero) {
@@ -252,31 +214,22 @@ static void applyHero(UIView *layout, UIView *cover, UIView *plane, UIView *bloc
     if (hero.superview != plane) [plane insertSubview:hero atIndex:0];
     else if (plane.subviews.firstObject != hero) [plane sendSubviewToBack:hero];
 
-    // The top of the block in the layout's own space, which is the plane's own while the header is whole:
-    // both sit at the top of the clipping view, and the 134pt the page is pulled down by moves them
-    // together. So it is the height the picture wants, and the only one that does not move under the
-    // header's animations.
-    //
-    // The furthest down it has been, rather than where it is: a header still loading puts the block higher
-    // than it will end up (267 against the 338 it settled at, trees/continuous 2026-09-17, which left the
-    // picture stopping short with a band of bare field between it and the title), and a header collapsing
-    // climbs it out of its place altogether. Both are answered by only ever letting it grow, which settles
-    // once the cover and the description are in and never moves again.
+    // Grow-only: a header still loading puts the block higher than it ends up.
     CGFloat height = [objc_getAssociatedObject(hero, &kHeroHeightKey) doubleValue];
     CGFloat top = CGRectGetMinY(block.frame);
-    if (top > height + 0.5) {
+    if (stretch < 0.5 && top > height + 0.5) {
         height = top;
         objc_setAssociatedObject(hero, &kHeroHeightKey, @(height), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         SGLog(@"redesign playlist: hero %.0fpt across the top of the plane", height);
     }
     if (height < kMinHero) return;
     // On past the block's top by `reach`, so the title sits on the bottom of the dissolve the way the Music app
-    // sets it on the picture. `reach` comes from the block at rest (applyHeader), so the frame still does not
-    // move while the header does.
-    CGFloat bottom = MAX(kMinHero, round(height + reach));
+    // sets it on the picture. `reach` comes from the block at rest (applyHeader).
+    CGFloat bottom = MAX(kMinHero, round(height + reach)) + stretch;
+    // Flexible height as well, for a plane resized after this pass in the same frame.
+    hero.autoresizingMask = UIViewAutoresizingFlexibleHeight;
     CGRect frame = CGRectMake(0, 0, plane.bounds.size.width, bottom);
     if (!CGRectEqualToRect(hero.frame, frame)) hero.frame = frame;
-    hero.fieldColor = SGRPlaylistFieldColor(layout);
 
     [hero followCover:coverImageIn(cover)];
     conceal(cover);
@@ -448,14 +401,28 @@ static SGRHeaderInfo *applyInfo(UIView *block, UIView *headerRoot, UIViewControl
 
 #pragma mark - the header's pass
 
-// Find on this page and Sort sit in a header view of their own above the cover, invisible until the page is
-// scrolled; the Music app has neither.
+// Find on this page and Sort sit above the cover, shown as the page is pulled down. They stay Spotify's own
+// controls, so the tap opens Spotify's find page; only the grey box becomes glass.
+static void glassUp(UIView *box, const void *key) {
+    CGSize size = box.bounds.size;
+    if (size.width < 1 || size.height < 1) return;
+    if (box.backgroundColor != UIColor.clearColor) box.backgroundColor = UIColor.clearColor;
+    if (box.layer.cornerRadius != size.height / 2) box.layer.cornerRadius = size.height / 2;
+    SGRGlassCapsuleInside(box, key, size, NO);
+}
+
 static void applyToolbar(UIView *headerRoot) {
+    static char kFieldKey, kSortBoxKey, kFieldGlassKey, kSortGlassKey;
     UIView *toolbar = SGRFindByIdentifier(headerRoot, @"Components.Header.UI.Toolbar.Content", &kToolbarKey);
-    for (UIView *v = toolbar; v && v != headerRoot; v = v.superview) {
-        if (![NSStringFromClass(v.class) containsString:@"HeaderView"]) continue;
-        conceal(v);
-        break;
+    if (!toolbar) return;
+    UIView *field = SGRFindByIdentifier(toolbar, @"Components.Header.UI.Toolbar.SearchField", &kFieldKey);
+    glassUp(field, &kFieldGlassKey);
+    glassUp(SGRFindByIdentifier(toolbar, @"Components.Header.UI.Toolbar.ButtonContainer", &kSortBoxKey), &kSortGlassKey);
+    static BOOL logged;
+    if (!logged && field.window) {
+        logged = YES;
+        SGLog(@"redesign playlist: find field %@ in glass, %.0fx%.0f", field.accessibilityLabel,
+              field.bounds.size.width, field.bounds.size.height);
     }
 }
 
@@ -557,14 +524,27 @@ static void applyHeader(UIView *layout) {
     applyScrims(headerRoot);
     SGRHeaderInfo *info = applyInfo(block, headerRoot, headerVC);
 
-    // How far into the block the picture reaches: to where the content's top is at rest, plus the title and
-    // the creator. The block's height at rest is the tallest it has been -- collapsing shrinks it (136 against
-    // 178, trees/continuous/2.txt) and loading the description grows it -- so like the hero's top it only grows,
-    // and the picture does not change size while the header moves.
-    CGFloat rest = MAX([objc_getAssociatedObject(block, &kBlockHeightKey) doubleValue], block.bounds.size.height);
-    objc_setAssociatedObject(block, &kBlockHeightKey, @(rest), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    // How far the page is pulled down past the top: the plane grows by that much and the block moves with it,
+    // so nothing is measured then. Rest is the smallest the plane has been.
+    CGFloat planeHeight = plane.bounds.size.height;
+    CGFloat restPlane = [objc_getAssociatedObject(plane, &kRestPlaneKey) doubleValue];
+    if (planeHeight > 0 && (restPlane <= 0 || planeHeight < restPlane - 0.5)) {
+        restPlane = planeHeight;
+        objc_setAssociatedObject(plane, &kRestPlaneKey, @(restPlane), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(objc_getAssociatedObject(plane, &kHeroKey), &kHeroHeightKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(block, &kBlockHeightKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    CGFloat stretch = MAX(0, planeHeight - restPlane);
+
+    // How far into the block the picture reaches: past the block's top by the title and the creator. The
+    // block's height only grows (loading the description grows it, collapsing shrinks it).
+    CGFloat rest = [objc_getAssociatedObject(block, &kBlockHeightKey) doubleValue];
+    if (stretch < 0.5 && block.bounds.size.height > rest) {
+        rest = block.bounds.size.height;
+        objc_setAssociatedObject(block, &kBlockHeightKey, @(rest), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
     CGFloat reach = rest - SGRHeaderInfoBottom - [info contentHeightForWidth:info.bounds.size.width] + SGRHeaderInfoTitleRise;
-    if (cover) applyHero(layout, cover, plane, block, reach);
+    if (cover) applyHero(layout, cover, plane, block, reach, stretch);
 }
 
 // The content layout of the page `root` belongs to, kept weakly on it: the header lays out on every step of

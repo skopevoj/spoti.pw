@@ -1,4 +1,4 @@
-// Reading Spotify's download button, and the glyph drawn for it.
+// Reading Spotify's download and add-to buttons, and the glyph drawn for the download.
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "SGRDownload.h"
@@ -8,19 +8,19 @@
 
 static NSString *const kIdentifierPrefix = @"DownloadButton.Granular.";
 
-static UIView *downloadButtonIn(UIView *source) {
+static UIView *identifiedIn(UIView *source, NSString *prefix) {
     __block UIView *found = nil;
     SGForEachView(source, ^(UIView *v) {
-        if (!found && [v.accessibilityIdentifier hasPrefix:kIdentifierPrefix]) found = v;
+        if (!found && [v.accessibilityIdentifier hasPrefix:prefix]) found = v;
     });
     return found;
 }
 
 // The Encore object behind the button: the target of the button's own action (-performAction).
-static id ownerOf(UIView *button) {
+static id ownerOf(UIView *button, NSString *kind) {
     if (![button isKindOfClass:UIControl.class]) return nil;
     for (id target in ((UIControl *)button).allTargets) {
-        if ([NSStringFromClass(object_getClass(target)) containsString:@"GranularDownloadButton"]) return target;
+        if ([NSStringFromClass(object_getClass(target)) containsString:kind]) return target;
     }
     return nil;
 }
@@ -49,7 +49,7 @@ static BOOL stateFromIdentifier(NSString *identifier, SGRDownloadState *state) {
 }
 
 BOOL SGRReadDownload(UIView *source, SGRDownloadState *state, CGFloat *progress) {
-    UIView *button = source ? downloadButtonIn(source) : nil;
+    UIView *button = source ? identifiedIn(source, kIdentifierPrefix) : nil;
     if (!button) return NO;
     SGRDownloadState said = SGRDownloadNone;
     BOOL named = stateFromIdentifier(button.accessibilityIdentifier, &said);
@@ -58,7 +58,7 @@ BOOL SGRReadDownload(UIView *source, SGRDownloadState *state, CGFloat *progress)
     // in the order they are declared; its progress an optional 8 byte number, the value then a byte that is
     // 1 when there is none. The identifier says the same state in words, and is what counts when the model
     // cannot be read.
-    id owner = ownerOf(button);
+    id owner = ownerOf(button, @"GranularDownloadButton");
     const uint8_t *current = propertyBytes(owner, "currentState", 1);
     const uint8_t *stored = propertyBytes(owner, "progress", 9);
     BOOL modelled = current && *current <= 5;
@@ -102,6 +102,22 @@ BOOL SGRReadDownload(UIView *source, SGRDownloadState *state, CGFloat *progress)
     }
     if (state) *state = result;
     if (progress) *progress = value;
+    return YES;
+}
+
+BOOL SGRReadAddTo(UIView *source, BOOL *added) {
+    UIView *button = source ? identifiedIn(source, @"Components.UI.AddToButton") : nil;
+    if (!button) return NO;
+    // A Swift enum without payloads, one byte: notAdded, added.
+    const uint8_t *status = propertyBytes(ownerOf(button, @"AddToButton"), "currentStatus", 1);
+    int raw = status ? *status : -1;
+    static int logged = -2;
+    if (raw != logged) {
+        logged = raw;
+        SGLog(@"redesign kit: add-to state %d, label \"%@\"", raw, button.accessibilityLabel);
+    }
+    if (!status || *status > 1) return NO;
+    if (added) *added = *status == 1;
     return YES;
 }
 

@@ -49,7 +49,7 @@ NSMutableArray<SGPBField *> *SGPBParse(NSData *data) {
                 at += size;
                 break;
             case 2:
-                // Against what is left rather than at + value, which a length near 2^64 wraps past the check.
+                // Against what is left rather than added to `at`: a length near 2^64 wraps the sum.
                 if (!readVarint(bytes, length, &at, &value) || value > length - at) return nil;
                 field.payload = [NSData dataWithBytes:bytes + at length:(NSUInteger)value];
                 at += value;

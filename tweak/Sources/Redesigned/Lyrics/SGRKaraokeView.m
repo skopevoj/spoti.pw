@@ -10,6 +10,7 @@
 #import "Core/SGCore.h"
 #import "SGRKaraokeView.h"
 #import "LyricsText.h"
+#import "MeaningSheet.h"
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/Player/PlayerEvents.h"
 #import "Shared/Haptics/Haptics.h"
@@ -22,6 +23,10 @@ static const CGFloat kEdgeFade = 0.1;  // the lines fade out over this share at 
 static const CGFloat kBlurPerLine = 1.4, kMaxBlur = 6;
 // The (oh, aye) hanging under a line: smaller, a little dimmer, and just clear of it.
 static const CGFloat kBackingScale = 0.62, kBackingAlpha = 0.8, kBackingGap = 4;
+// The mark of a line Genius explains: a bubble after it for the artist's own word, a dotted underline
+// for anyone else's.
+static const CGFloat kBubbleSide = 22, kBubbleGap = 8, kBubbleGlyph = 11, kBubbleAlpha = 0.75, kBubbleReach = 14;
+static const CGFloat kUnderlineDrop = 1, kUnderlineWidth = 2, kUnderlineAlpha = 0.35;
 // The line naming the source, under the lyrics and outside the fade so it does not dim with them.
 static const CGFloat kCreditSize = 12, kCreditAlpha = 0.4, kCreditBottom = 10;
 // The button for the pronunciation and the translation, in the bottom leading corner as Apple Music
@@ -614,6 +619,9 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
 - (void)showTime:(double)ms;
 // Every word lit and left so, for lyrics with no timing: nothing is sung, so nothing is dim.
 - (void)showPlain;
+- (void)markMeaning:(NSArray<SGLyricsMeaning *> *)meanings;
+// Where the bubble can be tapped, in the line's own space; CGRectNull without one.
+@property (nonatomic, readonly) CGRect bubbleTarget;
 @end
 
 // The translation of a line being sung, brighter than a line waiting but never as bright as the words.
@@ -622,6 +630,9 @@ static const CGFloat kTranslationLit = 0.6;
 @implementation SGRKaraokeLineView {
     NSArray<SGRKaraokeSweep *> *_sweeps;   // the line's words, then their pronunciation's where shown
     NSArray<SGRKaraokeWordView *> *_words;   // every word of both
+    NSArray<SGRKaraokeWordView *> *_lyricWords;
+    UIImageView *_bubble;
+    CAShapeLayer *_underline;
     UILabel *_translation;
     NSUInteger _generation;
     SGRKaraokeLineView *_backing;
@@ -669,6 +680,7 @@ static double wholeFrom(SGKaraokeLine *run, BOOL sweepsEstimates) {
     if (spoken) [sweeps addObject:spoken];
     _sweeps = sweeps;
     _words = [sung.words ?: @[] arrayByAddingObjectsFromArray:spoken.words ?: @[]];
+    _lyricWords = sung.words;
 
     if (!CGRectIsNull(layout.translation)) {
         _translation = [[UILabel alloc] initWithFrame:layout.translation];
@@ -776,6 +788,66 @@ static const NSUInteger kLinesPerFrame = 4;
     }
     _translation.alpha = kTranslationLit;
     [_backing showPlain];
+}
+
+- (CGRect)bubbleTarget {
+    return _bubble ? CGRectInset(_bubble.frame, -kBubbleReach, -kBubbleReach) : CGRectNull;
+}
+
+- (void)markMeaning:(NSArray<SGLyricsMeaning *> *)meanings {
+    [_bubble removeFromSuperview];
+    _bubble = nil;
+    [_underline removeFromSuperlayer];
+    _underline = nil;
+    if (!meanings.count || !_lyricWords.count) return;
+    if (meanings.firstObject.author == SGLyricsMeaningByArtist) {
+        SGRKaraokeWordView *last = _lyricWords.lastObject;
+        BOOL rightToLeft = readsRightToLeft(SGKaraokeLineText(_line));
+        CGRect word = CGRectMake(last.center.x - last.bounds.size.width / 2, last.center.y - last.bounds.size.height / 2,
+                                 last.bounds.size.width, last.bounds.size.height);
+        CGFloat x = rightToLeft ? CGRectGetMinX(word) - kBubbleGap - kBubbleSide : CGRectGetMaxX(word) + kBubbleGap;
+        UIImage *glyph = [UIImage systemImageNamed:@"quote.opening" withConfiguration:
+                          [UIImageSymbolConfiguration configurationWithPointSize:kBubbleGlyph weight:UIImageSymbolWeightBold]];
+        _bubble = [[UIImageView alloc] initWithImage:glyph];
+        _bubble.contentMode = UIViewContentModeCenter;
+        _bubble.tintColor = UIColor.blackColor;
+        _bubble.backgroundColor = UIColor.whiteColor;
+        _bubble.layer.cornerRadius = kBubbleSide / 2;
+        _bubble.alpha = kBubbleAlpha;
+        _bubble.frame = CGRectMake(x, CGRectGetMidY(word) - kBubbleSide / 2, kBubbleSide, kBubbleSide);
+        _bubble.isAccessibilityElement = YES;
+        _bubble.accessibilityLabel = @"Meaning from the artist";
+        [self addSubview:_bubble];
+        return;
+    }
+    // One dotted stroke under each row the line's words wrap onto.
+    UIBezierPath *path = [UIBezierPath bezierPath];
+    CGFloat rowY = NAN, from = 0, to = 0;
+    for (SGRKaraokeWordView *word in _lyricWords) {
+        CGFloat bottom = word.center.y + word.bounds.size.height / 2 + kUnderlineDrop;
+        CGFloat left = word.center.x - word.bounds.size.width / 2, right = left + word.bounds.size.width;
+        if (bottom != rowY) {
+            if (!isnan(rowY)) {
+                [path moveToPoint:CGPointMake(from, rowY)];
+                [path addLineToPoint:CGPointMake(to, rowY)];
+            }
+            rowY = bottom;
+            from = left;
+            to = right;
+            continue;
+        }
+        from = MIN(from, left);
+        to = MAX(to, right);
+    }
+    [path moveToPoint:CGPointMake(from, rowY)];
+    [path addLineToPoint:CGPointMake(to, rowY)];
+    _underline = [CAShapeLayer layer];
+    _underline.path = path.CGPath;
+    _underline.strokeColor = [UIColor colorWithWhite:1 alpha:kUnderlineAlpha].CGColor;
+    _underline.lineWidth = kUnderlineWidth;
+    _underline.lineCap = kCALineCapRound;
+    _underline.lineDashPattern = @[@0, @5];
+    [self.layer insertSublayer:_underline atIndex:0];
 }
 
 @end
@@ -1003,6 +1075,8 @@ typedef struct {
     CFTimeInterval _clockTime;
     BOOL _sweepsEstimates;   // the Lyrics page's "Simulate word-by-word timing", read once like the credit
     BOOL _plain;             // the song has no timing at all: every line lit, nothing follows the clock
+    NSDictionary<NSNumber *, NSArray<SGLyricsMeaning *> *> *_meanings;   // Genius's, by line
+    NSUInteger _meaningsAsked;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -1038,6 +1112,7 @@ typedef struct {
     _sweepsEstimates = SGFlag(SGKeyLyricsSimulateWords, NO);
     [self addSubview:_credit];
     [self addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapped:)]];
+    [self addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(held:)]];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(playerTransitionChanged:) name:SGPlayerTransitionNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(playerTransitionChanged:) name:SGPlayerTransitionEndedNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restyle) name:SGRLyricsTextDidChangeNotification object:nil];
@@ -1056,8 +1131,14 @@ typedef struct {
 
 - (void)tapped:(UITapGestureRecognizer *)tap {
     if (_extras && !_extras.hidden && CGRectContainsPoint(_extras.frame, [tap locationInView:self])) return;
-    if (_plain) return;   // a line with no time has nowhere to seek to
     CGPoint point = [tap locationInView:_scroll];
+    for (SGRKaraokeLineView *view in _shown.allValues) {
+        CGRect target = view.bubbleTarget;
+        if (CGRectIsNull(target) || !CGRectContainsPoint(target, [_scroll convertPoint:point toView:view])) continue;
+        [self explainLine:view];
+        return;
+    }
+    if (_plain) return;   // a line with no time has nowhere to seek to
     for (SGRKaraokeLineView *view in _shown.allValues) {
         if (!CGRectContainsPoint(CGRectInset(view.frame, -_margin, -_lineGap / 2), point)) continue;
         SGKaraokeSeek(view.line.start);
@@ -1065,6 +1146,38 @@ typedef struct {
         [self followSong];
         return;
     }
+}
+
+- (void)held:(UILongPressGestureRecognizer *)hold {
+    if (hold.state != UIGestureRecognizerStateBegan || !_meanings.count) return;
+    CGPoint point = [hold locationInView:_scroll];
+    for (SGRKaraokeLineView *view in _shown.allValues) {
+        if (!CGRectContainsPoint(CGRectInset(view.frame, -_margin, -_lineGap / 2), point)) continue;
+        [self explainLine:view];
+        return;
+    }
+}
+
+- (void)explainLine:(SGRKaraokeLineView *)view {
+    NSNumber *index = [_shown allKeysForObject:view].firstObject;
+    NSArray<SGLyricsMeaning *> *meanings = index ? _meanings[index] : nil;
+    if (!meanings.count) return;
+    SGPlayFeedback(SGFeedbackSkip);
+    SGRShowMeanings(SGKaraokeLineText(view.line), meanings);
+}
+
+// Genius is asked once the song's lines are in; lines that change under it are matched again.
+- (void)askMeanings {
+    _meanings = nil;
+    NSUInteger asked = ++_meaningsAsked;
+    NSArray<SGKaraokeLine *> *lines = _lines;
+    __weak SGRKaraokeView *weakSelf = self;
+    SGLyricsMeaningsFor(_track, lines, ^(NSDictionary<NSNumber *, NSArray<SGLyricsMeaning *> *> *byLine) {
+        SGRKaraokeView *page = weakSelf;
+        if (!page || asked != page->_meaningsAsked || lines != page->_lines) return;
+        page->_meanings = byLine;
+        for (NSNumber *key in page->_shown) [page->_shown[key] markMeaning:byLine[key]];
+    });
 }
 
 #pragma mark - scrolling by hand
@@ -1209,6 +1322,7 @@ typedef struct {
         _hasTranslation = _hasTranslation || line.translation.length;
     }
     [self offerExtras];
+    [self askMeanings];
 }
 
 // Measures the song for the width and, once that is in, places it; Spotify's own lines stay in view
@@ -1366,6 +1480,7 @@ typedef struct {
     view = [[SGRKaraokeLineView alloc] initWithLine:_lines[index] width:_builtWidth - 2 * _margin style:_style under:nil
                                             blurred:_maxBlur > 0 && !_plain sweepsEstimates:_sweepsEstimates];
     if (_plain) [view showPlain];
+    [view markMeaning:_meanings[@(index)]];
     [_scroll addSubview:view];
     _shown[@(index)] = view;
     [self placeLine:view at:index animated:NO];

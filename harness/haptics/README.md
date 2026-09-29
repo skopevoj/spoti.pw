@@ -38,7 +38,7 @@ a real separation model.
 
 ## The hook in the simulator (`sim/`)
 
-Spotify's chain rebuilt with real units (as `harness/jamesdsp/sim`), with `MusicHaptics.x` (logos, internal
+Spotify's chain rebuilt with real units (as `harness/audio-effects/sim`), with `MusicHaptics.x` (logos, internal
 generator), the analyzer and the Vibrations settings compiled into an app whose main executable is the harness,
 so its `AudioOutputUnitStart` goes through the rebound import slot as Spotify's does. `sim/fakehaptics.m`
 stands in for Core Haptics and counts what it is asked to play. A beat of a kick and a snare a second plays

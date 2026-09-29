@@ -86,6 +86,7 @@ static BOOL lookBlack(void) {
 
 UIColor *SGGreen(void) { return lookAccent() ?: [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1]; }
 UIColor *SGRed(void) { return [UIColor colorWithRed:0xF1 / 255.0 green:0x5E / 255.0 blue:0x6B / 255.0 alpha:1]; }
+UIColor *SGDiscordColor(void) { return [UIColor colorWithRed:0x58 / 255.0 green:0x65 / 255.0 blue:0xF2 / 255.0 alpha:1]; }
 UIColor *SGPageBackground(void) { return lookBlack() ? UIColor.blackColor : [UIColor colorWithWhite:0x12 / 255.0 alpha:1]; }
 // Spotify's own elevated grey on its dark grey; iOS's own card grey on the AMOLED black.
 UIColor *SGCardBackground(void) { return [UIColor colorWithWhite:(lookBlack() ? 0x1C : 0x2A) / 255.0 alpha:1]; }
@@ -144,7 +145,9 @@ UIView *SGSectionHeader(UITableView *table, NSString *title) {
 static const CGFloat kFooterTop = 8, kFooterBottom = 4;
 
 static CGFloat footerTextHeight(UITableView *table, NSString *text) {
-    CGFloat width = MAX(table.bounds.size.width - 32, 100);
+    // An inset grouped table narrows its footers by its side margins, and the label wraps at that width.
+    CGFloat inset = table.style == UITableViewStyleInsetGrouped ? table.layoutMargins.left + table.layoutMargins.right : 0;
+    CGFloat width = MAX(table.bounds.size.width - inset - 32, 100);
     return ceil([text boundingRectWithSize:CGSizeMake(width, CGFLOAT_MAX)
                                    options:NSStringDrawingUsesLineFragmentOrigin
                                 attributes:@{NSFontAttributeName: SGSubtitleFont()}
@@ -207,6 +210,7 @@ UIViewController *SGTopController(void) {
 
 NSString *const SGSiteURL = @"https://spoti.pw";
 NSString *const SGRepoURL = @"https://github.com/skopevoj/spoti.pw";
+NSString *const SGDiscordURL = @"https://discord.gg/9e4GR8TKMj";
 
 void SGOpenURL(NSString *url) {
     NSURL *target = url ? [NSURL URLWithString:url] : nil;

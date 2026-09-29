@@ -101,9 +101,8 @@ void SGKaraokeRequestLyrics(NSString *trackID);
 // Asks Spotify's JSON lyrics for the track once, and keeps its lines only if they are more finely
 // timed than the ones kept: the lyrics view was left with plain text, and Spotify may have it timed.
 void SGKaraokeAskSpotifyForTiming(NSString *trackID);
-// The Authorization header Spotify's own requests carry, "Bearer ..." and the account's own token;
-// nil until one has gone out. Only for a source that answers no one who cannot show they are a
-// signed-in Spotify client, and only with the mod's user having switched that source on.
+// The Authorization header of Spotify's own requests, nil until one has gone out. Only ever sent
+// back to Spotify's servers (the lock screen's canvaz lookup), never to a lyrics source.
 NSString *SGKaraokeSpotifyAuthorization(void);
 NSString *SGKaraokePlayingTrack(void);   // the base62 id, nil before the player reported
 NSInteger SGKaraokePositionMs(void);     // negative when unknown

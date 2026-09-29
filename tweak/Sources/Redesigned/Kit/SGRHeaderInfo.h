@@ -27,8 +27,12 @@ extern const CGFloat SGRHeaderInfoTitleRise;  // 56, of the content over the pic
 // The line keeps its colour: it is the page's one piece of secondary text, not a link to be tinted. nil
 // leaves it as text.
 - (void)showCreatorLink:(UIView *)control;
-// Spotify's own trailing control is a text button (the artist's Follow): drawn as its word in a capsule.
-@property (nonatomic) BOOL trailingShowsWord;
+// For a trailing control that shows its state only as a word (the artist's Follow): SGRMirrorButton's
+// readState and its two symbols. Set before the first -showShuffle:...; -trailingStateChanged redraws it.
+@property (nonatomic, copy) BOOL (^trailingState)(BOOL *on);
+@property (nonatomic, copy) NSString *trailingOffSymbol;
+@property (nonatomic, copy) NSString *trailingOnSymbol;
+- (void)trailingStateChanged;
 // Spotify's controls, each drawn from and fired; nil hides that button. Play stays in the middle of the
 // page whether the other two are there or not. `trailingFallback` is drawn when Spotify's trailing control
 // has no image to copy. `playColor` is the colour of the capsule's glyph and word.

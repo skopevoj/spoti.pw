@@ -105,6 +105,58 @@ static void setShuffle(BOOL on) {
     sgh_shuffleGlyph.image = shuffleImage(on);
 }
 
+// The add-to button (Components.UI.AddToButton, 9.1.78 binary): a UIButton drawn by Lottie whose action target
+// is Encore's private AddToButton, keeping `currentStatus` (one byte: notAdded, added). Spotify's own
+// -performAction saves or removes; the mock's flips the byte, as the saved state would come back.
+@interface _TtC28EncoreConsumerMobile_BaseKitP33_23B9F07423DE1078C0EAAD54E8754BE611AddToButton : NSObject {
+@public
+    __unsafe_unretained UIView *microInteractionView;
+    __unsafe_unretained UIView *uiView;
+    __unsafe_unretained UIButton *uiButton;
+    uint8_t configuration;
+    uint8_t currentStatus;
+}
+- (void)performAction;
+@end
+
+static void setAddTo(uint8_t status);
+
+@implementation _TtC28EncoreConsumerMobile_BaseKitP33_23B9F07423DE1078C0EAAD54E8754BE611AddToButton
+- (void)performAction {
+    setAddTo(!currentStatus);
+    NSLog(@"[harness] Spotify's add-to button fired, now %d", currentStatus);
+}
+@end
+
+typedef _TtC28EncoreConsumerMobile_BaseKitP33_23B9F07423DE1078C0EAAD54E8754BE611AddToButton MockAddToOwner;
+
+static MockAddToOwner *sgh_addToOwner;
+
+static void setAddTo(uint8_t status) {
+    sgh_addToOwner->currentStatus = status;
+    sgh_addToOwner->uiButton.accessibilityLabel = status ? @"Remove from Your Library" : @"Save to Your Library";
+}
+
+// The add-to button as Spotify builds it, inside `host` (48x48), not saved.
+static UIButton *mockAddToButton(UIView *host) {
+    UIButton *button = [[UIButton alloc] initWithFrame:host.bounds];
+    button.accessibilityIdentifier = @"Components.UI.AddToButton";
+    [host addSubview:button];
+    UIView *micro = [[UIView alloc] initWithFrame:CGRectInset(button.bounds, -4, -4)];
+    [micro addSubview:[[MockLottieView alloc] initWithFrame:micro.bounds]];
+    [button addSubview:micro];
+    MockAddToOwner *owner = [MockAddToOwner new];
+    owner->uiButton = button;
+    owner->uiView = button;
+    owner->microInteractionView = micro;
+    [button addTarget:owner action:@selector(performAction) forControlEvents:UIControlEventTouchUpInside];
+    static char kOwnerKey;
+    objc_setAssociatedObject(button, &kOwnerKey, owner, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    sgh_addToOwner = owner;
+    setAddTo(0);
+    return button;
+}
+
 static void at(NSTimeInterval seconds, void (^block)(void)) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)), dispatch_get_main_queue(), block);
 }

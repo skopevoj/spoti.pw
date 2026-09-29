@@ -16,6 +16,27 @@ NSString *SGLyricsCreditFor(NSString *trackID) { return @"the harness"; }
 // -translateTo es: the language the Lyrics page would ask translations for.
 NSString *SGLyricsTranslationLanguage(void) { return [NSUserDefaults.standardUserDefaults stringForKey:@"translateTo"]; }
 
+// Line meanings: -title and -artist name the track Genius is searched for, and the setting's key
+// (-spotifyglass.lyricsMeanings 3) turns them on.
+@interface SGHarnessTrack : NSObject
+@property (nonatomic, copy) NSString *trackTitle, *artistName;
+@end
+@implementation SGHarnessTrack
+@end
+id SGKaraokeTrackFor(NSString *trackID) {
+    SGHarnessTrack *track = [SGHarnessTrack new];
+    track.trackTitle = [NSUserDefaults.standardUserDefaults stringForKey:@"title"];
+    track.artistName = [NSUserDefaults.standardUserDefaults stringForKey:@"artist"];
+    return track;
+}
+id SGChoiceRow(NSString *title, NSString *subtitle, NSString *key, NSArray *choices, NSInteger fallback) { return nil; }
+UIViewController *SGTopController(void) {
+    UIWindowScene *scene = (UIWindowScene *)UIApplication.sharedApplication.connectedScenes.anyObject;
+    UIViewController *top = scene.windows.firstObject.rootViewController;
+    while (top.presentedViewController) top = top.presentedViewController;
+    return top;
+}
+
 static NSArray<SGKaraokeLine *> *sg_lines;
 static double sg_from = -1, sg_rate = 1, sg_pauseAt = -1, sg_holdFor = 0;
 static CFTimeInterval sg_since, sg_heldAt;

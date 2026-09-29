@@ -4,6 +4,8 @@
 // the Follow button's word and then the photo back, one after the other, the way a page opened for the first
 // time gets them -- each has to reach the redesign on its own (issue #52), and the artwork view carries
 // Encore's Swift class name so that it can only be watched the way the phone makes the Kit watch it.
+// The follow state comes from a mock of Spotify's collection platform under its real class and selector
+// names: `none` at once, or in `late` a second in; Following, as saved, after the tap made at 2.5 s.
 #import <UIKit/UIKit.h>
 
 #pragma mark - Spotify's classes, by name
@@ -47,6 +49,74 @@
 
 @interface MockButton : UIControl @end
 @implementation MockButton @end
+
+// The collection platform as 9.1.78 has it: SPTCollectionPlatformState is an option set (saved 1, banned 2,
+// none 4), and the provider answers subscribeCollectionStateForURL:completion: with a token to cancel.
+@interface SPTCollectionPlatformState : NSObject
+@property (nonatomic, readonly) NSInteger rawValue;
+@end
+@implementation SPTCollectionPlatformState
+- (instancetype)initWithRawValue:(NSInteger)raw {
+    if ((self = [super init])) _rawValue = raw;
+    return self;
+}
++ (instancetype)saved { return [[self alloc] initWithRawValue:1]; }
++ (instancetype)banned { return [[self alloc] initWithRawValue:2]; }
++ (instancetype)none { return [[self alloc] initWithRawValue:4]; }
+- (BOOL)contains:(SPTCollectionPlatformState *)other { return (_rawValue & other.rawValue) == other.rawValue; }
+@end
+
+@interface MockRequestToken : NSObject
+@property (nonatomic, copy) void (^onCancel)(void);
+@end
+@implementation MockRequestToken
+- (void)cancel {
+    NSLog(@"[harness] collection subscription cancelled");
+    if (self.onCancel) self.onCancel();
+}
+@end
+
+@interface _TtC23Collection_PlatformImpl35CollectionPlatformStateProviderImpl : NSObject
+@property (nonatomic) NSInteger raw;
+@property (nonatomic, strong) NSMutableArray *subscribers;
+- (void)push:(NSInteger)raw;
+@end
+@implementation _TtC23Collection_PlatformImpl35CollectionPlatformStateProviderImpl
+- (id)subscribeCollectionStateForURL:(NSURL *)url completion:(void (^)(SPTCollectionPlatformState *, NSError *))completion {
+    if (!self.subscribers) self.subscribers = [NSMutableArray array];
+    void (^copied)(SPTCollectionPlatformState *, NSError *) = [completion copy];
+    [self.subscribers addObject:copied];
+    NSLog(@"[harness] subscribed for %@", url);
+    if (self.raw) completion([[SPTCollectionPlatformState alloc] initWithRawValue:self.raw], nil);
+    MockRequestToken *token = [MockRequestToken new];
+    __weak typeof(self) weakSelf = self;
+    token.onCancel = ^{ [weakSelf.subscribers removeObject:copied]; };
+    return token;
+}
+// As the collection does it: off the main thread.
+- (void)push:(NSInteger)raw {
+    self.raw = raw;
+    for (void (^completion)(SPTCollectionPlatformState *, NSError *) in [self.subscribers copy]) {
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            completion([[SPTCollectionPlatformState alloc] initWithRawValue:raw], nil);
+        });
+    }
+}
+@end
+typedef _TtC23Collection_PlatformImpl35CollectionPlatformStateProviderImpl MockStateProvider;
+
+@interface SPTCollectionPlatformImplementation : NSObject
+@property (nonatomic, strong) MockStateProvider *stateProvider;
+@end
+@implementation SPTCollectionPlatformImplementation @end
+
+static SPTCollectionPlatformImplementation *sgh_platform;
+
+// The page's controller, which Spotify's answer spt_pageURI with the artist's URI.
+@interface MockArtistPageController : UIViewController @end
+@implementation MockArtistPageController
+- (NSURL *)spt_pageURI { return [NSURL URLWithString:@"spotify:artist:7n2wHs1TKAczGzO7Dd2rGr"]; }
+@end
 
 // Encore's image view, the one every picture Spotify loads arrives in (01.txt:48). Its name is the point of
 // the mock: a Swift one, which the Kit refuses to give an instance its own subclass of, so the harness
@@ -187,8 +257,13 @@ static NSArray<NSArray *> *musicList(void) {
     CGFloat W = self.window.bounds.size.width, H = self.window.bounds.size.height;
     BOOL collapsed = [NSProcessInfo.processInfo.arguments containsObject:@"collapsed"];
     BOOL late = [NSProcessInfo.processInfo.arguments containsObject:@"late"];
+    sgh_platform = [SPTCollectionPlatformImplementation new];
+    sgh_platform.stateProvider = [MockStateProvider new];
+    if (!late) sgh_platform.stateProvider.raw = 4;
+    // Some part of Spotify reaches for the provider before the page does.
+    (void)sgh_platform.stateProvider;
 
-    UIViewController *root = [UIViewController new];
+    UIViewController *root = [MockArtistPageController new];
     root.view.backgroundColor = [UIColor colorWithRed:0.07 green:0.07 blue:0.07 alpha:1];
     self.window.rootViewController = root;
 
@@ -281,12 +356,46 @@ static NSArray<NSArray *> *musicList(void) {
 
     [self.window makeKeyAndVisible];
 
+    // What the redesign's Follow draws: nothing before the state, then the glyph for it. A tap on it at
+    // 2.5 s, which Spotify answers with Following.
+    for (NSNumber *when in @[@0.5, @1.5, @2.5, @3.0]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(when.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            NSMutableArray *lines = [NSMutableArray array];
+            UIControl *tapped = nil;
+            NSMutableArray *queue = [NSMutableArray arrayWithObject:container];
+            while (queue.count) {
+                UIView *v = queue.firstObject;
+                [queue removeObjectAtIndex:0];
+                [queue addObjectsFromArray:v.subviews];
+                if (![NSStringFromClass(v.class) isEqualToString:@"SGRMirrorButton"] || v.frame.origin.x < 200) continue;
+                tapped = (UIControl *)v;
+                NSMutableArray *drawn = [NSMutableArray array];
+                for (UIView *sub in v.subviews) {
+                    if (sub.hidden || sub.alpha < 0.01) continue;
+                    NSString *what = NSStringFromClass(sub.class);
+                    if ([sub isKindOfClass:UILabel.class]) what = [NSString stringWithFormat:@"\"%@\"", ((UILabel *)sub).text];
+                    else if ([sub isKindOfClass:UIImageView.class]) {
+                        NSString *symbol = [((UIImageView *)sub).image.description componentsSeparatedByString:@"symbol(system: "].lastObject;
+                        what = [NSString stringWithFormat:@"%@ in %@", [symbol componentsSeparatedByString:@")"].firstObject,
+                                ((UIImageView *)sub).tintColor];
+                    }
+                    [drawn addObject:what];
+                }
+                [lines addObject:[NSString stringWithFormat:@"%@ touches %d a11y \"%@\" draws %@", NSStringFromCGRect(v.frame),
+                                  v.userInteractionEnabled, v.accessibilityLabel, [drawn componentsJoinedByString:@", "]]];
+            }
+            NSLog(@"[harness] follow at %.1fs: %@", when.doubleValue, [lines componentsJoinedByString:@" | "]);
+            if (when.doubleValue == 2.5) [tapped sendActionsForControlEvents:UIControlEventTouchUpInside];
+        });
+    }
+
     // The photo and the follow state land after the header has laid out, and neither lays it out again.
     if (late) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             followWord.text = @"Follow";
             follow.accessibilityLabel = @"Follow";
-            NSLog(@"[harness] late: \"Follow\" is in Spotify's header now");
+            [sgh_platform.stateProvider push:4];
+            NSLog(@"[harness] late: the follow state is in Spotify's collection now");
         });
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             picture.image = photo();
@@ -326,10 +435,16 @@ static NSArray<NSArray *> *musicList(void) {
 // Spotify's Follow turns into Following, which the redesign's word has to follow.
 - (void)toggleFollow:(UIControl *)follow {
     UILabel *word = nil;
-    for (UIView *v in follow.subviews) {
-        if (v.subviews.firstObject && [v.subviews.firstObject isKindOfClass:UILabel.class]) word = (UILabel *)v.subviews.firstObject;
+    NSMutableArray *queue = [NSMutableArray arrayWithObject:follow];
+    while (queue.count && !word) {
+        UIView *v = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        if ([v isKindOfClass:UILabel.class]) word = (UILabel *)v;
+        [queue addObjectsFromArray:v.subviews];
     }
     word.text = [word.text isEqualToString:@"Follow"] ? @"Following" : @"Follow";
+    follow.accessibilityLabel = word.text;
+    [sgh_platform.stateProvider push:[word.text isEqualToString:@"Following"] ? 1 : 4];
     NSLog(@"[harness] Spotify's Follow fired, now \"%@\"", word.text);
 }
 

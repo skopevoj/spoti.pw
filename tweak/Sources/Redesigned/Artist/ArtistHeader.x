@@ -24,8 +24,7 @@
 // Everything else of the ImageHeaderView is drawn by nothing (an empty mask) and takes no touches: the badge,
 // Explore, and the headline go with it -- the headline's pre-save is also the list's own Release Countdown
 // section. The Kit's SGRHeaderInfo reads the name and the listeners off Spotify's concealed labels and draws
-// and fires Spotify's shuffle, play and Follow, whose word ("Follow", "Following") is its state in the app's
-// language. More stays in Spotify's row, where the row needs it (ArtistField.x), and the Kit's pinned ⋯
+// and fires Spotify's shuffle, play and Follow, Follow as a glyph from the collection (ArtistFollow.x). More stays in Spotify's row, where the row needs it (ArtistField.x), and the Kit's pinned ⋯
 // (SGRPinnedMore) draws and fires it from the top trailing corner of the page, level with the back button.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
@@ -256,7 +255,16 @@ static void applyHeader(UIView *header) {
     SGRHeaderInfo *info = objc_getAssociatedObject(container, &kInfoKey);
     if (!info) {
         info = [[SGRHeaderInfo alloc] initWithFrame:CGRectZero];
-        info.trailingShowsWord = YES;
+        // Follow's only state is its title in the app's language, so the glyph takes it from the collection.
+        __weak UIView *weakPage = SGRArtistPageOf(container);
+        __weak SGRHeaderInfo *weakInfo = info;
+        __weak UIView *weakHeader = header;
+        info.trailingState = ^BOOL(BOOL *on) {
+            UIView *more = SGRFindByIdentifier(weakHeader, @"Components.UI.ContextMenuButton*", &kMoreKey);
+            return SGRArtistFollowing(weakPage, more.accessibilityIdentifier, on, ^{ [weakInfo trailingStateChanged]; });
+        };
+        info.trailingOffSymbol = @"person.badge.plus";
+        info.trailingOnSymbol = @"person.fill.checkmark";
         objc_setAssociatedObject(container, &kInfoKey, info, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     if (info.superview != container) [container addSubview:info];
@@ -270,9 +278,7 @@ static void applyHeader(UIView *header) {
     UIView *shuffle = SGRFindByIdentifier(header, @"Components.UI.ShuffleButton", &kShuffleKey);
     UIView *play = SGRFindByIdentifier(header, @"header-play-button", &kPlayKey);
     UIView *follow = SGRFindByIdentifier(header, @"Curation.FollowButtonElementKit.FollowButton", &kFollowKey);
-    NSString *word = firstText(follow);
-    [info showShuffle:shuffle play:play trailing:follow trailingFallback:[UIImage systemImageNamed:@"person.badge.plus"]
-            playColor:SGRArtistFieldColor(container)];
+    [info showShuffle:shuffle play:play trailing:follow trailingFallback:nil playColor:SGRArtistFieldColor(container)];
 
     // More, in the top trailing corner of the page itself rather than of the container, which scrolls away
     // with the photo: pinned there it is the same button in the same place on the album and the playlist,
@@ -310,7 +316,7 @@ static void applyHeader(UIView *header) {
         logged = YES;
         SGLog(@"redesign artist: own block \"%@\", \"%@\"; shuffle %@, play %@, follow %@, more %@", name,
               firstText(listeners) ?: @"no listeners", shuffle ? @"found" : @"missing", play ? @"found" : @"missing",
-              follow ? word ?: @"found, no word yet" : @"missing", more ? @"found" : @"missing");
+              follow ? @"found" : @"missing", more ? @"found" : @"missing");
     }
 }
 

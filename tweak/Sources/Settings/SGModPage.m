@@ -306,7 +306,7 @@ static UIFont *tabular(UIFont *font) {
 
 @end
 
-// The Audio effects page's slider row (Shared/JamesDSP/JamesDSPPage.m), for any page: the title and the
+// The Audio effects page's slider row (Shared/AudioEffects/AudioEffectsPage.m), for any page: the title and the
 // value over a slider in the accent colour, a subtitle between them when there is one, each step stored
 // as the thumb reaches it.
 @interface SGModSliderCell : UITableViewCell

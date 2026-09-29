@@ -6,6 +6,7 @@
 // HARNESS_SCENARIO (simctl launch passes it as SIMCTL_CHILD_HARNESS_SCENARIO) picks what it does:
 //     lyrics   (default) the lyrics opened at 2 s, closed at 6, opened again at 10
 //     look     one track playing, a second one from another album at 8 s, nothing opened
+//     scroll   the list moved up and down in code; the log says whether it stayed at its top
 //     artwork  issue #58: tracks change while the covers on screen and the picture server lag behind,
 //              checked by colour at the end of each step; the log says PASS or FAIL
 // HARNESS_VOLUME=0 leaves out the volume row the phone has (trees/clean/player/01.txt has none).
@@ -149,8 +150,10 @@ static NSString *colorName(UIImage *image) {
 @interface _TtC20NowPlaying_ModesImpl18FooterElementsUnit : UIViewController @end
 @implementation _TtC20NowPlaying_ModesImpl18FooterElementsUnit @end
 
-@interface _TtC21NowPlaying_ScrollImpl23NPVScrollViewController : UIViewController @end
-@implementation _TtC21NowPlaying_ScrollImpl23NPVScrollViewController @end
+@interface _TtC21NowPlaying_ScrollImpl23NPVScrollViewController : UIViewController <UIScrollViewDelegate> @end
+@implementation _TtC21NowPlaying_ScrollImpl23NPVScrollViewController
+- (void)scrollViewDidScroll:(UIScrollView *)list {}
+@end
 
 @interface _TtC35NowPlaying_ContentLayerPlatformImpl24AccessibleCollectionView : UICollectionView @end
 @implementation _TtC35NowPlaying_ContentLayerPlatformImpl24AccessibleCollectionView @end
@@ -301,6 +304,7 @@ static void loadLyrics(void) {
     UIImageView *_cover, *_barCover;
     UIViewController *_bar;
     UICollectionView *_covers;
+    UIScrollView *_list;
     NSUInteger _failures, _checks;
 }
 
@@ -332,6 +336,8 @@ static void loadLyrics(void) {
     [page addSubview:list];
     UIViewController *scrollUnit = [_TtC21NowPlaying_ScrollImpl23NPVScrollViewController new];
     scrollUnit.view = page;
+    list.delegate = (id<UIScrollViewDelegate>)scrollUnit;
+    _list = list;
 
     // NPVBackgroundViewController's plane, the field's home (trees/clean/player/01.txt:449), under the player.
     UIView *plane = box(list, UIView.class, CGRectMake(0, 0, W, H), nil);
@@ -477,6 +483,7 @@ static void loadLyrics(void) {
     });
     if ([scenario() isEqualToString:@"artwork"]) [self runArtworkChecks];
     else if ([scenario() isEqualToString:@"look"]) [self runLook];
+    else if ([scenario() isEqualToString:@"scroll"]) [self runScrollChecks];
     // Opened, closed and opened again, so a screenshot can be taken of each state and of the move itself.
     else for (NSNumber *at in @[@2, @6, @10]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(at.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -583,6 +590,23 @@ static void after(NSTimeInterval seconds, dispatch_block_t block) {
     after(15, ^{
         NSLog(@"[harness] artwork checks: %lu of %lu right -- %@", (unsigned long)(self->_checks - self->_failures), (unsigned long)self->_checks,
               self->_failures ? @"FAIL" : @"PASS");
+    });
+}
+
+// Up must be taken back to the top, down (the dismissal's pull) left where it went.
+- (void)runScrollChecks {
+    after(2, ^{
+        UIScrollView *list = self->_list;
+        CGFloat top = -list.adjustedContentInset.top;
+        list.contentOffset = CGPointMake(0, top + 120);
+        BOOL up = list.contentOffset.y == top;
+        list.contentOffset = CGPointMake(0, top - 80);
+        BOOL down = list.contentOffset.y == top - 80;
+        [list setContentOffset:CGPointMake(0, top + 300) animated:NO];
+        BOOL again = list.contentOffset.y == top;
+        list.contentOffset = CGPointMake(0, top);
+        NSLog(@"[harness] scroll checks: up %@, down %@, again %@ -- %@", up ? @"held" : @"moved", down ? @"kept" : @"lost",
+              again ? @"held" : @"moved", up && down && again ? @"PASS" : @"FAIL");
     });
 }
 

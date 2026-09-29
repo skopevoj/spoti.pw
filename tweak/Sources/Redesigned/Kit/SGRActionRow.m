@@ -18,10 +18,7 @@ static const CGFloat kGlyphSide = 44, kCapsuleLead = 4, kCapsuleTrail = 20;
 // The mirrored glyph, the size Spotify draws one inside a 48pt round button.
 static const CGFloat kMirrorGlyph = 24;
 
-static char kCapsuleGlassKey, kMirrorGlassKey, kWordGlassKey;
-
-// A word button's padding either side of the word.
-static const CGFloat kWordPadding = 18;
+static char kCapsuleGlassKey, kMirrorGlassKey;
 
 // The glyph Spotify's button draws: an image view of the button's own size that nothing hidden is in the
 // way of. `side` is the size to match, 0 for any image view that is showing.
@@ -159,15 +156,6 @@ static NSString *wordIn(UIView *button) {
 
 #pragma mark - a button standing in for Spotify's
 
-// The label a button shows its word in, whether it has a word in it yet or not.
-static UILabel *labelIn(UIView *button) {
-    __block UILabel *found = nil;
-    SGForEachView(button, ^(UIView *v) {
-        if (!found && [v isKindOfClass:UILabel.class]) found = (UILabel *)v;
-    });
-    return found;
-}
-
 // Whether a button that marks "on" with a small dot under its glyph (Encore's shuffle, a 4pt round view it
 // hides while off) is on. `found` says whether the button has such a dot at all.
 static BOOL indicatorOn(UIView *button, BOOL *found) {
@@ -186,21 +174,8 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
     return dot != nil;
 }
 
-// The text a button shows: the first label under it with something in it.
-static NSString *labelTextIn(UIView *button) {
-    __block NSString *text = nil;
-    SGForEachView(button, ^(UIView *v) {
-        if (text || ![v isKindOfClass:UILabel.class]) return;
-        NSString *candidate = [((UILabel *)v).text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        if (candidate.length) text = candidate;
-    });
-    return text;
-}
-
 @implementation SGRMirrorButton {
     UIImageView *_glyph;
-    UILabel *_word;
-    __weak UILabel *_watchedWord;
     __weak UIImageView *_watchedGlyph;
     // Spotify's own image, as it was taken: what the copy is compared against, since a copy re-rendered as
     // a template is no longer the same object.
@@ -208,6 +183,8 @@ static NSString *labelTextIn(UIView *button) {
     // Standing in for Spotify's download button: its state drawn, and read again while on screen.
     SGRDownloadGlyph *_download;
     NSTimer *_downloadTimer;
+    // A two-state glyph drawn for Spotify (add-to, readState): 1 on, 0 off, -1 none drawn.
+    NSInteger _stateShown;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -216,6 +193,7 @@ static NSString *labelTextIn(UIView *button) {
     _glyph.contentMode = UIViewContentModeScaleAspectFit;
     _glyph.userInteractionEnabled = NO;
     [self addSubview:_glyph];
+    _stateShown = -1;
 
     self.isAccessibilityElement = YES;
     self.accessibilityTraits = UIAccessibilityTraitButton;
@@ -225,31 +203,15 @@ static NSString *labelTextIn(UIView *button) {
     return self;
 }
 
-- (CGFloat)sgr_width {
-    if (!self.showsWord || !_word.text.length) return SGRActionHeight;
-    [_word sizeToFit];
-    return MAX(SGRActionHeight, ceil(_word.bounds.size.width) + 2 * kWordPadding);
-}
-
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGRect bounds = self.bounds;
-    // A word button waiting for its word draws the circle, and takes the capsule once the word is there:
-    // only one of the two shapes is asked for on a pass, so the other is put away rather than left under it.
-    if (self.showsWord && _word.text.length) {
-        SGRGlassCapsuleInside(self, &kWordGlassKey, bounds.size, NO);
+    // Until its state is known the button draws nothing: a guess would flash the wrong glyph first.
+    if (self.readState && _stateShown < 0) {
         ((UIView *)objc_getAssociatedObject(self, &kMirrorGlassKey)).hidden = YES;
-        [_word sizeToFit];
-        CGSize text = _word.bounds.size;
-        // Given less width than the word asked for -- what is left of the row beside a wide Play -- the
-        // capsule spends its own padding on the word before it lets the word be cut ("Following").
-        CGFloat padding = MIN(kWordPadding, MAX(0, floor((bounds.size.width - text.width) / 2)));
-        _word.frame = CGRectMake(padding, round((bounds.size.height - text.height) / 2),
-                                 MAX(0, bounds.size.width - 2 * padding), text.height);
         return;
     }
     SGRGlassInside(self, &kMirrorGlassKey, SGRGlassCircleSize);
-    ((UIView *)objc_getAssociatedObject(self, &kWordGlassKey)).hidden = YES;
     _glyph.frame = CGRectMake(round((bounds.size.width - kMirrorGlyph) / 2), round((bounds.size.height - kMirrorGlyph) / 2),
                               kMirrorGlyph, kMirrorGlyph);
     _download.frame = _glyph.frame;
@@ -257,8 +219,8 @@ static NSString *labelTextIn(UIView *button) {
 
 - (void)didMoveToWindow {
     [super didMoveToWindow];
-    if (!_download) return;
-    // Read again on the way in -- the download may have moved on while the page was away -- and not at all
+    if (!_download && _stateShown < 0 && !self.readState) return;
+    // Read again on the way in -- the state may have moved on while the page was away -- and not at all
     // while out of the window.
     if (self.window && self.source) [self feedFrom:self.source];
     else [self sgr_followDownload:0];
@@ -302,7 +264,43 @@ static NSString *labelTextIn(UIView *button) {
     return YES;
 }
 
-// Reads the download again every `interval` seconds; 0 stops.
+// Draws `offSymbol`, or `onSymbol` in the accent colour, switching between them in place.
+- (void)sgr_showOn:(BOOL)on off:(NSString *)offSymbol on:(NSString *)onSymbol source:(UIView *)source {
+    if (_stateShown != on) {
+        UIImage *image = [UIImage systemImageNamed:on ? onSymbol : offSymbol];
+        BOOL animated = _stateShown >= 0 && self.window && !SGRReduceMotion();
+        BOOL first = _stateShown < 0;
+        _stateShown = on;
+        _takenGlyph = nil;
+        _glyph.hidden = NO;
+        if (@available(iOS 17.0, *)) {
+            if (animated) [_glyph setSymbolImage:image withContentTransition:[NSSymbolReplaceContentTransition replaceDownUpTransition]];
+            else _glyph.image = image;
+        } else {
+            _glyph.image = image;
+        }
+        // On is saved or followed, in the accent colour, as downloaded is.
+        _glyph.tintColor = on ? SGRAccent() : SGRPrimary();
+        if (first) [self setNeedsLayout];
+    }
+    NSString *word = source.accessibilityLabel ?: wordIn(source);
+    if (word && ![self.accessibilityLabel isEqualToString:word]) self.accessibilityLabel = word;
+    // Nothing is laid out when it changes from elsewhere (the ⋯ sheet), so it is read again as download is.
+    [self sgr_followDownload:self.window ? 2 : 0];
+}
+
+// Shows whether Spotify's add-to button has its album or playlist saved; YES when `source` is one.
+- (BOOL)sgr_feedAddToFrom:(UIView *)source {
+    BOOL added;
+    if (!SGRReadAddTo(source, &added)) {
+        _stateShown = -1;
+        return NO;
+    }
+    [self sgr_showOn:added off:@"plus" on:@"checkmark" source:source];
+    return YES;
+}
+
+// Reads the state again every `interval` seconds; 0 stops.
 - (void)sgr_followDownload:(NSTimeInterval)interval {
     if (interval <= 0) {
         [_downloadTimer invalidate];
@@ -329,50 +327,21 @@ static NSString *labelTextIn(UIView *button) {
     if (!source) return;
     _source = source;
 
-    if (self.showsWord) {
-        if (!_word) {
-            _word = [UILabel new];
-            _word.userInteractionEnabled = NO;
-            _word.textAlignment = NSTextAlignmentCenter;
-            _word.font = SGRFont(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryExtraLarge);
-            _word.textColor = SGRPrimary();
-            [self addSubview:_word];
+    if (self.readState) {
+        BOOL on = NO;
+        if (self.readState(&on)) [self sgr_showOn:on off:self.stateOffSymbol on:self.stateOnSymbol source:source];
+        else [self sgr_followDownload:self.window ? 2 : 0];
+        BOOL known = _stateShown >= 0;
+        if (_glyph.hidden == known) _glyph.hidden = !known;
+        if (self.userInteractionEnabled != known) {
+            self.userInteractionEnabled = known;
+            self.isAccessibilityElement = known;
         }
-        NSString *text = labelTextIn(source);
-        if (text && ![_word.text isEqualToString:text]) {
-            _word.text = text;
-            self.accessibilityLabel = source.accessibilityLabel ?: text;
-            [self setNeedsLayout];
-            [self.superview setNeedsLayout];
-        }
-        // Spotify's word is its state, which it fills in a moment after the button itself is there and
-        // changes without laying out anything the page hears (the artist's Follow, issue #52). So the label
-        // it puts the word in is watched, and the button hears it land.
-        UILabel *source_word = labelIn(source);
-        if (source_word && source_word != _watchedWord) {
-            _watchedWord = source_word;
-            __weak SGRMirrorButton *weakSelf = self;
-            __weak UIView *weakSource = source;
-            SGRObserveText(source_word, ^(UILabel *label) {
-                if (weakSelf && weakSource) [weakSelf feedFrom:weakSource];
-            });
-        }
-        // Until the word is there the button is the glyph it falls back to, which says what it does, rather
-        // than an empty capsule.
-        BOOL hasWord = _word.text.length > 0;
-        if (_glyph.hidden != hasWord) {
-            _glyph.hidden = hasWord;
-            [self setNeedsLayout];
-        }
-        if (!hasWord && self.fallbackGlyph && _glyph.image != self.fallbackGlyph) {
-            _glyph.image = self.fallbackGlyph;
-            _glyph.tintColor = SGRPrimary();
-        }
-        if (!hasWord && !self.accessibilityLabel) self.accessibilityLabel = source.accessibilityLabel;
         return;
     }
 
     if ([self sgr_feedDownloadFrom:source]) return;
+    if ([self sgr_feedAddToFrom:source]) return;
 
     UIImageView *glyph = glyphIn(source, 0);
     NSString *word = source.accessibilityLabel ?: wordIn(source);

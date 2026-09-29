@@ -14,16 +14,50 @@ public final class SGLiveActivityBridge: NSObject {
 
     @objc public static var isShowing: Bool { current != nil }
 
-    // Updates and the end run one after another, in the order they were asked for: a Task apiece could
-    // land out of order, and a state one tick old would then be the one the activity is left showing.
-    // Only touched from the main thread, where the tweak's timer runs.
-    private static var pending: Task<Void, Never>?
+    // Updates and ends go out one at a time in the order asked for, since ActivityKit applies
+    // concurrent ones in whatever order they finish. An update still waiting gives way to a newer one.
+    private enum Change: Sendable {
+        case update(String, ActivityContent<SGLyricsAttributes.ContentState>)
+        case end([String])
+    }
 
-    private static func enqueue(_ work: @escaping @Sendable () async -> Void) {
-        let before = pending
-        pending = Task {
-            await before?.value
-            await work()
+    private struct Pending: Sendable {
+        var changes: [Change] = []
+        var sending = false
+    }
+
+    private static let pending = OSAllocatedUnfairLock(initialState: Pending())
+
+    private static func queue(_ change: Change) {
+        let start = pending.withLock { pending in
+            if case .update(let id, _) = change, case .update(let waiting, _)? = pending.changes.last, waiting == id {
+                pending.changes.removeLast()
+            }
+            pending.changes.append(change)
+            if pending.sending { return false }
+            pending.sending = true
+            return true
+        }
+        if start { Task { await send() } }
+    }
+
+    private static func send() async {
+        while let change = pending.withLock({ pending -> Change? in
+            if pending.changes.isEmpty {
+                pending.sending = false
+                return nil
+            }
+            return pending.changes.removeFirst()
+        }) {
+            let activities = Activity<SGLyricsAttributes>.activities
+            switch change {
+            case .update(let id, let content):
+                await activities.first { $0.id == id }?.update(content)
+            case .end(let ids):
+                for activity in activities where ids.contains(activity.id) {
+                    await activity.end(nil, dismissalPolicy: .immediate)
+                }
+            }
         }
     }
 
@@ -44,7 +78,7 @@ public final class SGLiveActivityBridge: NSObject {
             shuffle: shuffle, repeatMode: repeatMode, timerEnd: timerEnd, timerEndOfTrack: timerEndOfTrack)
         let content = ActivityContent(state: state, staleDate: nil)
         if let activity = current {
-            enqueue { await activity.update(content) }
+            queue(.update(activity.id, content))
             return
         }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
@@ -59,9 +93,8 @@ public final class SGLiveActivityBridge: NSObject {
         }
     }
 
+    // Named now, so an activity requested after this call is not ended with them.
     @objc public static func end() {
-        for activity in Activity<SGLyricsAttributes>.activities {
-            enqueue { await activity.end(nil, dismissalPolicy: .immediate) }
-        }
+        queue(.end(Activity<SGLyricsAttributes>.activities.map(\.id)))
     }
 }

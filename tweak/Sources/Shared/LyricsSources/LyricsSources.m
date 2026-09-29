@@ -37,9 +37,13 @@ static NSString *const kLegacyNetEase = @"spotifyglass.neteaseWordTiming";
 // walk can tell "no source has lyrics" from "a source could not say". Only the first is kept.
 static _Atomic NSUInteger sg_failures;
 
-void SGLyricsNoteReply(NSURLResponse *response, NSError *error) {
+BOOL SGLyricsReplyFailed(NSURLResponse *response, NSError *error) {
     NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
-    if (error || status == 429 || status >= 500) atomic_fetch_add(&sg_failures, 1);
+    return error || status == 429 || status >= 500;
+}
+
+void SGLyricsNoteReply(NSURLResponse *response, NSError *error) {
+    if (SGLyricsReplyFailed(response, error)) atomic_fetch_add(&sg_failures, 1);
 }
 
 NSURL *SGLyricsURL(NSString *base, NSDictionary<NSString *, NSString *> *query) {
@@ -144,12 +148,11 @@ NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void) {
             provider.detail = detail;
             // A source that matches by Spotify's own track id has everything it needs from the
             // start; the rest wait for the player to name the track before they can search.
-            provider.needsName = ![@[@"musixmatch", @"spicylyrics"] containsObject:key];
+            provider.needsName = ![key isEqualToString:@"musixmatch"];
             provider.ask = ask;
             return provider;
         };
         all = @[
-            make(@"spicylyrics", @"Spicy Lyrics", @"Syllable timing, uses your Spotify token", SGSpicyLyricsAsk),
             make(@"binilyrics", @"BiniLyrics", @"Apple Music word timing", SGBiniLyricsAsk),
             make(@"musixmatch", @"Musixmatch", @"Spotify's licensed catalogue", SGMusixmatchAsk),
             make(@"unison", @"Unison", @"Hand-timed, few tracks", SGUnisonAsk),

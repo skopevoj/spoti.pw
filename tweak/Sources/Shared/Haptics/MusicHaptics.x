@@ -8,7 +8,7 @@
 // buffer bound for the speaker is mixed to mono and handed to the analyzer (SGMusicAnalyzer.h) on
 // the render thread, which puts what it hears into a ring of events. That buffer is in the unit's output
 // format, the hardware's, not the one Spotify hands the unit (in the simulator 48 kHz float with a buffer
-// per channel, whatever the client: harness/jamesdsp/sim, harness/haptics/sim), so the analyzer runs at
+// per channel, whatever the client: harness/audio-effects/sim, harness/haptics/sim), so the analyzer runs at
 // the hardware's rate, and a listener on the format follows it to a new one. The render timestamp says when
 // that buffer reaches the output; AVAudioSession's output latency (large over Bluetooth) is added, so
 // a tap lands when its drum is heard. A thread of this file's own takes the events off the ring and

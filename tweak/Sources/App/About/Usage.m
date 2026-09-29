@@ -10,7 +10,7 @@
 #import "Shared/ArtistBlock/ArtistBlock.h"
 #import "Shared/Gestures/Gestures.h"
 #import "Shared/Haptics/Haptics.h"
-#import "Shared/JamesDSP/JamesDSP.h"
+#import "Shared/AudioEffects/AudioEffects.h"
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Shared/LockScreenLyrics/LockScreenLyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"

@@ -32,10 +32,6 @@ void SGRMonospacedDigits(UILabel *label);
 // ancestor out, so nothing else tells the screen it is there.
 BOOL SGRObserveImage(UIImageView *view, void (^changed)(UIImageView *view));
 
-// `changed` after every setText: and setAttributedText: on the label, the same way and with the same
-// answer: for a word of Spotify's that is a state it fills in later, such as the artist's Follow.
-BOOL SGRObserveText(UILabel *label, void (^changed)(UILabel *label));
-
 // `laidOut` after every layoutSubviews of the view, Spotify's included, for as long as the view lives, by
 // a runtime subclass of the instance like SGRSuppress. A second call replaces the block, and a pass started
 // from inside the block is not reported again. NO when the view cannot be subclassed (one of Spotify's Swift

@@ -4,7 +4,7 @@
 #import "SGRRestyle.h"
 #import "SGRTokens.h"
 
-static char kPlateKey, kImageObserverKey, kLayoutObserverKey, kTextObserverKey;
+static char kPlateKey, kImageObserverKey, kLayoutObserverKey;
 
 @interface SGRWeakBox : NSObject
 @property (nonatomic, weak) id value;
@@ -214,42 +214,6 @@ BOOL SGRObserveImage(UIImageView *view, void (^changed)(UIImageView *view)) {
         };
     });
     if (first) logWatch(view, @selector(setImage:), kept || onClass, onClass);
-    return kept || onClass;
-}
-
-static void reportText(UILabel *label) {
-    void (^block)(UILabel *) = objc_getAssociatedObject(label, &kTextObserverKey);
-    if (block) block(label);
-}
-
-BOOL SGRObserveText(UILabel *label, void (^changed)(UILabel *label)) {
-    if (![label isKindOfClass:UILabel.class]) return NO;
-    BOOL first = objc_getAssociatedObject(label, &kTextObserverKey) == nil;
-    objc_setAssociatedObject(label, &kTextObserverKey, changed, OBJC_ASSOCIATION_COPY_NONATOMIC);
-    BOOL kept = adopt(label, "SGRTextObserved_", ^(Class subclass, Class original) {
-        for (NSString *name in @[@"setText:", @"setAttributedText:"]) {
-            SEL selector = NSSelectorFromString(name);
-            addOverride(subclass, original, selector, ^(UILabel *self, id value) {
-                struct objc_super parent = {self, original};
-                ((void (*)(struct objc_super *, SEL, id))objc_msgSendSuper)(&parent, selector, value);
-                reportText(self);
-            });
-        }
-    });
-    BOOL onClass = NO;
-    if (!kept) {
-        Class cls = object_getClass(label);
-        for (NSString *name in @[@"setText:", @"setAttributedText:"]) {
-            SEL selector = NSSelectorFromString(name);
-            onClass |= overrideOnClass(cls, selector, ^id(IMP replaced) {
-                return ^(UILabel *self, id value) {
-                    ((void (*)(id, SEL, id))replaced)(self, selector, value);
-                    reportText(self);
-                };
-            });
-        }
-    }
-    if (first) logWatch(label, @selector(setText:), kept || onClass, onClass);
     return kept || onClass;
 }
 

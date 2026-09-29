@@ -173,16 +173,21 @@ static UIButton *glassButton(NSString *title) {
     line.alignment = UIStackViewAlignmentTop;
     line.spacing = 10;
 
-    UIButtonConfiguration *config = [UIButtonConfiguration plainButtonConfiguration];
-    config.contentInsets = NSDirectionalEdgeInsetsMake(4, 32, 4, 0);
-    config.baseForegroundColor = SGGreen();
-    config.attributedTitle = [[NSAttributedString alloc] initWithString:@"Report a bug" attributes:@{NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold]}];
-    UIButton *report = [UIButton buttonWithConfiguration:config primaryAction:[UIAction actionWithHandler:^(UIAction *action) {
-        SGOpenURL([SGRepoURL stringByAppendingString:@"/issues"]);
-    }]];
-    report.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
+    UIButton *(^link)(NSString *, CGFloat, NSString *) = ^UIButton *(NSString *title, CGFloat lead, NSString *url) {
+        UIButtonConfiguration *config = [UIButtonConfiguration plainButtonConfiguration];
+        config.contentInsets = NSDirectionalEdgeInsetsMake(4, lead, 4, 0);
+        config.baseForegroundColor = SGGreen();
+        config.attributedTitle = [[NSAttributedString alloc] initWithString:title attributes:@{NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold]}];
+        return [UIButton buttonWithConfiguration:config primaryAction:[UIAction actionWithHandler:^(UIAction *action) {
+            SGOpenURL(url);
+        }]];
+    };
+    UIStackView *links = [[UIStackView alloc] initWithArrangedSubviews:@[
+        link(@"Report a bug", 32, [SGRepoURL stringByAppendingString:@"/issues"]),
+        link(@"Ask on Discord", 16, SGDiscordURL),
+    ]];
 
-    UIStackView *note = [[UIStackView alloc] initWithArrangedSubviews:@[line, report]];
+    UIStackView *note = [[UIStackView alloc] initWithArrangedSubviews:@[line, links]];
     note.axis = UILayoutConstraintAxisVertical;
     note.alignment = UIStackViewAlignmentLeading;
     note.spacing = 2;

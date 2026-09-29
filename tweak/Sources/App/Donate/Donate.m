@@ -366,10 +366,7 @@ static char kCardGlassKey;
     UIButton *later = [UIButton buttonWithConfiguration:config primaryAction:nil];
     [later addTarget:self action:@selector(later) forControlEvents:UIControlEventTouchUpInside];
 
-    UILabel *thanks = [self label:@"Also built on Spicy Lyrics, JamesDSP and EeveeSpotify. Thank you to everyone behind them."
-                             font:[UIFont systemFontOfSize:11] color:[UIColor colorWithWhite:1 alpha:0.38]];
-
-    UIStackView *column = [[UIStackView alloc] initWithArrangedSubviews:@[hero, eyebrow, title, body, donate, later, thanks]];
+    UIStackView *column = [[UIStackView alloc] initWithArrangedSubviews:@[hero, eyebrow, title, body, donate, later]];
     column.axis = UILayoutConstraintAxisVertical;
     column.alignment = UIStackViewAlignmentCenter;
     column.spacing = 8;
@@ -377,7 +374,6 @@ static char kCardGlassKey;
     [column setCustomSpacing:4 afterView:eyebrow];
     [column setCustomSpacing:26 afterView:body];
     [column setCustomSpacing:6 afterView:donate];
-    [column setCustomSpacing:10 afterView:later];
     column.translatesAutoresizingMaskIntoConstraints = NO;
     [_card addSubview:column];
 
@@ -399,7 +395,6 @@ static char kCardGlassKey;
         [column.bottomAnchor constraintLessThanOrEqualToAnchor:_card.bottomAnchor constant:-kCardPadding],
         [donate.widthAnchor constraintEqualToAnchor:column.widthAnchor],
         [body.widthAnchor constraintLessThanOrEqualToAnchor:column.widthAnchor],
-        [thanks.widthAnchor constraintLessThanOrEqualToAnchor:column.widthAnchor constant:-24],
     ]];
     // Clear of the home indicator; without one the card's own padding wins.
     NSLayoutConstraint *indicator = [column.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-8];

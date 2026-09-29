@@ -7,7 +7,7 @@ and filler words, so they carry no song's lyrics:
                   lines in the head, as BiniLyrics serves its line timed songs
 - spotify-line.json    Spotify's color-lyrics JSON, syncType LINE_SYNCED
 - spotify-static.json  the same, UNSYNCED, every start 0
-- static.txt      plain text with stanza breaks, as LRCLIB's plainLyrics or Spicy's Static come
+- static.txt      plain text with stanza breaks, as LRCLIB's plainLyrics comes
 
     ./linetimed.py      # rewrites all four next to this script
 """

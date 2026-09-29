@@ -106,6 +106,10 @@ static UIView *actionButton(UIView *row, CGRect frame, NSString *identifier, NSS
         mockDownloadButton(element);
         return element;
     }
+    if ([identifier isEqualToString:@"Components.UI.AddToButton"]) {
+        mockAddToButton(element);
+        return element;
+    }
     UIView *button = box(element, MockEncoreButton.class, element.bounds, identifier);
     button.accessibilityLabel = a11y;
     UIImageView *glyph = [[UIImageView alloc] initWithFrame:CGRectInset(button.bounds, 12, 12)];
@@ -143,6 +147,33 @@ static UIView *actionButton(UIView *row, CGRect frame, NSString *identifier, NSS
 @end
 
 // What the redesign's row shows on Play's right: the label of the Kit's last round button, the trailing one.
+static UIControl *trailingButton(UIView *root) {
+    NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithObject:root];
+    while (stack.count) {
+        UIView *v = stack.lastObject;
+        [stack removeLastObject];
+        if ([NSStringFromClass(v.class) isEqualToString:@"SGRHeaderInfo"]) {
+            UIControl *trailing = nil;
+            for (UIView *sub in v.subviews) {
+                if ([NSStringFromClass(sub.class) isEqualToString:@"SGRMirrorButton"]) trailing = (UIControl *)sub;
+            }
+            return trailing;
+        }
+        [stack addObjectsFromArray:v.subviews];
+    }
+    return nil;
+}
+
+// The trailing button's label and the symbol it draws.
+static NSString *trailingState(UIView *root) {
+    UIControl *trailing = trailingButton(root);
+    UIImageView *glyph = nil;
+    for (UIView *sub in trailing.subviews) {
+        if ([sub isKindOfClass:UIImageView.class] && !sub.hidden) glyph = (UIImageView *)sub;
+    }
+    return [NSString stringWithFormat:@"\"%@\" %@ tint %@", trailing.accessibilityLabel, glyph.image, glyph.tintColor];
+}
+
 static NSString *trailingLabel(UIView *root) {
     NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithObject:root];
     while (stack.count) {
@@ -401,6 +432,16 @@ static NSString *trailingLabel(UIView *root) {
 
     [self.window makeKeyAndVisible];
     if (downloads) downloadScript();
+
+    // `addto`: saved from elsewhere at 3 s (the ⋯ sheet, nothing laid out), then Play's right tapped at 7 s.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"addto"]) {
+        UIView *rootView = root.view;
+        for (NSNumber *when in @[@2, @6.5, @8.5]) {
+            at(when.doubleValue, ^{ NSLog(@"[harness] add-to at %@s: %@", when, trailingState(rootView)); });
+        }
+        at(3, ^{ setAddTo(1); NSLog(@"[harness] add-to: saved from elsewhere"); });
+        at(7, ^{ [trailingButton(rootView) sendActionsForControlEvents:UIControlEventTouchUpInside]; });
+    }
 
     // In `late`, add arrives at 2.5 s, after every pass of the header's and the metadata's re-reads: an arranged
     // subview of the row, which lays out the row and nothing above it.

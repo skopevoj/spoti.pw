@@ -690,7 +690,7 @@ static void buildLikedSongs(UIViewController *page, CGFloat W) {
         // The full bleed picture is clipped away rather than shrunk: collapsed it is the width of the page
         // and no height at all, with the picture inside it still at its own size (trees/continuous/3.txt:1066).
         fullbleed.frame = collapsed ? CGRectMake(0, 0, W, 0) : CGRectMake(0, 0, W, 311);
-        block.frame = collapsed ? CGRectMake(0, -26.33, W - 16, 136.33) : CGRectMake(0, 327, W - 16, 178.33);
+        block.frame = collapsed ? CGRectMake(0, -26.33, W - 16, 136.33) : CGRectMake(0, pulled ? 461 : 327, W - 16, pulled ? 220 : 178.33);
         [layout setNeedsLayout];
         [layout layoutIfNeeded];
         UIView *hero = wash.subviews.firstObject;

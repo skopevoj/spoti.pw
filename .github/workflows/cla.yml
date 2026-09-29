@@ -1,0 +1,162 @@
+# Every commit author of a pull request signs CLA.md once: the author by ticking the box the pull request
+# template puts in the description, anyone else by commenting the sentence in CLA.md. Signatures live in
+# signatures.json on the cla-signatures branch; the result is the "CLA" commit status.
+# pull_request_target runs with a write token, so this must never check out the pull request's code.
+name: CLA
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: cla-${{ github.event.pull_request.number || github.event.issue.number }}
+
+jobs:
+  cla:
+    if: >-
+      github.repository == 'skopevoj/spoti.pw' && (github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request && (contains(github.event.comment.body, 'agree to it') ||
+      github.event.comment.body == 'recheck')))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const OWNER_LOGIN = 'skopevoj';
+            const CLA_VERSION = '1.0';
+            const SENTENCE = 'i have read the cla and i agree to it';
+            const TICKED = /^\s*[-*]\s*\[[xX]\]\s*I agree to the \[?Contributor License Agreement/m;
+            const BRANCH = 'cla-signatures';
+            const FILE = 'signatures.json';
+            const MARKER = '<!-- cla-check -->';
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request?.number ?? context.payload.issue.number;
+            const claUrl = `https://github.com/${owner}/${repo}/blob/main/CLA.md`;
+
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const commits = await github.paginate(github.rest.pulls.listCommits,
+              { owner, repo, pull_number: number, per_page: 100 });
+
+            const people = new Map();
+            const unlinked = [];
+            const isBot = u => u.type === 'Bot' || u.login.endsWith('[bot]');
+            for (const user of [pr.user, ...commits.map(c => c.author)]) {
+              if (user && !isBot(user) && user.login !== OWNER_LOGIN) people.set(user.id, user.login);
+            }
+            for (const c of commits) {
+              if (!c.author) unlinked.push(`${c.sha.slice(0, 7)} (${c.commit.author.name})`);
+            }
+
+            async function load() {
+              try {
+                const { data } = await github.rest.repos.getContent({ owner, repo, path: FILE, ref: BRANCH });
+                return { list: JSON.parse(Buffer.from(data.content, 'base64').toString('utf8')), sha: data.sha };
+              } catch (e) {
+                if (e.status === 404) return { list: [], sha: undefined };
+                throw e;
+              }
+            }
+
+            async function branchExists() {
+              try {
+                await github.rest.git.getRef({ owner, repo, ref: `heads/${BRANCH}` });
+                return true;
+              } catch (e) {
+                if (e.status === 404) return false;
+                throw e;
+              }
+            }
+
+            // An orphan branch, so it holds the signatures and nothing else.
+            async function createBranch(content) {
+              const { data: blob } = await github.rest.git.createBlob({ owner, repo, content, encoding: 'base64' });
+              const { data: tree } = await github.rest.git.createTree({ owner, repo,
+                tree: [{ path: FILE, mode: '100644', type: 'blob', sha: blob.sha }] });
+              const { data: commit } = await github.rest.git.createCommit({ owner, repo,
+                message: 'CLA signatures', tree: tree.sha, parents: [] });
+              await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${BRANCH}`, sha: commit.sha });
+            }
+
+            // Another pull request may sign at the same moment; a stale sha is retried on fresh data.
+            async function sign(entry) {
+              for (let attempt = 0; attempt < 3; attempt++) {
+                const { list, sha } = await load();
+                if (list.some(s => s.id === entry.id)) return;
+                const content = Buffer.from(JSON.stringify([...list, entry], null, 2) + '\n').toString('base64');
+                try {
+                  if (!sha && !(await branchExists())) {
+                    await createBranch(content);
+                  } else {
+                    await github.rest.repos.createOrUpdateFileContents({ owner, repo, path: FILE, branch: BRANCH,
+                      message: `CLA ${CLA_VERSION} signed by @${entry.login}`, content, sha });
+                  }
+                  return;
+                } catch (e) {
+                  if (![409, 422].includes(e.status)) throw e;
+                }
+              }
+              throw new Error(`Could not record the signature of @${entry.login}`);
+            }
+
+            // Read from the pull request as it is now, since a queued run may carry an older payload.
+            if (people.has(pr.user.id) && TICKED.test(pr.body || '')) {
+              await sign({ login: pr.user.login, id: pr.user.id, cla: CLA_VERSION, via: 'checkbox',
+                signed_at: new Date().toISOString(), pull_request: number, evidence: pr.html_url });
+            }
+            if (context.eventName === 'issue_comment') {
+              const comment = context.payload.comment;
+              const said = comment.body.trim().replace(/^>\s*/, '').replace(/[.!\s]+$/, '').toLowerCase();
+              if (said === SENTENCE && people.has(comment.user.id)) {
+                await sign({ login: comment.user.login, id: comment.user.id, cla: CLA_VERSION, via: 'comment',
+                  signed_at: comment.created_at, pull_request: number, evidence: comment.html_url });
+              }
+            }
+
+            const { list } = await load();
+            const signed = new Set(list.map(s => s.id));
+            const missing = [...people].filter(([id]) => !signed.has(id));
+            const ok = missing.length === 0 && unlinked.length === 0;
+
+            await github.rest.repos.createCommitStatus({ owner, repo, sha: pr.head.sha, context: 'CLA',
+              state: ok ? 'success' : 'pending', target_url: claUrl,
+              description: ok ? 'Every author has agreed to the CLA' : 'Waiting for the CLA' });
+
+            let body;
+            if (ok) {
+              body = `${MARKER}\nThanks, the [CLA](${claUrl}) is agreed to.`;
+            } else {
+              const lines = [MARKER];
+              const author = missing.some(([id]) => id === pr.user.id);
+              const others = missing.filter(([id]) => id !== pr.user.id).map(([, login]) => '@' + login);
+              if (author) lines.push(
+                `Before this can be merged, please tick "I agree to the [Contributor License Agreement](${claUrl})" ` +
+                `in the description (Edit, at the top of the pull request). If the box isn't there, add this line:`,
+                '', '```', `- [x] I agree to the [Contributor License Agreement](${claUrl})`, '```');
+              if (others.length) lines.push('',
+                `${others.join(', ')} also wrote commits here. To agree to the [CLA](${claUrl}), comment: ` +
+                '`I have read the CLA and I agree to it.`');
+              if (unlinked.length) lines.push('',
+                `These commits have an author email that no GitHub account is linked to, so they can't be ` +
+                `matched to anyone: ${unlinked.join(', ')}. Add the email to your GitHub account, or commit ` +
+                `with one that is, and push again.`);
+              body = lines.join('\n').trim();
+            }
+
+            const comments = await github.paginate(github.rest.issues.listComments,
+              { owner, repo, issue_number: number, per_page: 100 });
+            const previous = comments.find(c => c.user.type === 'Bot' && c.body.includes(MARKER));
+            if (previous) {
+              if (previous.body !== body) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body });
+              }
+            } else if (!ok) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+            }

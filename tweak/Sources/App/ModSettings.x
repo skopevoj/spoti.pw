@@ -1,7 +1,7 @@
 // Settings: a Mod Settings row at the end of Spotify's settings list opens the mod's own page: the
 // Appearance card with Redesigned UI, then a page per part of Spotify, each holding what that part
 // offers in the stored look (App/Pages.m: Navbar, Player, and Home & Library for the native look), Audio
-// effects (JamesDSP, Shared/JamesDSP, in either look and applying straight away), Privacy & clutter
+// effects (Shared/AudioEffects, in either look and applying straight away), Privacy & clutter
 // and Labs, All flags, a searchable list of every flag with an override per flag, and Mod, the
 // build, its updates and links. The same row leads the side drawer's list (trees/test6.txt), above
 // Your plan, so the page is a tap from Home, and holding Home on the tab bar opens it too. The tweaks read the switches when they run, so a change
@@ -20,7 +20,7 @@
 #import "Shared/AdBlock/AdBlock.h"
 #import "Shared/Privacy/Privacy.h"
 #import "Shared/Flags/Flags.h"
-#import "Shared/JamesDSP/JamesDSPPage.h"
+#import "Shared/AudioEffects/AudioEffectsPage.h"
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "App/About/About.h"
 #import "App/Donate/Donate.h"
@@ -41,10 +41,12 @@ static UIViewController *modSettingsPage(void) {
     // that no switch can put right, and it is worth reading before anything else.
     SGModRow *signing = SGSigningWarningRow();
     if (signing) [sections addObject:SGSection(nil, @[signing])];
-    [sections addObject:SGSection(nil, @[SGDonateRow()])];
+    SGModRow *discord = SGWithSymbol(SGLinkRow(@"Join the Discord", @"Release pings, help and previews", SGDiscordURL), @"bubble.left.and.bubble.right.fill");
+    discord.color = SGDiscordColor();
+    [sections addObject:SGSection(nil, @[SGDonateRow(), discord])];
     SGModRow *mod = pageRow(@"Mod", @"info.circle", ^UIViewController *{ return SGAboutPage(); });
     mod.value = ^NSString *{ return @(SG_VERSION); };
-    // JamesDSP works on the sound, so both looks have it, with what it is doing beside the chevron.
+    // The audio effects work on the sound, so both looks have them, with what they are doing beside the chevron.
     SGModRow *audioEffects = pageRow(@"Audio effects", @"slider.vertical.3", ^UIViewController *{ return SGDSPSettingsPage(); });
     audioEffects.value = ^NSString *{ return SGDSPSummary(); };
     // Home & Library holds only the native look's switches, so the redesign has no such page; the

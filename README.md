@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Spotify-9.1.78-1ED760?style=for-the-badge&logo=spotify&logoColor=white" alt="Spotify 9.1.78">
   <img src="https://img.shields.io/badge/Objective--C-3A95E3?style=for-the-badge&logo=apple&logoColor=white" alt="Objective-C">
   <img src="https://img.shields.io/badge/GitHub_Actions-2671E5?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions">
-  <img src="https://img.shields.io/badge/License-GPL_v3-blue?style=for-the-badge" alt="GPL-3.0">
+  <img src="https://img.shields.io/badge/License-PolyForm_Strict_1.0.0-blue?style=for-the-badge" alt="PolyForm Strict 1.0.0">
 </p>
 
 <p align="center">
@@ -87,12 +87,17 @@ The app keeps Spotify's bundle id, so it installs over the real Spotify.
 
 ## Support
 
-Free, and staying that way — no paid tier, no supporter-only builds. If it made your phone nicer
-to use, a coffee is a good way to say so.
+If it made your phone nicer to use, a coffee is a good way to say so.
 
 <a href="https://ko-fi.com/darkksh">
   <img src="https://img.shields.io/badge/Ko--fi-Buy_me_a_coffee-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white" alt="Support on Ko-fi">
 </a>
+
+## Contributing
+
+Pull requests are welcome. The pull request's description has a box for agreeing to the
+[Contributor License Agreement](CLA.md), which gives the project's owner the rights to the
+contribution; it is ticked once, before the first pull request is merged.
 
 ## Star history
 
@@ -107,7 +112,14 @@ to use, a coffee is a good way to say so.
 
 [cyan](https://github.com/asdfzxcvbn/pyzule-rw) injects, [Theos](https://theos.dev) builds, and
 [FLEX](https://github.com/FLEXTool/FLEX), as hopeless's AutoFLEX build in `vendor/`, is the inspector
-the view trees are read through. The ad blocking and Premium state are ported from
+the view trees are read through. The retained ad blocking and Premium state are ported from
 [EeveeSpotify Reincarnated](https://github.com/SideloadLabs/EeveeSpotifyReincarnated), as is the lyrics hook.
 
-GPL-3.0. Not affiliated with Spotify.
+## License
+
+Source available under the [PolyForm Strict License 1.0.0](LICENSE): you can read the code and use
+the mod yourself, but not change it, reuse it in other projects or redistribute it. Releases up to
+v0.21.1 were published under GPL-3.0 and stay under it. Files in `vendor/` and `.agents/` keep their
+own licences.
+
+Not affiliated with Spotify.

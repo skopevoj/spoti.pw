@@ -25,7 +25,7 @@ The fixtures are real TTML and LRC with every word swapped for filler of the sam
 - `linetimed` TTML timed by the line only (BiniLyrics' line timed shape): two voices, two lines sung
   over each other at 42.4 s, a Hebrew line at 50.6 s, a 9 s break at 85.4 s, translations
 - `spotify-line`, `spotify-static` Spotify's own color-lyrics JSON, LINE_SYNCED and UNSYNCED, read by
-  the real `SGKaraokeLinesFromBody`; `static` plain text, as LRCLIB's plainLyrics or Spicy's Static
+  the real `SGKaraokeLinesFromBody`; `static` plain text, as LRCLIB's plainLyrics
   (these four are written by `fixtures/linetimed.py` from `plain`'s timing)
 - `rtl` (built in) right to left lines among left to right ones, a second voice, a break before the
   last line; `rtlx` the same with translations and a romanization

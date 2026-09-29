@@ -23,6 +23,6 @@ row, then a name in its list), and `dump`, which logs the stored keys, what the 
 Strength, Music Haptics on in each Follows choice, the Follows list with a line under each choice, and the rows
 fading in under a switch (`slow`); Controls at 40%, Music Haptics at 150% then 120% by VoiceOver and Beat stored
 under their keys and read back by the hooks. The Audio effects page and an SGModPage without shown-while rows
-(`harness/jamesdsp-page`, `push=reference`) draw the same pixels as before the slider and visibility were added.
+(`harness/audio-effects-page`, `push=reference`) draw the same pixels as before the slider and visibility were added.
 
 What it does not cover: a real finger on the slider, and how any strength feels, which only a phone can tell.

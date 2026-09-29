@@ -32,6 +32,7 @@ BOOL SGUpdateIsNewer(NSString *version);   // whether that release is newer than
 NSString *SGUpdateStatus(void);
 void SGCheckForUpdate(BOOL force);
 UIViewController *SGUpdatePage(void);   // UpdatePage.m: the state and the changelog
+UIViewController *SGLicensesPage(void); // Licenses.m: the mod's license and the third-party ones it ships
 
 // Usage.m: the body the check posts to spoti.pw, nil while the switch is off. The key sits outside
 // "spotifyglass." so that Reset all settings neither switches the count off nor undoes an opt-out.

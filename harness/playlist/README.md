@@ -19,9 +19,10 @@ and asks both for a layout pass, which is what the redesign's `SGRObserveLayout`
 The page opens mid load, with the cover smaller and the block higher than they settle at, so the
 picture has to grow to its final height and then hold it. Then it plays the three states the header is ever in, with the frames Spotify sets in each
 (`trees/continuous/1.txt`, `2.txt` and `4.txt`): at rest at 4 s, collapsed at 8 s, pulled down past the
-top at 12 s. Each logs where the hero landed in the window; collapsed it belongs off the top of the
+top at 12 s (block moved down and grown, as on the phone). Each logs where the hero landed in the window; collapsed it belongs off the top of the
 screen, not pinned to it. At 16 s it fades Spotify's cover square and colour wash back in the way a
 scroll does, with nothing laid out, and reports what the redesign's scroll pass made of them.
+Back at rest the hero must be the height it had at 4 s: a hero that kept its pulled height is clipped by the plane and loses its dissolve.
 
 What it does not cover: the real element framework's autolayout, and the flags `PlaylistField.x` forces.
 
