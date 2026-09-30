@@ -161,6 +161,7 @@ static void scaleEveryCover(BOOL animated) {
 
 // Spotify shows and hides the preview as lyrics come and go; it stays hidden, the way
 // Native/Player/PlayerDeclutter.x has shipped it (its parent is a plain view, 01.txt:35, not a stack).
+// It also collapses its size so the artwork expands into the space it leaves behind (issue #77).
 %hook _TtC22Lyrics_NPVContainerKit19LyricsContainerView
 - (void)setHidden:(BOOL)hidden {
     %orig(YES);
@@ -168,6 +169,50 @@ static void scaleEveryCover(BOOL animated) {
 - (void)didMoveToWindow {
     %orig;
     ((UIView *)self).hidden = YES;
+}
+- (CGSize)intrinsicContentSize {
+    return CGSizeZero;
+}
+- (CGSize)sizeThatFits:(CGSize)size {
+    return CGSizeZero;
+}
+- (void)setFrame:(CGRect)frame {
+    %orig(CGRectZero);
+}
+%end
+
+%hook _TtC28NowPlaying_ContentLayersImpl16CoverArtCellImpl
+- (void)layoutSubviews {
+    %orig;
+    UIView *cell = (UIView *)self;
+    static Class tiltClass, lyricsClass;
+    if (!tiltClass) tiltClass = NSClassFromString(@"_TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView");
+    if (!lyricsClass) lyricsClass = NSClassFromString(@"_TtC22Lyrics_NPVContainerKit19LyricsContainerView");
+
+    __block UIView *tilt = nil;
+    __block UIView *lyrics = nil;
+    SGForEachView(cell, ^(UIView *v) {
+        if (!tilt && tiltClass && [v isKindOfClass:tiltClass]) tilt = v;
+        if (!lyrics && lyricsClass && [v isKindOfClass:lyricsClass]) lyrics = v;
+    });
+
+    if (lyrics) {
+        lyrics.hidden = YES;
+        if (!CGRectIsEmpty(lyrics.frame)) lyrics.frame = CGRectZero;
+    }
+    if (tilt && tilt.superview) {
+        UIView *inner = tilt.superview;
+        CGFloat side = MIN(inner.bounds.size.width, inner.bounds.size.height);
+        if (side >= kCoverMinWidth) {
+            CGRect fullFrame = CGRectMake(round((inner.bounds.size.width - side) / 2),
+                                          round((inner.bounds.size.height - side) / 2),
+                                          side, side);
+            if (!CGRectEqualToRect(tilt.frame, fullFrame)) {
+                tilt.frame = fullFrame;
+                [tilt setNeedsLayout];
+            }
+        }
+    }
 }
 %end
 
