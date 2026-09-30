@@ -41,6 +41,7 @@ UIViewController *SGPrivacySettingsPage(void) {
     return [[SGModPage alloc] initWithTitle:@"Privacy & clutter" intro:SGRestartNote sections:@[
         SGSection(@"Privacy", @[
             SGWithSymbol(SGSwitchRow(@"Block telemetry", @"Spotify's own events still go out, since Recents is built from them", SGKeyBlockTelemetry), @"antenna.radiowaves.left.and.right.slash"),
+            SGWithSymbol(SGSwitchRow(@"Clean shared links", @"Strips tracking parameters (si, utm) when copying or sharing links", SGKeyCleanSharedURLs), @"link"),
         ]),
         SGSection(@"Clutter", @[
             SGWithSymbol(SGOptionRow(@"Hide the video carousel in Search", nil, SGKeyHideSearchVideos), @"play.rectangle.on.rectangle"),
