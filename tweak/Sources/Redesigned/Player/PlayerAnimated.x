@@ -12,10 +12,9 @@
 static const NSTimeInterval kFadeIn = 0.6, kFadeOut = 0.45, kDimChange = 0.3;
 // The dim holds the brighter part of a clip (the 75th percentile of a few frames' linear luminance) under
 // this, where white text keeps 4.5:1 (7:1 with Increase Contrast), as Fluid artwork holds its own; never
-// less than the least, and more under the lyrics. Over it, the shade Fluid artwork has under the controls.
+// less than the least, and more under the lyrics. The clip dissolves into its own dark colour below.
 static const float kCeiling = 0.18f, kCeilingContrast = 0.09f, kUnknownLight = 0.35f;
 static const float kDimLeast = 0.1f, kDimLyrics = 0.15f, kDimMost = 0.8f;
-static const float kShadeMiddle = 0.18f, kShadeBottom = 0.4f;
 static const NSTimeInterval kReadyWithin = 5;
 
 static char kReadyContext, kViewKey;
@@ -24,14 +23,16 @@ static char kReadyContext, kViewKey;
 
 #pragma mark - a clip
 
-// The brighter part of the clip, read once off the main thread from three small frames; `done` on the main
-// queue, with kUnknownLight when none could be read.
-static void readLight(NSURL *file, void (^done)(float light)) {
+// Read the light and bottom-edge colour together from three small frames. The footer keeps that colour
+// for the whole clip, so its controls never sit over moving detail or flicker with the video.
+// `done` is on the main queue; unreadable frames leave the neutral field and kUnknownLight.
+static void readLight(NSURL *file, void (^done)(float light, UIColor *edgeColor)) {
     AVAssetImageGenerator *generator = [AVAssetImageGenerator assetImageGeneratorWithAsset:[AVURLAsset URLAssetWithURL:file options:nil]];
     generator.appliesPreferredTrackTransform = YES;
     generator.maximumSize = CGSizeMake(48, 48);
     NSMutableData *lights = [NSMutableData data];
     __block NSUInteger pending = 3;
+    __block double red = 0, green = 0, blue = 0, samples = 0;
     for (NSNumber *second in @[@0, @1, @2]) {
         [generator generateCGImageAsynchronouslyForTime:CMTimeMakeWithSeconds(second.doubleValue, 600) completionHandler:^(CGImageRef frame, CMTime actual, NSError *error) {
             (void)generator;
@@ -49,7 +50,16 @@ static void readLight(NSURL *file, void (^done)(float light)) {
                 read[i] = 0.2126f * c[0] + 0.7152f * c[1] + 0.0722f * c[2];
             }
             @synchronized (lights) {
-                if (context) [lights appendBytes:read length:sizeof read];
+                if (context) {
+                    [lights appendBytes:read length:sizeof read];
+                    // Bitmap rows run top to bottom, as in SGRPalette's edge sampling.
+                    for (int i = kSide * (kSide * 3 / 4); i < kSide * kSide; i++) {
+                        red += px[i * 4];
+                        green += px[i * 4 + 1];
+                        blue += px[i * 4 + 2];
+                        samples += 255;
+                    }
+                }
                 if (--pending) return;
             }
             NSUInteger count = lights.length / sizeof(float);
@@ -62,7 +72,10 @@ static void readLight(NSURL *file, void (^done)(float light)) {
                 });
                 light = values[count * 3 / 4];
             }
-            dispatch_async(dispatch_get_main_queue(), ^{ done(light); });
+            dispatch_async(dispatch_get_main_queue(), ^{
+                UIColor *edge = samples ? [UIColor colorWithRed:red / samples green:green / samples blue:blue / samples alpha:1] : nil;
+                done(light, edge);
+            });
         }];
     }
 }
@@ -71,6 +84,7 @@ static void readLight(NSURL *file, void (^done)(float light)) {
 @property (nonatomic, readonly) NSURL *file;
 @property (nonatomic, readonly) AVPlayerLayer *layer;
 @property (nonatomic, readonly) float light;   // negative until read
+@property (nonatomic, readonly) UIColor *edgeColor;
 // Once, on the main queue, when its first frame can be drawn and its light has been read.
 @property (nonatomic, copy) void (^ready)(SGRPlayerClip *clip);
 - (instancetype)initWithFile:(NSURL *)file;
@@ -102,10 +116,11 @@ static void readLight(NSURL *file, void (^done)(float light)) {
     _observing = YES;
     _light = -1;
     __weak SGRPlayerClip *weakSelf = self;
-    readLight(file, ^(float light) {
+    readLight(file, ^(float light, UIColor *edgeColor) {
         SGRPlayerClip *clip = weakSelf;
         if (!clip) return;
         clip->_light = light;
+        clip->_edgeColor = edgeColor;
         [clip checkReady];
     });
     return self;
@@ -171,9 +186,11 @@ static void readLight(NSURL *file, void (^done)(float light)) {
     CALayer *_dim;
     CAGradientLayer *_shade;
     NSMutableArray<SGRPlayerClip *> *_leaving;   // under the one coming in until it is in
-    BOOL _playing, _lyricsUp;
+    BOOL _playing, _lyricsUp, _hasFrame;
     float _light;   // the shown clip's
-    NSUInteger _generation;
+    UIColor *_edgeColor;   // also the shown clip's, while its replacement is still loading
+    CGFloat _controlsTop;
+    NSUInteger _generation, _visibilityGeneration;
 }
 
 // Blending black at `dim` over sRGB scales linear light by about (1 - dim)^2.2.
@@ -191,7 +208,8 @@ static float dimFor(float light, BOOL lyricsUp) {
     self.layer.opacity = 0;
     _leaving = [NSMutableArray array];
     NSNull *off = NSNull.null;
-    NSDictionary *still = @{@"bounds": off, @"position": off, @"frame": off, @"opacity": off, @"sublayers": off};
+    NSDictionary *still = @{@"bounds": off, @"position": off, @"frame": off, @"opacity": off,
+                            @"sublayers": off, @"colors": off, @"locations": off};
     _clips = [CALayer layer];
     _clips.actions = still;
     [self.layer addSublayer:_clips];
@@ -203,11 +221,8 @@ static float dimFor(float light, BOOL lyricsUp) {
     [self.layer addSublayer:_dim];
     _shade = [CAGradientLayer layer];
     _shade.actions = still;
-    UIColor *black = UIColor.blackColor;
-    _shade.colors = @[(id)[black colorWithAlphaComponent:0].CGColor, (id)[black colorWithAlphaComponent:kShadeMiddle].CGColor,
-                      (id)[black colorWithAlphaComponent:kShadeBottom].CGColor];
-    _shade.locations = @[@0.45, @0.75, @1];
     [self.layer addSublayer:_shade];
+    [self updateShade:NO];
     return self;
 }
 
@@ -222,6 +237,20 @@ static float dimFor(float light, BOOL lyricsUp) {
     _clips.frame = bounds;
     _dim.frame = bounds;
     _shade.frame = bounds;
+    // The artwork band ends at the information row. Anchor the dissolve there, rather than to one
+    // phone's screen height. Keep that anchor while the lyrics move the cover into their thumbnail.
+    CGRect area = SGRPlayerArtworkAreaIn(self);
+    if (!_lyricsUp && !SGRPlayerIsTransitioning() && !CGRectIsNull(area) && !CGRectIsEmpty(area))
+        _controlsTop = CGRectGetMaxY(area);
+    CGFloat height = bounds.size.height;
+    if (height > 0) {
+        CGFloat end = MIN(height, MAX(height * 0.4, _controlsTop > 0 ? _controlsTop : height * 0.64));
+        CGFloat start = MAX(0, end - MIN(220, height * 0.25));
+        CGFloat span = end - start;
+        _shade.locations = @[@(start / height), @((start + span * 0.35) / height),
+                             @((start + span * 0.72) / height), @(end / height),
+                             @(MIN(1, end / height + 0.14)), @1];
+    }
     _clip.layer.frame = bounds;
     for (SGRPlayerClip *clip in _leaving) clip.layer.frame = bounds;
 }
@@ -257,11 +286,56 @@ static void fade(CALayer *layer, float to, NSTimeInterval duration) {
     [layer addAnimation:animation forKey:@"fade"];
 }
 
+// A broad, soft dissolve into an opaque, artwork-tinted footer, like Music's player. The title sits
+// over the darker end; below it the colour opens out slightly instead of fading all the way to black.
+- (void)updateShade:(BOOL)animated {
+    UIColor *color = SGRFieldColorFor(_edgeColor);
+    CGFloat r = 0, g = 0, b = 0, a = 1;
+    [color getRed:&r green:&g blue:&b alpha:&a];
+    // The page palette deliberately lifts chroma. Behind playback controls the reference is more
+    // subdued: keep the hue, but mix in some of its grey and lower it slightly.
+    CGFloat grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    r = (r * 0.6 + grey * 0.4) * 0.9;
+    g = (g * 0.6 + grey * 0.4) * 0.9;
+    b = (b * 0.6 + grey * 0.4) * 0.9;
+    color = [UIColor colorWithRed:r green:g blue:b alpha:1];
+    UIColor *title = [UIColor colorWithRed:r * 0.72 green:g * 0.72 blue:b * 0.72 alpha:1];
+    UIColor *bottom = [UIColor colorWithRed:r * 0.95 green:g * 0.95 blue:b * 0.95 alpha:1];
+    NSArray *colors = @[(id)[title colorWithAlphaComponent:0].CGColor,
+                        (id)[title colorWithAlphaComponent:0.22].CGColor,
+                        (id)[title colorWithAlphaComponent:0.82].CGColor,
+                        (id)title.CGColor, (id)color.CGColor, (id)bottom.CGColor];
+    NSArray *from = ((CAGradientLayer *)_shade.presentationLayer ?: _shade).colors;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    _shade.colors = colors;
+    [CATransaction commit];
+    if (animated && from) {
+        CABasicAnimation *change = [CABasicAnimation animationWithKeyPath:@"colors"];
+        change.fromValue = from;
+        change.toValue = colors;
+        change.duration = kFadeIn;
+        change.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+        [_shade addAnimation:change forKey:@"colors"];
+    } else {
+        [_shade removeAnimationForKey:@"colors"];
+    }
+}
+
 // The view's own fade, which the covers keep in step with.
 - (void)fadeTo:(BOOL)shown duration:(NSTimeInterval)duration {
+    NSUInteger generation = ++_visibilityGeneration;
+    if (!shown) [self setCovers:NO];   // wake the artwork field before the clip starts leaving
     float to = shown ? 1 : 0;
     if (fabsf(shownOpacity(self.layer) - to) < 0.001f) duration = 0;
+    __weak SGRPlayerAnimatedView *weakSelf = self;
+    [CATransaction begin];
+    [CATransaction setCompletionBlock:^{
+        SGRPlayerAnimatedView *view = weakSelf;
+        if (view && generation == view->_visibilityGeneration) [view setCovers:shown];
+    }];
     fade(self.layer, to, duration);
+    [CATransaction commit];
     _fadeEnds = CACurrentMediaTime() + duration;
     if (shown == _shown) return;
     _shown = shown;
@@ -276,7 +350,7 @@ static void fade(CALayer *layer, float to, NSTimeInterval duration) {
     clip.layer.frame = self.bounds;
     clip.layer.opacity = 0;
     [_clips addSublayer:clip.layer];
-    [clip setPlaying:_playing];
+    [clip setPlaying:_playing && !_lyricsUp];
     __weak SGRPlayerAnimatedView *weakSelf = self;
     clip.ready = ^(SGRPlayerClip *ready) { [weakSelf fadeIn:ready generation:generation]; };
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kReadyWithin * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -299,9 +373,11 @@ static void fade(CALayer *layer, float to, NSTimeInterval duration) {
         SGRPlayerAnimatedView *view = weakSelf;
         if (!view || generation != view->_generation) return;
         [view dropLeaving];
-        [view setCovers:YES];
     }];
     _light = clip.light;
+    _edgeColor = clip.edgeColor;
+    _hasFrame = YES;
+    [self updateShade:shownOpacity(self.layer) > 0.01f];
     fade(_dim, dimFor(_light, _lyricsUp), shownOpacity(self.layer) > 0.01f ? kFadeIn : 0);
     say(@"%@ fades in, its light %.2f dimmed by %.2f", clip.file.lastPathComponent, _light, dimFor(_light, _lyricsUp));
     // Over a clip still on screen the new one fades in on top of it; over the field the whole view does.
@@ -312,14 +388,14 @@ static void fade(CALayer *layer, float to, NSTimeInterval duration) {
         clip.layer.opacity = 1;
         [self dropLeaving];
     }
-    [self fadeTo:YES duration:kFadeIn];
+    [self fadeTo:!_lyricsUp duration:kFadeIn];
     [CATransaction commit];
 }
 
 - (void)clear:(BOOL)animated {
     if (!_clip && !_leaving.count && shownOpacity(self.layer) < 0.001f) return;
     NSUInteger generation = ++_generation;
-    [self setCovers:NO];
+    _hasFrame = NO;
     if (_clip) [_leaving addObject:_clip];
     _clip.ready = nil;
     _clip = nil;
@@ -335,13 +411,21 @@ static void fade(CALayer *layer, float to, NSTimeInterval duration) {
 
 - (void)setPlaying:(BOOL)playing {
     _playing = playing;
-    [_clip setPlaying:playing];
-    for (SGRPlayerClip *clip in _leaving) [clip setPlaying:playing];
+    [_clip setPlaying:playing && !_lyricsUp];
+    for (SGRPlayerClip *clip in _leaving) [clip setPlaying:playing && !_lyricsUp];
 }
 
 - (void)setLyricsUp:(BOOL)up animated:(BOOL)animated {
+    BOOL changed = _lyricsUp != up;
     _lyricsUp = up;
+    // Use the same artwork field as the non-animated player. Keep the clip ready, paused behind it,
+    // so leaving lyrics can crossfade straight back without fetching or restarting the video.
+    if (changed) {
+        [self fadeTo:_hasFrame && !up duration:animated && self.window ? kFadeIn : 0];
+        [self setPlaying:_playing];
+    }
     fade(_dim, dimFor(_light, up), animated && self.window ? kDimChange : 0);
+    [self updateShade:animated && self.window];
 }
 
 @end

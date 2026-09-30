@@ -229,8 +229,9 @@ Redesigned:
                   on, glass when it is off and a dimmed microphone when it has stopped
     Lyrics/       the full screen lyrics page on glass with Apple Music style lyrics over it, always on (SGRKaraokeView,
                   which the player shows in itself too, Player/PlayerLyrics.x, where after four seconds untouched while
-                  the song plays the controls fade out and the lines take the whole player, until a touch or a pause
-                  brings the controls back; the tap that does so seeks nowhere): lines sung over each other lit together,
+                  the song plays only the bottom controls fade out; the header, thumbnail and song details stay visible.
+                  The lines grow down to the home indicator. Scrolling keeps the controls hidden; a tap or a pause
+                  brings them back, and the restoring tap seeks nowhere): lines sung over each other lit together,
                   the stack moving on once the first is sung out; an instrumental break of 7 s or more held by three dots
                   that breathe and fill over its length on a Core Animation timeline laid against the song's clock; and
                   a line's pronunciation (under the words it spells) and translation, switched on from a glass button in
@@ -350,9 +351,13 @@ Spotify's own player screen (artwork background, glass header buttons, Disable C
 header, slider and sticky header flags, the cards under the player and the lyrics preview and player
 buttons to hide); in the redesign instead, right on the Player page, its device button and the Background behind the player: Fluid
 artwork, the default, the cover itself Kawase blurred and warped on Metal, ported from kawarp (Redesigned/Kit/SGRWarp.m), or Animated
-artwork, the track's Canvas or the album's Apple Music 3:4 cover looping muted over it (Redesigned/Player/PlayerAnimated.x), the square cover fading out as it fades in and back as it goes, found
+artwork, the track's Canvas or the album's Apple Music 3:4 cover looping muted over it (Redesigned/Player/PlayerAnimated.x),
+the square cover fading out as it fades in and back as it goes. The clip dissolves into a dark, subdued tint at the title,
+leaving the playback controls over colour alone. The tint is read from the clip's bottom edge alongside its light,
+crosses over with each clip, and the dissolve follows the artwork band's bottom rather than a fixed screen size. Clips are found
 the lock screen's way in an order of its own (a Sources page) and falling back to Fluid artwork for a track
-without a clip, while one is fetched, while Spotify shows its own music video, and in Low Power Mode or with Reduce Motion on; the
+without a clip, while one is fetched, while Spotify shows its own music video, and in Low Power Mode or with Reduce Motion on.
+Lyrics crossfade to that same blurred artwork field and hold the clip paused, ready to return when lyrics close; the
 choice is picked in place, applies at once and brings its own settings up under it: for Fluid artwork a live preview over Speed,
 Warp, Blur, Saturation and Brightness, which the player follows as they move, and Reset; for Animated artwork its Sources; laid out against harness/kawarp/, the player's side against harness/player/ (its fluid and
 animated scenarios). Then Vibrations under either look, a card for

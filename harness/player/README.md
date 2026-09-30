@@ -9,8 +9,8 @@ looked at on the Mac without the phone.
     SIMCTL_CHILD_HARNESS_SCENARIO=artwork xcrun simctl launch --console-pty <udid> com.vojta.playerharness
     xcrun simctl io <udid> screenshot shot.png
 
-Launch it on an iOS 26 simulator by UDID. The iOS 27 runtime kills an app that has a scene manifest but
-no scene delegate. `SRC=<another checkout>/tweak/Sources OUT=<dir> ./build.sh` builds it against other
+Launch it on an iOS 26 or newer simulator by UDID. The harness uses a scene delegate, as the iOS 27
+SDK requires. `SRC=<another checkout>/tweak/Sources OUT=<dir> ./build.sh` builds it against other
 sources, for example an older commit, to see a bug before its fix.
 
 `build.sh` runs `logos.pl -c generator=internal` over `PlayerLyrics.x`, `PlayerArtwork.x`,
@@ -37,9 +37,11 @@ come late, out of order, or not at all.
   through UIApplication, so hit testing, gesture recognizers and UIControl tracking all run): taps on
   the progress bar, on and beside it, with the lyrics up and not, the thumb's own drag and a tap on it,
   the times and the rows around the bar, a lyric line, and the lyrics' thumbnail with the controls
-  there and with the lines alone. The duration unit is Spotify's position slider under its own class
-  name, wired the way the binary wires it (began on touch down, a seek on touch up). The log ends with
-  `tap checks: n of 25 right -- PASS` or `FAIL`. The iOS 26 UISlider lets go of a touch only once its
+  there and with the lines alone. It checks that the song details stay visible, scrolling keeps the bottom
+  controls hidden, a tap restores them without seeking, and the thumbnail still closes lyrics while immersive.
+  The duration unit is Spotify's position slider under its own class name, wired the way the binary wires it
+  (began on touch down, a seek on touch up). The log ends with
+  `tap checks: n of 29 right -- PASS` or `FAIL`. The iOS 26 UISlider lets go of a touch only once its
   thumb has settled, and a tap is delivered to the views late through the list's delayed touches, as
   on the phone.
 - `fluid` is the Fluid artwork background: another album at 7 s (the crossfade), paused from 11 to 13 s, the
@@ -53,9 +55,15 @@ come late, out of order, or not at all.
   the repo). A Canvas fades in over Fluid artwork, Apple Music's cover fetched ahead takes over straight from it,
   a track without a clip goes back to Fluid artwork, a Canvas still downloading shows Fluid artwork until it
   lands, then a pause, the lyrics, Spotify's own video coming and going, the player's transition and a bright
-  clip. The log ends with `animated checks: n of 15 right -- PASS` or `FAIL`. With `HARNESS_STEPPED=1` each
+  clip, a track change during lyrics and a quickly reversed lyrics transition. The log ends with
+  `animated checks: n of 21 right -- PASS` or `FAIL`. With `HARNESS_STEPPED=1` each
   step waits for `xcrun simctl spawn <udid> notifyutil -p com.vojta.harness.next`, so a script can screenshot
   every state once it has settled.
+
+The animated player's lower background dissolves into a dark colour sampled from the clip's bottom
+edge. For visual checks, use a real clip as `apple.mp4`: the picture should disappear by the title,
+with a quiet tint behind the controls. Check another hue, the bright clip, pause and lyrics, and
+confirm the tint crosses over with the clip. Sampling reuses the three frames read for legibility.
 
 `HARNESS_BACKGROUND=0|1` stores Fluid artwork or Animated artwork (unset is the default, `animated` picks
 Animated artwork), `HARNESS_OLD_BACKGROUND=0|1|2` the choice before it (Still artwork, Colour flow, Fluid artwork)

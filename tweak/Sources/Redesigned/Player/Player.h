@@ -81,7 +81,7 @@ SGRArtworkField *SGRPlayerField(void);
 // The view the clip plays in, for PlayerField.x to keep over `field` in the background plane; nil while
 // the background is Fluid artwork.
 UIView *SGRPlayerAnimatedViewIn(UIView *plane, SGRArtworkField *field);
-// The lyrics coming up in the player or going: a clip behind them is dimmed a little more.
+// Lyrics crossfade to the artwork field, holding the clip ready to return when they close.
 void SGRPlayerAnimatedFollowLyrics(BOOL open, BOOL animated);
 // Whether a clip is on screen or fading in, which takes the cover away; `shown` gets how much of the clip
 // is drawn now (0 to 1) and `left` how long its fade still runs. Either may be NULL.

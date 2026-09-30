@@ -42,7 +42,13 @@ cat > "$OUT/PlayerHarness.app/Info.plist" <<'PLIST'
 <key>UIUserInterfaceStyle</key><string>Dark</string>
 <key>UILaunchScreen</key><dict/>
 <key>UIApplicationSceneManifest</key><dict>
-  <key>UIApplicationSupportsMultipleScenes</key><false/>
+<key>UIApplicationSupportsMultipleScenes</key><false/>
+<key>UISceneConfigurations</key><dict>
+  <key>UIWindowSceneSessionRoleApplication</key><array><dict>
+    <key>UISceneConfigurationName</key><string>Player harness</string>
+    <key>UISceneDelegateClassName</key><string>SGRHarnessDelegate</string>
+  </dict></array>
+</dict>
 </dict>
 </dict></plist>
 PLIST

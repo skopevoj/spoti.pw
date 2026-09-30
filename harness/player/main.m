@@ -435,7 +435,7 @@ static void loadLyrics(void) {
 
 #pragma mark - the harness
 
-@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate>
+@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate, UIWindowSceneDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @end
 
@@ -450,10 +450,10 @@ static void loadLyrics(void) {
     NSUInteger _failures, _checks;
 }
 
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     loadLyrics();
     SGRHarnessPlayFrom(2400);
-    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     UIViewController *root = [UIViewController new];
     root.view.backgroundColor = [UIColor colorWithRed:0.09 green:0.07 blue:0.17 alpha:1];
     self.window.rootViewController = root;
@@ -663,7 +663,6 @@ static void loadLyrics(void) {
             SGRPlayerToggleLyrics();
         });
     }
-    return YES;
 }
 
 - (void)layOut {
@@ -841,12 +840,6 @@ static UIView *viewOfClass(UIView *root, NSString *name);
                   shown.opacity, covered ? @"stopped under it" : @"drawing"]];
 }
 
-// The dim over the clip, the sublayer after the clips'.
-- (float)animatedDim {
-    CALayer *dim = [self animatedView].layer.sublayers[1];
-    return ((CALayer *)dim.presentationLayer ?: dim).opacity;
-}
-
 // Each step a moment apart, or, with HARNESS_STEPPED set, as `notifyutil -p com.vojta.harness.next` asks
 // for it, so a script can screenshot each state once it has settled.
 - (void)playSteps:(NSArray<dispatch_block_t> *)steps {
@@ -886,7 +879,6 @@ static UIView *viewOfClass(UIView *root, NSString *name);
     UIImage *first = _cover.image, *second = secondArtwork();
     serve(imageURI(@"ffff"), second, 0.25, NO);
     NSLog(@"[harness] animated: background style %ld", (long)SGRPlayerBackgroundStyle());
-    __block float dimBefore = 0;
     _TtC28NowPlaying_ContentLayersImpl24HorizontalVideoViewModel *video = [_TtC28NowPlaying_ContentLayersImpl24HorizontalVideoViewModel new];
 
     [self playSteps:@[
@@ -934,18 +926,19 @@ static UIView *viewOfClass(UIView *root, NSString *name);
             after(1, ^{ [self expect:[self clipRate] == 1 that:[NSString stringWithFormat:@"9 playing again (rate %.0f)", [self clipRate]]]; });
         },
         ^{
-            dimBefore = [self animatedDim];
             NSLog(@"[harness] opening the lyrics");
+            id retainedClip = [[self animatedView] valueForKey:@"clip"];
             SGRPlayerToggleLyrics();
             after(1.5, ^{
-                float dim = [self animatedDim];
-                [self expect:SGRPlayerLyricsOpen() && dim > dimBefore + 0.1f
-                        that:[NSString stringWithFormat:@"10 the lyrics up dim the clip from %.2f to %.2f", dimBefore, dim]];
+                [self checkAnimated:@"10 lyrics use Fluid artwork" shows:NO];
+                [self expect:SGRPlayerLyricsOpen() && [self clipRate] == 0 && [[self animatedView] valueForKey:@"clip"] == retainedClip
+                        that:@"lyrics hold the existing clip ready behind the field"];
             });
         },
         ^{
             NSLog(@"[harness] closing the lyrics");
             SGRPlayerToggleLyrics();
+            after(1, ^{ [self checkAnimated:@"the clip returns after lyrics" shows:YES]; });
         },
         ^{
             NSLog(@"[harness] Spotify's video comes on");
@@ -976,7 +969,20 @@ static UIView *viewOfClass(UIView *root, NSString *name);
             after(0.4, ^{ [self showOnScreen:first]; });
             after(2, ^{ [self checkAnimated:@"15 the bright Canvas" shows:YES]; });
         },
-        ^{ SGRPlayerToggleLyrics(); },
+        ^{
+            SGRPlayerToggleLyrics();
+            after(1, ^{ [self checkAnimated:@"bright clip also yields to the lyrics field" shows:NO]; });
+        },
+        ^{
+            SGRHarnessSetTrackWith(@"spotify:track:harnessLyricsSwap", imageURI(@"ffff"), NO, canvas(@"late.mp4"), nil);
+            after(0.3, ^{ [self checkAnimated:@"lyrics retain their field while the next clip loads" shows:NO]; });
+            after(2.5, ^{ [self checkAnimated:@"a clip arriving during lyrics stays behind the field" shows:NO]; });
+        },
+        ^{
+            SGRPlayerToggleLyrics();
+            after(0.2, ^{ SGRPlayerToggleLyrics(); });
+            after(1.5, ^{ [self checkAnimated:@"reopening lyrics interrupts the clip fade without covering the field" shows:NO]; });
+        },
         ^{
             SGRPlayerToggleLyrics();
             after(1, ^{
@@ -1193,31 +1199,63 @@ static UIView *viewWithIdentifier(UIView *root, NSString *identifier) {
         NSLog(@"[harness] 12 the press landed on %@, the thumbnail says %@ (%@)", NSStringFromClass(hit.class), thumb.accessibilityLabel,
               thumb.accessibilityTraits & UIAccessibilityTraitButton ? @"a button" : @"NOT A BUTTON");
     });
-    // Alone, the thumbnail's spot only brings the controls back.
+    // Immersive mode preserves the song row and lets the lyrics grow only below it.
     after(14.4, ^{ SGRPlayerToggleLyrics(); });
     after(20.2, ^{
         UIView *stack = viewWithIdentifier(window, @"npv.bottomStackView");
         UIView *thumb = viewOfClass(window, @"SGRPlayerLyricsThumb");
-        [self expect:SGRPlayerLyricsOpen() && stack.alpha < 0.01 && thumb.alpha < 0.01
-                that:[NSString stringWithFormat:@"13 the lines alone (stack %.2f, thumbnail %.2f)", stack.alpha, thumb.alpha]];
-        NSUInteger lines = SGRHarnessLineSeeks(), ended = unit.ended;
-        UIView *hit = SGRHarnessTap(window, [self middleOf:thumb], ^{
+        UIView *title = viewWithIdentifier(window, @"now-playing-title-label");
+        [self expect:SGRPlayerLyricsOpen() && stack.alpha > 0.99 && thumb.alpha > 0.99
+                     && self->_units.firstObject.view.alpha > 0.99 && viewWithIdentifier(window, @"now-playing-minimize-button").superview.alpha > 0.99 && self->_controlsView.alpha < 0.01
+                that:@"13 immersive lyrics keep the header, thumbnail and title, with bottom controls away"];
+        UIView *lines = viewOfClass(window, @"SGRKaraokeView");
+        CGRect band = [lines convertRect:UIEdgeInsetsInsetRect(lines.bounds, [[lines valueForKey:@"lineInsets"] UIEdgeInsetsValue]) toView:window];
+        CGRect titleFrame = [title convertRect:title.bounds toView:window];
+        [self expect:CGRectGetMinY(band) > CGRectGetMaxY(titleFrame) that:@"immersive lyrics stay below the song details"];
+        NSUInteger seeks = SGRHarnessLineSeeks();
+        CGPoint from = CGPointMake(CGRectGetMidX(band), CGRectGetMidY(band));
+        SGRHarnessDrag(window, from, CGPointMake(from.x, from.y - 120), 0.6, ^{
             after(0.5, ^{
-                [self expect:SGRPlayerLyricsOpen() && stack.alpha > 0.99 && SGRHarnessLineSeeks() == lines && unit.ended == ended
-                        that:[NSString stringWithFormat:@"14 a tap on the faded thumbnail: lyrics %@, controls %.2f, no seek", SGRPlayerLyricsOpen() ? @"still up" : @"CLOSED", stack.alpha]];
+                [self expect:self->_controlsView.alpha < 0.01 && SGRHarnessLineSeeks() == seeks
+                        that:@"scrolling lyrics keeps the bottom controls hidden and does not seek"];
             });
         });
-        NSLog(@"[harness] 14 the tap landed on %@", NSStringFromClass(hit.class));
     });
-    after(21.6, ^{
-        UIView *thumb = viewOfClass(window, @"SGRPlayerLyricsThumb");
-        SGRHarnessTap(window, [self middleOf:thumb], ^{
-            after(0.6, ^{ [self expect:!SGRPlayerLyricsOpen() that:@"15 the thumbnail, back with the controls, puts the cover back"]; });
+    after(22, ^{
+        UIView *lyrics = viewOfClass(window, @"SGRKaraokeView");
+        NSUInteger seeks = SGRHarnessLineSeeks(), ended = unit.ended;
+        SGRHarnessTap(window, [self middleOf:lyrics], ^{
+            after(0.5, ^{
+                [self expect:SGRPlayerLyricsOpen() && self->_controlsView.alpha > 0.99
+                             && SGRHarnessLineSeeks() == seeks && unit.ended == ended
+                        that:@"14 a tap restores the bottom controls without seeking"];
+            });
         });
     });
-    after(23, ^{
-        NSLog(@"[harness] tap checks: %lu of %lu right -- %@", (unsigned long)(self->_checks - self->_failures), (unsigned long)self->_checks,
-              self->_failures ? @"FAIL" : @"PASS");
+    after(23.3, ^{
+        UIView *thumb = viewOfClass(window, @"SGRPlayerLyricsThumb");
+        SGRHarnessTap(window, [self middleOf:thumb], ^{
+            after(0.6, ^{
+                [self expect:!SGRPlayerLyricsOpen() that:@"15 the thumbnail puts the cover back"];
+                // Chain this last interaction from the close check. Independent wall-clock steps
+                // can reopen lyrics before its assertion when the simulator coalesces timers.
+                after(1, ^{
+                    if (!SGRPlayerLyricsOpen()) SGRPlayerToggleLyrics();
+                    after(5.8, ^{
+                        [self expect:SGRPlayerLyricsOpen() && self->_controlsView.alpha < 0.01
+                                that:@"immersive mode is active before its thumbnail tap"];
+                        UIView *immersiveThumb = viewOfClass(window, @"SGRPlayerLyricsThumb");
+                        SGRHarnessTap(window, [self middleOf:immersiveThumb], ^{
+                            after(0.6, ^{
+                                [self expect:!SGRPlayerLyricsOpen() that:@"the thumbnail also closes lyrics directly in immersive mode"];
+                                NSLog(@"[harness] tap checks: %lu of %lu right -- %@", (unsigned long)(self->_checks - self->_failures),
+                                      (unsigned long)self->_checks, self->_failures ? @"FAIL" : @"PASS");
+                            });
+                        });
+                    });
+                });
+            });
+        });
     });
 }
 
