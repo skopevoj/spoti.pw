@@ -339,6 +339,7 @@ static SGRPlayerMenuAnchor *anchorIn(UIView *button) {
     if (!anchor) {
         anchor = [SGRPlayerMenuAnchor buttonWithType:UIButtonTypeCustom];
         anchor.userInteractionEnabled = NO;
+        anchor.showsMenuAsPrimaryAction = YES;
         anchor.isAccessibilityElement = NO;
         anchor.accessibilityElementsHidden = YES;
         anchor.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -529,6 +530,7 @@ static void hideSheet(SGRPlayerMenuTakeover *t, UIView *container) {
 static void reveal(SGRPlayerMenuTakeover *t, NSString *why) {
     if (t.revealed || t.finished) return;
     t.revealed = YES;
+    t.anchor.userInteractionEnabled = NO;
     [t.poll invalidate];
     SGLog(@"redesign player menu: Spotify's sheet shown, %@", why);
     objc_setAssociatedObject(t.sheet, &kClaimKey, @NO, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -540,6 +542,7 @@ static void reveal(SGRPlayerMenuTakeover *t, NSString *why) {
 static void finish(SGRPlayerMenuTakeover *t, NSString *why, void (^then)(void)) {
     if (t.finished || t.revealed) return;
     t.finished = YES;
+    t.anchor.userInteractionEnabled = NO;
     [t.poll invalidate];
     if (t.loadingDone) {
         t.loadingDone(@[]);
@@ -631,6 +634,7 @@ static void pick(SGRPlayerMenuTakeover *t, void (^what)(SGRPlayerMenuTakeover *t
 static void menuClosed(SGRPlayerMenuTakeover *t) {
     if (!t || t.closed) return;
     t.closed = YES;
+    t.anchor.userInteractionEnabled = NO;
     if (t.pick) {
         runPick(t);
         return;
@@ -765,9 +769,24 @@ static void openMenu(SGRPlayerMenuTakeover *t) {
         showRows(t);
     }
     UIContextMenuInteraction *interaction = t.anchor.contextMenuInteraction;
+    if (!interaction) {
+        for (id<UIInteraction> i in t.anchor.interactions) {
+            if ([i isKindOfClass:UIContextMenuInteraction.class]) {
+                interaction = (UIContextMenuInteraction *)i;
+                break;
+            }
+        }
+    }
+    t.anchor.userInteractionEnabled = YES;
     if (![interaction respondsToSelector:present]) {
-        reveal(t, button.window ? @"the system menu cannot be opened" : @"the ⋯ is not on screen");
-        return;
+        SEL altPresent = NSSelectorFromString(@"presentMenuAtLocation:");
+        if ([interaction respondsToSelector:altPresent]) {
+            present = altPresent;
+        } else {
+            t.anchor.userInteractionEnabled = NO;
+            reveal(t, button.window ? @"the system menu cannot be opened" : @"the ⋯ is not on screen");
+            return;
+        }
     }
     CGPoint at = CGPointMake(CGRectGetMidX(t.anchor.bounds), CGRectGetMidY(t.anchor.bounds));
     ((void (*)(id, SEL, CGPoint))objc_msgSend)(interaction, present, at);
