@@ -7,6 +7,10 @@ on:
         description: "Direct link to a decrypted Spotify IPA"
         required: true
         type: string
+      deb_url:
+        description: 'Optional: URL to pre-built .deb (leave empty to build from source)'
+        required: false
+        default: ''
       upload_method:
         description: "Where to put the result"
         default: artifacts
@@ -45,7 +49,28 @@ jobs:
           curl -fsSL "${{ inputs.ipa_url }}" -o ipa/spotify.ipa
           case "$(file --mime-type -b ipa/spotify.ipa)" in application/zip|application/x-ios-app) ;; *) echo "::error::Not an IPA"; exit 1 ;; esac
 
-      - run: make release
+      # ── Path 1: Build from source (default) ─────────────────────
+      - name: Build tweak from source
+        if: ${{ inputs.deb_url == '' }}
+        run: make release
+
+      # ── Path 2: Use a pre-built .deb from a URL ─────────────────
+      - name: Inject pre-built .deb into IPA
+        if: ${{ inputs.deb_url != '' }}
+        run: |
+          echo "Downloading .deb from provided URL…"
+          curl -fsSL "${{ inputs.deb_url }}" -o tweak.deb
+          echo "Deb size: $(du -h tweak.deb | cut -f1)"
+
+          # Inject the .deb into the IPA using cyan
+          cyan -i ipa/spotify.ipa -o out/spoti.pw.ipa -w -u -c tweak.deb
+
+          echo "✅ Built IPA using pre-built .deb"
+
+      - name: List output
+        run: |
+          echo "Output files:"
+          ls -la out/
 
       - uses: actions/upload-artifact@v5
         if: inputs.upload_method != 'filebin'
