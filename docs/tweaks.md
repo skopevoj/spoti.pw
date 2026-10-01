@@ -21,8 +21,10 @@
                                 into a group the re-signed IPA has; without it the widget stays a placeholder
     scripts/                    pipeline.sh (build + inject), build-extension.sh (the widget extension, without an
                                 Xcode project), merge-appintents.py (the widget's intents into Spotify's), insert-dylib.py (a load command into
-                                Spotify's widget), install.sh (sign + install), record-trees.py, record-session.py,
-                                dump-log.sh, extract-flags.py
+                                Spotify's widget), merge-local-network-plist.py (the mod's Bonjour types added to Spotify's),
+                                app-icons.sh (the alternate app icons, with car-tool.m, the Assets.car tool it builds),
+                                install.sh (sign + install), check-layers.sh (the layer rules, run before every build),
+                                record-trees.py, record-session.py, dump-log.sh, extract-flags.py
     trees/                      recorded view trees, one per screen; the input for every new hook. trees/clean/ holds
                                 the numbered snapshots per screen of record-session.py, taken of Spotify as it came
     plist/                      Info.plist overrides merged into the app (turns UIDesignRequiresCompatibility off)

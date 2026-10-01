@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Signs an IPA with your own certificate and installs it on the iPhone plugged into this Mac.
 #
-#   scripts/install.sh out/spoti.pw-0.20.0.ipa
+#   scripts/install.sh out/spoti.pw-<version>.ipa
 #
 # Put the certificate details in .signing.env (gitignored):
 #   SIGN_P12=/path/to/cert.p12

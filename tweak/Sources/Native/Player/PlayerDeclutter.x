@@ -129,13 +129,6 @@ static void finish(UIViewController *unit, BOOL changed) {
 }
 %end
 
-void SGSetPlayerLyricsOnly(BOOL on) {
-    for (NSString *key in @[SGHideAboutArtist, SGHideRelatedVideos, SGHideSongDNA, SGHideLiveEvents,
-                            SGHideExploreArtist, SGHideCredits, SGHideMerch, SGHideRecommendations]) {
-        SGSetEnabled(key, on);
-    }
-}
-
 %ctor {
     if (!SGNativeUI()) return;
     %init;
