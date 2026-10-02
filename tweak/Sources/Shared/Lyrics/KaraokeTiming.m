@@ -65,6 +65,22 @@ BOOL SGKaraokeUnspacedScript(NSString *text) {
     return text.length && [text rangeOfCharacterFromSet:unspacedScript()].location != NSNotFound;
 }
 
+// Thai, Lao, Burmese and Khmer, written without spaces too, but a syllable of theirs is a cluster of a
+// letter and the marks around it rather than one character, so these are split where the system finds
+// their words, as it breaks their lines.
+static NSCharacterSet *wordBrokenScript(void) {
+    static NSCharacterSet *set;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableCharacterSet *building = [NSMutableCharacterSet new];
+        [building addCharactersInRange:NSMakeRange(0x0E00, 0x100)];   // Thai and Lao
+        [building addCharactersInRange:NSMakeRange(0x1000, 0xA0)];    // Myanmar
+        [building addCharactersInRange:NSMakeRange(0x1780, 0x80)];    // Khmer
+        set = [building copy];
+    });
+    return set;
+}
+
 void SGKaraokeAlignVoices(NSArray<SGKaraokeLine *> *lines) {
     NSMutableArray<NSString *> *heard = [NSMutableArray array];
     for (SGKaraokeLine *line in lines) {
@@ -100,15 +116,35 @@ static void appendPiece(NSMutableArray<SGKaraokeWord *> *pieces, NSString *text)
     [pieces addObject:word];
 }
 
-// The line split into what the sweep lights one at a time: words where the script spaces them, a
-// syllable at a time where it does not, so a Japanese line sweeps instead of lighting up whole.
-// Everything a token holds past its first piece is joined to the one before it.
+// A piece from each word's start to the next one's, so nothing between two words is lost: punctuation
+// goes with the word before it, and anything ahead of the first word with that word.
+static void appendWords(NSMutableArray<SGKaraokeWord *> *pieces, NSString *token) {
+    __block NSUInteger from = 0;
+    __block BOOL seen = NO;
+    [token enumerateSubstringsInRange:NSMakeRange(0, token.length)
+                              options:NSStringEnumerationByWords | NSStringEnumerationSubstringNotRequired
+                           usingBlock:^(NSString *word, NSRange range, NSRange enclosing, BOOL *stop) {
+        if (seen) {
+            appendPiece(pieces, [token substringWithRange:NSMakeRange(from, range.location - from)]);
+            from = range.location;
+        }
+        seen = YES;
+    }];
+    appendPiece(pieces, [token substringFromIndex:from]);
+}
+
+// The line split into what the sweep lights one at a time and the page wraps between: words where the
+// script spaces them, a syllable at a time where it does not, so a Japanese line sweeps instead of
+// lighting up whole, and the words the system finds in Thai, so a long line of it wraps instead of
+// running off the page. Everything a token holds past its first piece is joined to the one before it.
 static NSArray<SGKaraokeWord *> *piecesOf(NSString *line) {
     NSMutableArray<SGKaraokeWord *> *pieces = [NSMutableArray array];
     for (NSString *token in [line componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]) {
         if (!token.length) continue;
         NSUInteger first = pieces.count;
-        if (!SGKaraokeUnspacedScript(token)) {
+        if ([token rangeOfCharacterFromSet:wordBrokenScript()].location != NSNotFound) {
+            appendWords(pieces, token);
+        } else if (!SGKaraokeUnspacedScript(token)) {
             appendPiece(pieces, token);
         } else {
             // Latin letters or digits caught between two syllables stay together as one piece.
