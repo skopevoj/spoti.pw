@@ -53,6 +53,23 @@ struct SGLyricsLiveActivity: Widget {
                 .widgetURL(URL(string: "spotify:"))
         } dynamicIsland: { context in
             DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Image(systemName: "music.note")
+                        .foregroundStyle(green)
+                        .padding(.leading, 4)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    if let end = context.state.timerEnd, end > Date() {
+                        Text(timerInterval: Date()...end, countsDown: true)
+                            .monospacedDigit()
+                            .foregroundStyle(green)
+                            .padding(.trailing, 4)
+                    } else {
+                        Image(systemName: context.state.paused ? "pause.fill" : "waveform")
+                            .foregroundStyle(green)
+                            .padding(.trailing, 4)
+                    }
+                }
                 DynamicIslandExpandedRegion(.bottom) {
                     Group {
                         if context.state.view == .panel {
@@ -63,6 +80,7 @@ struct SGLyricsLiveActivity: Widget {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 4)
+                    .foregroundStyle(.white)
                 }
             } compactLeading: {
                 Image(systemName: "music.note")
@@ -106,17 +124,34 @@ private struct LyricsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(state.line)
-                .font(.title3.weight(.bold))
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-                .direction(of: state.line)
-            if !state.nextLine.isEmpty {
-                Text(state.nextLine)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.45))
-                    .lineLimit(1)
-                    .direction(of: state.nextLine)
+            if state.line.isEmpty || state.line == "♪" {
+                if !state.title.isEmpty {
+                    Text(state.title)
+                        .font(.headline.weight(.bold))
+                        .lineLimit(1)
+                    if !state.artist.isEmpty {
+                        Text(state.artist)
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.6))
+                            .lineLimit(1)
+                    }
+                } else {
+                    Text("♪")
+                        .font(.title3.weight(.bold))
+                }
+            } else {
+                Text(state.line)
+                    .font(.title3.weight(.bold))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .direction(of: state.line)
+                if !state.nextLine.isEmpty {
+                    Text(state.nextLine)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .lineLimit(1)
+                        .direction(of: state.nextLine)
+                }
             }
         }
     }
