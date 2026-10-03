@@ -4,8 +4,10 @@
 //     SGFeedback.m         which tap each kind of control gets, played while Controls is on
 //     ControlHaptics.x     the player's and the now playing bar's controls, the scrubber, the cover swipes, the gestures
 //     MusicHaptics.x       Spotify's audio output listened to, and Core Haptics played along with it
+//     SystemMusicHaptics.x iOS's Music Haptics setting and recording tracks, including in the background
+//     SGHapticTrack.m      exact Spotify recording identifiers and their Now Playing association
 //     SGMusicAnalyzer.m    the listening: taps and a rumble out of the samples
-//     HapticsSettings.m    the Vibrations cards, with each switch's strength and what Music Haptics follows
+//     HapticsSettings.m    the Vibrations cards, the music mode dropdown and generated-mode settings
 //
 // Everything on them applies at once, without a restart. Everything hooked is Spotify's own (its controls
 // by accessibility identifier, its scrubber, its cover and title lists, its audio unit), so all of it works
@@ -59,7 +61,7 @@ void SGPlayFeedback(SGFeedback feedback);
 // Wakes the Taptic Engine for feedback about to follow quickly (a finger on the scrubber).
 void SGPrepareFeedback(SGFeedback feedback);
 
-// From the Music Haptics switch: starts or stops listening at once.
+// From the music mode picker: starts or stops generated listening at once.
 void SGSetMusicHapticsEnabled(BOOL on);
 // From its strength and its choice of what to follow: reads them again, for the next tap.
 void SGMusicHapticsSettingsChanged(void);
@@ -69,6 +71,5 @@ double SGHapticsStrength(NSString *key);
 SGMusicFollows SGMusicHapticsFollows(void);
 
 @class SGModSection;
-// The Vibrations sections of the Player page: a card for Controls and one for Music Haptics, each opening
-// out into its settings while its switch is on.
+// The Vibrations sections of the Player page: Controls and Music Haptics, with the selected mode's rows.
 NSArray<SGModSection *> *SGVibrationsSections(void);

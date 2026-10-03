@@ -204,7 +204,7 @@ static void readToken(void (^done)(NSString *token, NSString *note)) {
 }
 
 // The token lasts about ten weeks, so it is read once and kept until it runs out or Apple turns it down.
-static void withToken(BOOL fresh, void (^use)(NSString *token)) {
+void SGAppleCatalogToken(BOOL fresh, void (^use)(NSString *token)) {
     if (!fresh) {
         NSString *kept = sg_token ?: [NSUserDefaults.standardUserDefaults stringForKey:kTokenKey];
         if ([SGAppleTokenExpiry(kept) timeIntervalSinceNow] > 3600) {
@@ -258,7 +258,7 @@ static void search(NSString *token, NSString *artist, NSString *album, BOOL tall
     ];
     get(components.URL, token, ^(NSString *body, NSInteger status) {
         if (status == 401 && mayRetry) {
-            withToken(YES, ^(NSString *fresh) { search(fresh, artist, album, tall, known, NO, done); });
+            SGAppleCatalogToken(YES, ^(NSString *fresh) { search(fresh, artist, album, tall, known, NO, done); });
             return;
         }
         if (status == 403 || status == 429) {
@@ -318,7 +318,7 @@ void SGAppleArtworkFind(NSString *artist, NSString *album, BOOL tall, void (^don
         return;
     }
     sg_asking[known] = [NSMutableArray arrayWithObject:[done copy]];
-    withToken(NO, ^(NSString *token) {
+    SGAppleCatalogToken(NO, ^(NSString *token) {
         search(token, artist, album, tall, known, YES, ^(SGCanvas *canvas, NSString *note) {
             NSArray *waiting = sg_asking[known];
             [sg_asking removeObjectForKey:known];

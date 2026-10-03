@@ -58,3 +58,56 @@ rumble's loudest (0.162 from 0.322), 200% doubles the rumble (0.64). The hook no
 48 kHz float, a buffer per channel, whatever the client ("from 44100 Hz ... Spotify hands it"). Before, it read
 the client format off the input scope: it ran the analyzer at 44.1 kHz on 48 kHz buffers, and a 16-bit
 interleaved client made it read the float buffers as integers (taps 0.57 strong instead of 0.89).
+
+
+## System Music Haptics (issue #108)
+
+`system-tests.m` checks exact Spotify track identifiers, TRACK_V4 protobuf requests and replies,
+provider/entity errors, malformed and truncated replies, exact Apple catalog ISRC/duration matching,
+and Now Playing matching. It checks that
+switching modes or tracks removes old recording IDs without changing artwork, lyrics, playback
+position or rate. The provider-header 200 case was verified against Spotify 9.1.78 on an iPhone.
+
+From the repository root on macOS 15 or newer:
+
+```sh
+xcrun clang -fobjc-arc -O1 -Wall -Werror -mmacosx-version-min=15.0 -I tweak/Sources \
+  harness/haptics/system-tests.m tweak/Sources/Shared/Haptics/SGHapticTrack.m \
+  tweak/Sources/Shared/Lyrics/Protobuf.m -framework Foundation -framework MediaPlayer \
+  -o /tmp/spoti-system-haptics-tests
+/tmp/spoti-system-haptics-tests
+```
+
+The existing simulator harness uses `system-stub.m` to keep testing the generated engine. The page
+harness accepts `system` to show the system-mode rows. Neither changes the Mac's or iPhone's system
+setting. Native catalog playback and physical output must be tested on a supported iPhone: verify
+spoti.pw in Accessibility > Music Haptics, use its Control Center control while a supported song plays,
+then check background/locked-screen playback, pause/seek/skip, and the switch back to generated mode.
+
+Apple's public integration is documented at
+https://developer.apple.com/documentation/mediaaccessibility/music-haptics . It exposes a read-only
+system setting and known recording tracks; it does not accept live PCM or expose a setting setter.
+The generated analyzer remains available for live PCM in the foreground.
+
+Pass `system` to the audio simulator harness to additionally check that selecting native mode before
+activation suppresses generated output, and switching back restores it. These checks do not emulate
+Apple's haptics service or prove physical output.
+
+See [device-validation.md](device-validation.md) for the failed ISRC lookup, the exact-catalog-ID
+correction and physical playback confirmation after a system haptics engine reset. Publishing the verified
+catalog ID without the competing ISRC also corrects the Dynamic Island warning. The 193 checks cover
+that metadata rule and the ISRC fallback. The Music Haptics dropdown selects None, Native iOS or spoti.pw Generated; existing selections are preserved.
+
+
+The settings harness also checks the dropdown's actual menu actions and mode-specific rows:
+
+```sh
+harness/haptics-page/build.sh
+xcrun simctl install <udid> harness/haptics-page/build/HapticsPageHarness.app
+xcrun simctl launch --console <udid> com.vojta.hapticspageharness system native music \
+  menu=3.0:0 check=none menu=3.0:2 check=generated menu=3.0:1 check=native
+```
+
+The initial `native music` combination represents an existing installation with both saved booleans;
+the dropdown correctly reads Native iOS. Omit `system` to check that the unavailable native action
+cannot change preferences. `openmenu=3.0` (iOS 17.4+) shows the popup and `info=3.0` opens its explanation.

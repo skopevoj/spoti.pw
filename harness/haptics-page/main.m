@@ -7,9 +7,11 @@
 //     xcrun simctl launch <udid> com.vojta.hapticspageharness [setup...] [action...]
 //
 // Setup: keep (the stored settings stay; otherwise every spotifyglass.redesign.haptics key is cleared first),
-// controls-off (Controls switched off), music (Music Haptics on), follows=<n>, slow (animations at a twentieth
+// system (native mode available), native (native selected), controls-off, music (generated selected),
+// follows=<n>, slow (animations at a twentieth
 // of their speed).
 // Actions: toggle=<section>.<row> (that row's switch flipped the way a tap does), slide=<section>.<row>:<value>
+// menu=<section>.<row>:<index> (choose a dropdown's actual UIAction), check=none|native|generated,
 // (that slider dragged there and let go), swipe=<section>.<row>:<n> (VoiceOver's swipe up on it, n times, down
 // for a negative n), info=<section>.<row> (a tap on its ⓘ), select=<section>.<row> (a tap on a row of the page
 // on top), pop, bottom (scrolled to the end), dump (the stored haptics keys, what the hooks would read, and the
@@ -18,13 +20,14 @@
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Shared/Haptics/Haptics.h"
+#import "Shared/Haptics/SystemMusicHaptics.h"
 
 static void findViews(UIView *root, Class kind, NSMutableArray *found) {
     if ([root isKindOfClass:kind]) [found addObject:root];
     for (UIView *sub in root.subviews) findViews(sub, kind, found);
 }
 
-@interface AppDelegate : UIResponder <UIApplicationDelegate>
+@interface AppDelegate : UIResponder <UIApplicationDelegate, UIWindowSceneDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @property (nonatomic, strong) UINavigationController *nav;
 @end
@@ -48,22 +51,27 @@ static void findViews(UIView *root, Class kind, NSMutableArray *found) {
 }
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
+    return YES;
+}
+
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     NSArray<NSString *> *args = NSProcessInfo.processInfo.arguments;
     NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
     if (![args containsObject:@"keep"]) {
         for (NSString *key in store.dictionaryRepresentation.allKeys) {
-            if ([key hasPrefix:@"spotifyglass.redesign.haptics"]) [store removeObjectForKey:key];
+            if ([key hasPrefix:@"spotifyglass.redesign.haptics"] || [key hasPrefix:@"spotifyglass.haptics"]) [store removeObjectForKey:key];
         }
     }
     NSMutableArray<NSString *> *actions = [NSMutableArray array];
     for (NSString *arg in [args subarrayWithRange:NSMakeRange(1, args.count - 1)]) {
         if ([arg isEqualToString:@"controls-off"]) SGSetEnabled(SGKeyControlHaptics, NO);
         else if ([arg isEqualToString:@"music"]) SGSetEnabled(SGKeyMusicHaptics, YES);
+        else if ([arg isEqualToString:@"native"]) SGSetEnabled(SGKeySystemMusicHaptics, YES);
         else if ([arg hasPrefix:@"follows="]) SGSetInt(SGKeyMusicFollows, [arg substringFromIndex:8].integerValue);
-        else if (![@[@"keep", @"slow"] containsObject:arg]) [actions addObject:arg];
+        else if (![@[@"keep", @"slow", @"system"] containsObject:arg]) [actions addObject:arg];
     }
 
-    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     self.nav = [[UINavigationController alloc] initWithRootViewController:[self playerPage]];
     self.window.rootViewController = self.nav;
@@ -76,7 +84,6 @@ static void findViews(UIView *root, Class kind, NSMutableArray *found) {
             [self run:action];
         });
     }];
-    return YES;
 }
 
 - (UITableView *)table {
@@ -99,6 +106,26 @@ static void findViews(UIView *root, Class kind, NSMutableArray *found) {
         UISwitch *toggle = switches.firstObject;
         [toggle setOn:!toggle.on animated:YES];
         [toggle sendActionsForControlEvents:UIControlEventValueChanged];
+    } else if ([verb isEqualToString:@"menu"] || [verb isEqualToString:@"openmenu"]) {
+        NSArray<NSString *> *at = [value componentsSeparatedByString:@":"];
+        UITableViewCell *cell = [table cellForRowAtIndexPath:[self pathFrom:at[0]]];
+        NSMutableArray<UIButton *> *buttons = [NSMutableArray array];
+        findViews(cell, UIButton.class, buttons);
+        UIButton *menu = nil;
+        for (UIButton *button in buttons) if (button.menu) menu = button;
+        NSCAssert(menu, @"Dropdown must exist");
+        if ([verb isEqualToString:@"openmenu"]) {
+            if (@available(iOS 17.4, *)) [menu performPrimaryAction];
+            return;
+        }
+        UIAction *choice = (UIAction *)menu.menu.children[at[1].integerValue];
+        [menu sendAction:choice];
+    } else if ([verb isEqualToString:@"check"]) {
+        BOOL native = [value isEqualToString:@"native"], generated = [value isEqualToString:@"generated"];
+        NSCAssert(SGFlag(SGKeySystemMusicHaptics, NO) == native, @"Native preference must match selected mode");
+        NSCAssert(SGFlag(SGKeyMusicHaptics, NO) == generated, @"Generated preference must match selected mode");
+        NSCAssert([table numberOfRowsInSection:3] == (native ? 2 : generated ? 3 : 1), @"Only selected mode's settings must be visible");
+        NSLog(@"[harness] PASS: %@ preferences and visible rows", value);
     } else if ([verb isEqualToString:@"slide"] || [verb isEqualToString:@"swipe"]) {
         NSArray<NSString *> *at = [value componentsSeparatedByString:@":"];
         UITableViewCell *cell = [table cellForRowAtIndexPath:[self pathFrom:at[0]]];
@@ -138,7 +165,7 @@ static void findViews(UIView *root, Class kind, NSMutableArray *found) {
     } else if ([verb isEqualToString:@"dump"]) {
         NSDictionary *all = NSUserDefaults.standardUserDefaults.dictionaryRepresentation;
         for (NSString *key in [all.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
-            if ([key hasPrefix:@"spotifyglass.redesign.haptics"]) NSLog(@"[harness] stored %@ = %@", key, all[key]);
+            if ([key hasPrefix:@"spotifyglass.redesign.haptics"] || [key hasPrefix:@"spotifyglass.haptics"]) NSLog(@"[harness] stored %@ = %@", key, all[key]);
         }
         NSLog(@"[harness] the hooks read: Controls %@ at %.0f%%, Music Haptics %@ at %.0f%% following %ld", SGEnabled(SGKeyControlHaptics) ? @"on" : @"off",
               SGHapticsStrength(SGKeyControlStrength) * 100, SGFlag(SGKeyMusicHaptics, NO) ? @"on" : @"off",

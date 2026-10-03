@@ -35,6 +35,7 @@
 #import "Core/SGCore.h"
 #import "Shared/Audio/SGAudioPipeline.h"
 #import "Haptics.h"
+#import "SystemMusicHaptics.h"
 #import "SGMusicAnalyzer.h"
 
 // Core Haptics takes about this long from a scheduled time to the Taptic Engine's peak.
@@ -469,7 +470,9 @@ static void readLatency(void) {
 }
 
 static void updateListening(void) {
-    BOOL listening = atomic_load(&sg_enabled) && atomic_load(&sg_active);
+    // Read the selected mode at activation as well as at settings changes: another constructor
+    // or a preference restore may select native mode after this engine has initialized.
+    BOOL listening = atomic_load(&sg_enabled) && atomic_load(&sg_active) && !SGSystemMusicHapticsSelected();
     if (atomic_exchange(&sg_listening, listening) == listening) return;
     if (listening) {
         atomic_fetch_add(&sg_generation, 1);

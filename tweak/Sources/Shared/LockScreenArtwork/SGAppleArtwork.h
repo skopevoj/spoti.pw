@@ -9,6 +9,10 @@
 // the square one where there is none; otherwise only the square one.
 void SGAppleArtworkFind(NSString *artist, NSString *album, BOOL tall, void (^done)(SGCanvas *canvas, NSString *note));
 
+// Shared catalog access for artwork and exact-recording Music Haptics lookup. Call on the main
+// queue; the callback runs there too. This is the public web player's token, not an account token.
+void SGAppleCatalogToken(BOOL fresh, void (^use)(NSString *token));
+
 // The steps with no network in them.
 NSString *SGAppleTokenIn(NSString *script);
 NSDate *SGAppleTokenExpiry(NSString *token);

@@ -193,6 +193,17 @@ SGModRow *SGChoiceRow(NSString *title, NSString *subtitle, NSString *key, NSArra
     return row;
 }
 
+SGModRow *SGDropdownRow(NSString *title, NSArray<NSString *> *choices, NSInteger (^current)(void), void (^chosen)(NSInteger index)) {
+    SGModRow *row = SGStatRow(title, ^NSString *{
+        NSInteger index = current();
+        return index >= 0 && index < (NSInteger)choices.count ? choices[(NSUInteger)index] : choices.firstObject;
+    });
+    row.menuChoices = choices;
+    row.choiceIndex = current;
+    row.chosen = chosen;
+    return row;
+}
+
 NSArray<SGModRow *> *SGChoiceListRows(NSString *key, NSArray<NSString *> *choices, NSArray<NSString *> *notes, NSInteger fallback,
                                       void (^chosen)(NSInteger index)) {
     NSInteger (^current)(void) = ^NSInteger {
@@ -555,6 +566,12 @@ static void showProgress(UITableViewCell *cell, SGModRow *row, BOOL animated) {
 
 #pragma mark - the page
 
+@interface SGModDropdownCell : UITableViewCell
+@property (nonatomic, strong) UIButton *menuButton;
+@end
+@implementation SGModDropdownCell
+@end
+
 @implementation SGModPage {
     NSArray<SGModSection *> *_sections;
     NSArray<NSArray<SGModRow *> *> *_shown;   // each section's rows that show now (SGModRow.visible)
@@ -696,6 +713,12 @@ static void showProgress(UITableViewCell *cell, SGModRow *row, BOOL animated) {
         if (row.progress) showProgress(cell, row, YES);
         if (row.checked) showCheck(cell, row.checked());
         if (row.number && [cell isKindOfClass:SGModSliderCell.class]) [(SGModSliderCell *)cell readAgain];
+        if (row.menuChoices && [cell isKindOfClass:SGModDropdownCell.class]) {
+            SGModDropdownCell *dropdown = (SGModDropdownCell *)cell;
+            if (![dropdown.menuButton.configuration.title isEqualToString:row.value()])
+                [self configureDropdown:dropdown row:row];
+            continue;
+        }
         UILabel *label = (UILabel *)cell.accessoryView;
         if (!row.value || row.page || ![label isKindOfClass:UILabel.class]) continue;
         label.text = row.value();
@@ -764,11 +787,15 @@ static void showProgress(UITableViewCell *cell, SGModRow *row, BOOL animated) {
         [cell showRow:row];
         return cell;
     }
-    UITableViewCell *cell = SGDequeueCell(table, @"row");
+    UITableViewCell *cell = row.menuChoices ?
+        ([table dequeueReusableCellWithIdentifier:@"dropdown"] ?: [[SGModDropdownCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"dropdown"]) :
+        SGDequeueCell(table, @"row");
     SGFillRowCell(cell, row);
     showProgress(cell, row, NO);
 
-    if (row.key) {
+    if (row.menuChoices) {
+        [self configureDropdown:(SGModDropdownCell *)cell row:row];
+    } else if (row.key) {
         BOOL locked = flagRowLocked(row);
         // A lock that beats an override shows over one; the others give way to it.
         BOOL beats = NO;
@@ -791,10 +818,49 @@ static void showProgress(UITableViewCell *cell, SGModRow *row, BOOL animated) {
         // A disabled switch would swallow the tap; letting it through is what gets the row asked.
         toggle.userInteractionEnabled = !locked;
         [toggle addTarget:self action:@selector(toggled:) forControlEvents:UIControlEventValueChanged];
-        cell.accessoryView = row.info ? [self infoButtonBeside:toggle] : toggle;
+        cell.accessoryView = row.info ? [self infoButtonBeside:toggle title:row.title] : toggle;
         cell.selectionStyle = locked ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
     }
     return cell;
+}
+
+- (void)configureDropdown:(SGModDropdownCell *)cell row:(SGModRow *)row {
+    UIButtonConfiguration *config = UIButtonConfiguration.plainButtonConfiguration;
+    config.title = row.value();
+    config.baseForegroundColor = SGGrey();
+    config.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *attributes) {
+        NSMutableDictionary *result = [attributes mutableCopy];
+        result[NSFontAttributeName] = SGTitleFont();
+        return result;
+    };
+    config.image = [UIImage systemImageNamed:@"chevron.up.chevron.down" withConfiguration:
+        [UIImageSymbolConfiguration configurationWithPointSize:10 weight:UIImageSymbolWeightSemibold]];
+    config.imagePlacement = NSDirectionalRectEdgeTrailing;
+    config.imagePadding = 6;
+    config.contentInsets = NSDirectionalEdgeInsetsMake(8, 0, 8, 0);
+    UIButton *button = [UIButton buttonWithConfiguration:config primaryAction:nil];
+    button.accessibilityLabel = row.title;
+    button.accessibilityValue = config.title;
+    button.accessibilityHint = @"Choose an option";
+    button.showsMenuAsPrimaryAction = YES;
+    __weak SGModPage *weakSelf = self;
+    NSMutableArray<UIMenuElement *> *actions = [NSMutableArray array];
+    [row.menuChoices enumerateObjectsUsingBlock:^(NSString *name, NSUInteger index, BOOL *stop) {
+        UIAction *action = [UIAction actionWithTitle:name image:nil identifier:nil handler:^(__kindof UIAction *chosen) {
+            if ((row.choiceEnabled && !row.choiceEnabled((NSInteger)index)) || row.choiceIndex() == (NSInteger)index) return;
+            if (row.chosen) row.chosen((NSInteger)index);
+            [weakSelf readValues];
+        }];
+        action.state = row.choiceIndex() == (NSInteger)index ? UIMenuElementStateOn : UIMenuElementStateOff;
+        if (row.choiceEnabled && !row.choiceEnabled((NSInteger)index)) action.attributes = UIMenuElementAttributesDisabled;
+        [actions addObject:action];
+    }];
+    button.menu = [UIMenu menuWithChildren:actions];
+    [button sizeToFit];
+    cell.menuButton = button;
+    cell.accessoryView = row.info ? [self infoButtonBeside:button title:row.title] : button;
+    cell.isAccessibilityElement = NO; // Keep both the picker and its separate info button reachable.
+    [cell setNeedsLayout];
 }
 
 - (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
@@ -811,13 +877,13 @@ static void showProgress(UITableViewCell *cell, SGModRow *row, BOOL animated) {
     [self readValues];
 }
 
-// The ⓘ to the left of the switch, the grey of a subtitle, 30pt across so it is easy to hit next to it.
-- (UIView *)infoButtonBeside:(UIControl *)toggle {
+// The ⓘ to the left of a switch or dropdown, in the grey of a subtitle.
+- (UIView *)infoButtonBeside:(UIControl *)toggle title:(NSString *)title {
     UIButton *info = [UIButton buttonWithType:UIButtonTypeSystem];
     UIImageSymbolConfiguration *symbol = [UIImageSymbolConfiguration configurationWithPointSize:17 weight:UIImageSymbolWeightRegular];
     [info setImage:[UIImage systemImageNamed:@"info.circle" withConfiguration:symbol] forState:UIControlStateNormal];
     info.tintColor = SGGrey();
-    info.accessibilityLabel = @"About this switch";
+    info.accessibilityLabel = [@"About " stringByAppendingString:title];
     [info addTarget:self action:@selector(infoTapped:) forControlEvents:UIControlEventTouchUpInside];
     [toggle sizeToFit];
     CGFloat side = 30, gap = 8, height = MAX(side, toggle.bounds.size.height);

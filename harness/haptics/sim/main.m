@@ -23,6 +23,7 @@
 #import <stdatomic.h>
 #import "Core/SGCore.h"
 #import "Shared/Haptics/Haptics.h"
+#import "Shared/Haptics/SystemMusicHaptics.h"
 #import "fakehaptics.h"
 
 static atomic_uint_fast64_t sg_frame;
@@ -222,6 +223,21 @@ static int sg_failures;
             SGSetMusicHapticsEnabled(YES);
         }, ^(double s) {
             [self report:@"on again, Everything, 100%" seconds:s kicks:1 snares:1 rumble:YES intensity:tap100 level:level100];
+        }],
+    ]];
+    if (SGSystemMusicHapticsAvailable()) [steps addObjectsFromArray:@[
+        @[@"native selected before activation", ^{
+            [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillResignActiveNotification object:nil];
+            SGSetEnabled(SGKeySystemMusicHaptics, YES);
+            [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+        }, ^(double s) {
+            [self report:@"native excludes generated output" seconds:s kicks:0 snares:0 rumble:NO intensity:NAN level:NAN];
+        }],
+        @[@"switch back to generated", ^{
+            SGSetEnabled(SGKeySystemMusicHaptics, NO);
+            SGSystemMusicHapticsSettingsChanged();
+        }, ^(double s) {
+            [self report:@"generated output restored" seconds:s kicks:1 snares:1 rumble:YES intensity:tap100 level:level100];
         }],
     ]];
 #endif

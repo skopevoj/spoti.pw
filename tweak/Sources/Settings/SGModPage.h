@@ -24,7 +24,7 @@
 @property (nonatomic, copy) NSString *symbol;
 // A switch row that changes the whole app draws SGGlowSwitch instead of a UISwitch.
 @property (nonatomic) BOOL glows;
-// An ⓘ button beside the row's switch, whose tap reads this out under the row's title.
+// An ⓘ button beside the row's switch or dropdown, whose tap reads this out under the row's title.
 @property (nonatomic, copy) NSString *info;
 // The row shows only while this answers YES, asked again whenever a switch on the page is flipped, a row is
 // tapped or the page comes back from a choice's list: the row fades in or out where it sits, and a section
@@ -39,6 +39,10 @@
 @property (nonatomic, copy) NSArray<NSString *> *choiceNotes;
 @property (nonatomic, copy) NSString *choiceFooter;   // under a choice row's list
 @property (nonatomic, copy) void (^chosen)(NSInteger index);
+// An inline dropdown uses these names and reads its selection from the feature's existing state.
+@property (nonatomic, copy) NSArray<NSString *> *menuChoices;
+@property (nonatomic, copy) NSInteger (^choiceIndex)(void);
+@property (nonatomic, copy) BOOL (^choiceEnabled)(NSInteger index);
 // A slider row's (SGSliderRow): its range and step, and the blocks that read its number, store one and
 // write one out.
 @property (nonatomic) double minimum, maximum, step;
@@ -82,6 +86,8 @@ SGModRow *SGPageRow(NSString *title, UIViewController *(^page)(void));
 // A setting picked from a list of names, stored under `key` as the index into it: the row reads the
 // name of the current one out and opens a list of them, a checkmark against that one.
 SGModRow *SGChoiceRow(NSString *title, NSString *subtitle, NSString *key, NSArray<NSString *> *choices, NSInteger fallback);
+// A native popup menu on the row, with an optional info button. The feature reads/stores its selection.
+SGModRow *SGDropdownRow(NSString *title, NSArray<NSString *> *choices, NSInteger (^current)(void), void (^chosen)(NSInteger index));
 // The same setting listed on the page itself, one row per name over its note, a checkmark against the one
 // set: a tap stores it and runs `chosen`, and the rows that show only for some choices come or go under it.
 NSArray<SGModRow *> *SGChoiceListRows(NSString *key, NSArray<NSString *> *choices, NSArray<NSString *> *notes, NSInteger fallback,

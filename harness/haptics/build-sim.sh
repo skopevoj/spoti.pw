@@ -24,7 +24,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT/gen" "$OUT/HapticsHarness.app"
 "$THEOS/bin/logos.pl" -c generator=internal "$HAPTICS/MusicHaptics.x" > "$OUT/gen/MusicHaptics.m"
 if [ "$1" != before ]; then
-    AUDIO="$SRC/Shared/Audio/SGAudioSourceQueue.m"
+    AUDIO="$SRC/Shared/Audio/SGAudioSourceQueue.m system-stub.m"
     "$THEOS/bin/logos.pl" -c generator=internal "$SRC/Shared/Audio/SGAudioPipeline.x" > "$OUT/gen/SGAudioPipeline.m"
 fi
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)

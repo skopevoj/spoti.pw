@@ -159,13 +159,28 @@ Shared:
                   against its sim/
     Haptics/      Vibrations (Haptics.h lists its files): a tap of UIKit's feedback generators for the player's and the now
                   playing bar's controls, the scrubber's tenths and ends, cover swipes, gestures and the lyrics page's tap to
-                  seek, at the strength set for them (ControlHaptics.x, SGFeedback.m); and Music Haptics, Core Haptics
-                  playing along with the song: Audio/SGAudioPipeline supplies final samples after speed, pitch and audio effects;
+                  seek, at the strength set for them (ControlHaptics.x, SGFeedback.m). Music Haptics
+                  has a dropdown for None, Native iOS and spoti.pw Generated, with an info button explaining them.
+                  Native iOS follows the system setting in Control Center and Accessibility. SystemMusicHaptics.x
+                  observes it through MediaAccessibility. Spotify's TRACK_V4 extended metadata supplies the
+                  exact ISRC, matched by URI. An Apple catalog lookup requires that ISRC, matching duration
+                  and an available haptic track before adding its song ID through MediaPlayer's optional
+                  exported iTunes Store identifier key. This avoids a failed ISRC-only lookup on the tested OS;
+                  no name search or substitute recording is used. The shared Apple web-player token helper
+                  also serves animated artwork. The IPA declares MusicHapticsSupported. iOS owns the haptic
+                  track and Now Playing timeline. Once a verified song ID is available it replaces the ISRC
+                  in Now Playing, so playback and the Dynamic Island availability check use the same lookup.
+                  Without a catalog match the public ISRC path remains available. Foreground/background
+                  playback, Control Center and the warning correction have been checked on a physical iPhone.
+                  Catalog coverage varies.
+                  spoti.pw Generated uses the existing engine; None disables music haptics without changing Controls.
+                  Existing native/generated preferences are preserved, and Native iOS is disabled below iOS 18.
+                  The generated mode uses Core Haptics to play along with the song: Audio/SGAudioPipeline supplies final samples after speed, pitch and audio effects;
                   in the unit's output format (the hardware's), they go through a drum
                   and bass analyzer on the render thread (SGMusicAnalyzer.m, plain C), and a thread of its own schedules
                   the taps and the rumble for when the sound is heard, at their strength and leaving out what Follows
-                  leaves out (MusicHaptics.x). Everything applies at once; nothing plays while Spotify is not the active
-                  app. The analyzer is scored on the Mac against harness/haptics/, the hook in the simulator against its
+                  leaves out (MusicHaptics.x). Changes apply at once. Only generated haptics stop when Spotify is not
+                  the active app; the generated engine is silent while the system mode is selected. The analyzer is scored on the Mac against harness/haptics/, the hook in the simulator against its
                   sim/, the settings against harness/haptics-page/
     LiveActivity/ a Live Activity on the lock screen and in the Dynamic Island in one of three views, the line being
                   sung with the next one under it, the tracks up next (a tap on one skipping ahead to it), or a control
@@ -356,8 +371,11 @@ without a clip, while one is fetched, while Spotify shows its own music video, a
 choice is picked in place, applies at once and brings its own settings up under it: for Fluid artwork a live preview over Speed,
 Warp, Blur, Saturation and Brightness, which the player follows as they move, and Reset; for Animated artwork its Sources; laid out against harness/kawarp/, the player's side against harness/player/ (its fluid and
 animated scenarios). Then Vibrations under either look, a card for
-Controls (on until switched off) and one for Music Haptics (off until switched on, with an ⓘ saying it
-follows the sound this iPhone plays while Spotify is open), each opening out while its switch is on:
+Controls (on until switched off) and one for Music Haptics. From iOS 18, Use iOS Music Haptics
+is an optional, experimental source: its live status follows Control Center/Accessibility, and iOS owns
+the native effects. Background output is not yet reliably verified in Spotify. Leaving this option off preserves
+the generated Music Haptics switch (off until switched on). Below iOS 18 only generated mode is offered.
+Each generated/control switch opens out while it is on:
 Controls into its Strength (10 to 100%, a tap at the new strength with each step), Music Haptics into its
 Strength (20 to 200%, 100% being how it first shipped) and Follows, Everything (a tap on each kick and
 snare and a rumble under the bass), Beat (the taps without the rumble) or Bass (the kicks' taps and the
