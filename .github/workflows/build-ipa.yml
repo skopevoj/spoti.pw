@@ -1,3 +1,5 @@
+# Patches your decrypted Spotify IPA with a release's kit, the way chroma.pw/patch does in a browser.
+# Nothing is compiled, so it runs on Linux in about a minute.
 name: Build IPA from your own Spotify IPA
 
 on:
@@ -7,57 +9,68 @@ on:
         description: "Direct link to a decrypted Spotify IPA"
         required: true
         type: string
+      version:
+        description: "latest, beta, or a release tag like v0.50.0"
+        default: latest
+        type: string
       upload_method:
         description: "Where to put the result"
         default: artifacts
         type: choice
         options: [artifacts, filebin, both]
 
-env:
-  THEOS: ${{ github.workspace }}/theos
+permissions:
+  contents: read
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-
       - uses: levibostian/action-hide-sensitive-inputs@v1
-
-      - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          exclude_inputs: version,upload_method
 
-      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v7
         with:
-          repository: theos/theos
-          path: theos
-          submodules: recursive
-
-      - name: Install tools
-        run: |
-          brew install make dpkg ldid
-          python3 -m pip install --break-system-packages git+https://github.com/asdfzxcvbn/pyzule-rw.git
+          node-version: 24
 
       - name: Download IPA
+        env:
+          IPA_URL: ${{ inputs.ipa_url }}
+        run: curl -fsSL --retry 3 -o spotify.ipa "$IPA_URL"
+
+      # The releases hang on the repo this one is a fork of, so a fork never has to copy them.
+      - name: Download the mod
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
         run: |
-          mkdir -p ipa
-          curl -fsSL "${{ inputs.ipa_url }}" -o ipa/spotify.ipa
-          case "$(file --mime-type -b ipa/spotify.ipa)" in application/zip|application/x-ios-app) ;; *) echo "::error::Not an IPA"; exit 1 ;; esac
+          repo=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.source.full_name // "skopevoj/spoti.pw"')
+          tag=$(gh api "repos/$repo/releases?per_page=100" | jq -r --arg v "$VERSION" '
+            [.[] | select((.draft | not) and any(.assets[]; .name | endswith("-kit.zip")))]
+            | if $v == "latest" then map(select(.prerelease | not))
+              elif $v == "beta" then .
+              else map(select(.tag_name == "v" + ($v | ltrimstr("v")))) end
+            | first.tag_name // empty')
+          [ -n "$tag" ] || { echo "::error::$repo has no release \"$VERSION\" to patch with"; exit 1; }
+          echo "$tag from $repo"
+          gh release download "$tag" -R "$repo" -p '*-kit.zip' -O kit.zip
+          curl -fsSL --retry 3 -o patcher.mjs https://chroma.pw/patcher.mjs
 
-      - run: make release
+      - name: Patch
+        run: node patcher.mjs spotify.ipa kit.zip out
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: inputs.upload_method != 'filebin'
         with:
-          name: spoti.ipa
           path: out/*.ipa
+          archive: false
           if-no-files-found: error
 
       - name: Upload to filebin.net
         if: inputs.upload_method != 'artifacts'
         run: |
-          BIN="spotifyglass-${{ github.run_id }}"
+          BIN="chroma-${{ github.run_id }}"
           echo "### filebin.net download" >> "$GITHUB_STEP_SUMMARY"
           for f in out/*.ipa; do
             curl -fsS -X POST -H "Content-Type: application/octet-stream" --data-binary "@$f" "https://filebin.net/$BIN/$(basename "$f")" >/dev/null

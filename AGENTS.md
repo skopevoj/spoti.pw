@@ -59,9 +59,8 @@ Rules:
 - Look at Spotify's views through recorded trees (`make session` records clean ones into
   `trees/clean/`) before hooking anything. Prove every class and selector against the tree or the binary.
 - Device log: `make log` (`[spotifyglass]` lines).
-- Releases: Release Please (`.github/workflows/release.yml`). Commit as `feat:` / `fix:` (they bump
-  `version.txt` and fill `CHANGELOG.md`; `chore:`, `refactor:` and `docs:` stay out). Merging its
-  release PR tags `vX.Y.Z` and attaches the `.deb`. Never edit `version.txt` by hand.
+- Releases are made in the private repo, which publishes them here with the `.deb` and the kit that
+  `build-ipa.yml` and chroma.pw/patch patch IPAs with. Nothing in this repo tags or releases.
 - Known traps: anything pushed onto Spotify's nav stack must conform to `SPTPageController`
   (`Settings/SGPage.m`). Setting `hidden` on views inside Spotify's `OverflowStackView` or its Encore
   stacks crashes, so use alpha. A `CADisplayLink` capped at 60 Hz drags the player's 120 Hz
