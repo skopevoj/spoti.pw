@@ -83,10 +83,6 @@ static void offerWhenClear(NSInteger tries) {
 }
 
 void SGWatchForUpdates(void) {
-    // TEMPORARY, remove before committing: forgets which release this phone has been told about, so the
-    // sheet is offered again for one it has already had (0.20.0 was marked told on 2026-09-20 by a
-    // manual Check now, which is what let the sheet through in the first place).
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:kTold];
     // Every time Spotify comes to the front, not only the first: it lives for days behind other apps,
     // and the day's usage count has to go out on a day it was merely brought back. The sheet is still
     // once per launch.
