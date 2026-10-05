@@ -10,12 +10,13 @@
 #import "About.h"
 
 NSString *const SGUpdateURL = @"https://spoti.pw/api/update";
-static NSString *const kGitHubURL = @"https://api.github.com/repos/skopevoj/spoti.pw/releases?per_page=20";
+static NSString *const kGitHubURL = @"https://api.github.com/repos/skopevoj/spoti.pw/releases?per_page=100";
 NSString *const SGUpdateCheckedNotification = @"spotifyglass.update.checked.notification";
 
 static NSString *const kChecked = @"spotifyglass.update.checked";
 static NSString *const kReleases = @"spotifyglass.update.releases";
 static const NSTimeInterval kInterval = 6 * 60 * 60;
+static const NSUInteger kKept = 20;
 
 static NSString *sg_failure;
 static BOOL sg_running;
@@ -26,16 +27,25 @@ static BOOL sg_running;
 @implementation SGUpdateRelease
 @end
 
-// "0.14.1" against "0.15": the numbers position by position, a missing one counting zero.
+// "0.14.1" against "0.15": the numbers position by position, a missing one counting zero. A beta
+// ("0.23.0-beta.2") is newer than the release before it and older than its own.
 static BOOL isNewer(NSString *candidate, NSString *current) {
-    NSArray<NSString *> *left = [candidate componentsSeparatedByString:@"."];
-    NSArray<NSString *> *right = [current componentsSeparatedByString:@"."];
+    NSArray<NSString *> *candidateParts = [candidate componentsSeparatedByString:@"-"];
+    NSArray<NSString *> *currentParts = [current componentsSeparatedByString:@"-"];
+    NSArray<NSString *> *left = [candidateParts.firstObject componentsSeparatedByString:@"."];
+    NSArray<NSString *> *right = [currentParts.firstObject componentsSeparatedByString:@"."];
     for (NSUInteger i = 0; i < MAX(left.count, right.count); i++) {
         NSInteger a = i < left.count ? left[i].integerValue : 0;
         NSInteger b = i < right.count ? right[i].integerValue : 0;
         if (a != b) return a > b;
     }
-    return NO;
+    if (candidateParts.count == 1 || currentParts.count == 1) return candidateParts.count < currentParts.count;
+    return [candidateParts[1] compare:currentParts[1] options:NSNumericSearch] == NSOrderedDescending;
+}
+
+// A beta build is told about betas as well as releases; a release build only ever about releases.
+static BOOL isBetaBuild(void) {
+    return strchr(SG_VERSION, '-') != NULL;
 }
 
 static NSString *stringOr(id value, NSString *fallback) {
@@ -117,6 +127,8 @@ NSArray<SGUpdateRelease *> *SGUpdateReleases(void) {
         if (![entry isKindOfClass:NSDictionary.class]) continue;
         NSString *version = stringOr(entry[@"version"], nil);
         if (!version.length) continue;
+        // A list a beta build left behind, read by the release installed over it.
+        if ([entry[@"prerelease"] boolValue] && !isBetaBuild()) continue;
         SGUpdateRelease *release = [SGUpdateRelease new];
         release.version = version;
         release.date = stringOr(entry[@"date"], @"");
@@ -153,9 +165,9 @@ NSString *SGUpdateStatus(void) {
 
 #pragma mark - the check
 
-// Drafts and pre-releases are not builds anyone is meant to be sent to, so they count for neither the
-// newest version nor the changelog. GitHub answers newest first; the sort keeps that true whatever
-// order a hand-made release lands in.
+// Drafts are not builds anyone is meant to be sent to, and pre-releases (the betas) only beta builds
+// are, so otherwise they count for neither the newest version nor the changelog. GitHub answers newest
+// first; the sort keeps that true whatever order a hand-made release lands in.
 static NSArray<NSDictionary *> *releasesFrom(NSData *data) {
     id json = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL] : nil;
     if (![json isKindOfClass:NSArray.class]) return nil;
@@ -163,7 +175,8 @@ static NSArray<NSDictionary *> *releasesFrom(NSData *data) {
     for (id item in (NSArray *)json) {
         if (![item isKindOfClass:NSDictionary.class]) continue;
         NSDictionary *release = item;
-        if ([release[@"draft"] boolValue] || [release[@"prerelease"] boolValue]) continue;
+        BOOL prerelease = [release[@"prerelease"] boolValue];
+        if ([release[@"draft"] boolValue] || (prerelease && !isBetaBuild())) continue;
         NSString *tag = stringOr(release[@"tag_name"], nil);
         if (!tag.length) continue;
         [entries addObject:@{
@@ -171,11 +184,13 @@ static NSArray<NSDictionary *> *releasesFrom(NSData *data) {
             @"notes": stringOr(release[@"body"], @""),
             @"date": stringOr(release[@"published_at"], @""),
             @"url": stringOr(release[@"html_url"], @""),
+            @"prerelease": @(prerelease),
         }];
     }
     [entries sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
         return isNewer(a[@"version"], b[@"version"]) ? NSOrderedAscending : NSOrderedDescending;
     }];
+    if (entries.count > kKept) [entries removeObjectsInRange:NSMakeRange(kKept, entries.count - kKept)];
     return entries.count ? entries : nil;
 }
 

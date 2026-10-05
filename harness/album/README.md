@@ -52,3 +52,9 @@ identifier and in a mock of the Encore object behind it (`currentState`, `progre
 None, waiting, downloading (held at 50%), downloaded, shuffle on, removed with shuffle off, error, each held a
 few seconds and announced with a `[harness] state:` line to take a screenshot on. Nothing in it lays anything
 out, as on the phone.
+
+The artist line carries Spotify's facepile (`../faces-mock.h`, placeholder pictures drawn in code), and the log
+says what the redesign drew before the name at 1.6 s and 3 s (`[harness] faces`): each face's frame, the name's,
+where the two centre, and what a touch on the first face reaches; at 3.2 s the line fires ParentRow. `facelate`
+lands the picture at 2 s, over a line already drawn, `faces3` has three artists, `noface` an artist with only
+Spotify's initial (no circle, no gap).

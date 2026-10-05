@@ -59,9 +59,26 @@ SGModRow *SGSigningWarningRow(void);          // nil while the signature is soun
 void SGCheckSigningOnce(void);
 void SGShowSigningFixIfPending(void);   // the sheet the tour held back, if any
 
+// Compatibility.m: a Spotify other than SGSupportedSpotifyVersion, or EeveeSpotify injected alongside.
+// Each gets an alert once and a red row at the top of Mod Settings.
+NSArray<SGModRow *> *SGCompatibilityWarningRows(void);   // empty when neither
+void SGCheckCompatibilityOnce(void);
+
+// Certificate.m: how this copy is signed, from the provisioning profile inside the app, and for a free
+// Apple ID's 7-day signature a sheet now and then offering a certificate, worded by spoti.pw.
+NSString *SGCertificateKind(void);   // "free", "paid", "enterprise", "none" (no profile), nil if unreadable
+NSDate *SGCertificateExpiry(void);
+SGModRow *SGCertificateRow(void);    // nil unless signed with a free Apple ID
+void SGWatchForCertificate(void);
+BOOL SGCertificateOfferShown(void);  // this run, so the donate sheet stays out of its way
+void SGShowCertificateSheet(NSDictionary *offer, UIImage *logo);   // the sheet itself, for harness/donate too
+
 // Backup.m: the settings out to a JSON file through the share sheet, and back in from one, replacing
 // what is set and restarting.
 void SGExportSettings(void);
 void SGImportSettings(void);
+
+// AppIcon.m: the row that opens the list of app icons, nil in a build without them (scripts/app-icons.sh).
+SGModRow *SGAppIconRow(void);
 
 UIViewController *SGAboutPage(void);   // the Mod page

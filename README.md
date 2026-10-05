@@ -38,13 +38,13 @@ which change between releases, so another version may build and then break.
 
 | | |
 |---|---|
-| The redesign | **iOS 26+** |
+| The redesign | **iOS 26+** (untested below) |
 | Legacy look | iOS 16.1+ |
 | Live Activity | iOS 17+ |
 
 The redesign is `UIGlassEffect`, which only exists from iOS 26. Below that the Redesigned UI switch
-is greyed out and the mod runs Spotify's own screens with everything else it adds on top. Both live
-in Settings → Mod Settings.
+still works, but it warns first: the redesign falls back to a blur there and has not been tested at
+all. Both looks live in Settings → Mod Settings.
 
 ## Build it
 

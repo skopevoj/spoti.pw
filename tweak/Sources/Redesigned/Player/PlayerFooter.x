@@ -112,7 +112,8 @@ static UIView *connectGlyphIn(UIView *holder) {
 
 // Moved down, the row is drawn partly below the bottom stack it is arranged in, and UIKit does not look
 // into a view for a touch outside its bounds. This band over the part that hangs out hands such a touch
-// to the row itself, and lets every other one through.
+// to the row itself, and lets every other one through. It asks nothing of a row that cannot be seen, the
+// stack it is in faded out included (the lines alone, PlayerLyrics.x).
 @interface SGRFooterReach : UIView
 @property (nonatomic, weak) UIView *row;
 @end
@@ -120,7 +121,10 @@ static UIView *connectGlyphIn(UIView *holder) {
 @implementation SGRFooterReach
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *row = self.row;
-    if (!row.window || row.alpha < 0.01 || row.hidden) return nil;
+    if (!row.window) return nil;
+    for (UIView *view = row; view && view != self.superview; view = view.superview) {
+        if (view.alpha < 0.01 || view.hidden) return nil;
+    }
     UIView *hit = [row hitTest:[row convertPoint:point fromView:self] withEvent:event];
     return hit == row ? nil : hit;
 }
@@ -184,10 +188,8 @@ static void lowerRow(UIView *row) {
     });
 }
 
-%hook _TtC20NowPlaying_ModesImpl18FooterElementsUnit
-- (void)viewDidLayoutSubviews {
-    %orig;
-    UIView *host = ((UIViewController *)self).viewIfLoaded;
+static void layOutFooter(UIViewController *unit) {
+    UIView *host = unit.viewIfLoaded;
     if (!host) return;
     // The unit lays out before its row does, and the moves are measured from where the row put things.
     [SGRowIn(host) layoutIfNeeded];
@@ -229,10 +231,24 @@ static void lowerRow(UIView *row) {
               connectFrom, glyph ? @"glyph" : @"button", round(width * kMiddle), queueFrom, round(width * (rtl ? kLeading : kTrailing)), share ? @"gone" : @"not found");
     });
 }
+
+%hook _TtC20NowPlaying_ModesImpl18FooterElementsUnit
+- (void)viewDidLayoutSubviews {
+    %orig;
+    layOutFooter((UIViewController *)self);
+}
+%end
+
+// Spotify Free's player builds the same elements into units of its own (Player.h).
+%hook _TtC32ReinventFree_ReinventFreeNpvImpl30ReinventFreeFooterElementsUnit
+- (void)viewDidLayoutSubviews {
+    %orig;
+    layOutFooter((UIViewController *)self);
+}
 %end
 
 %ctor {
     if (!SGRedesignedUI()) return;
     %init;
-    SGRequireClasses(@[@"_TtC20NowPlaying_ModesImpl18FooterElementsUnit"]);
+    SGRequireClasses(@[@"_TtC20NowPlaying_ModesImpl18FooterElementsUnit", @"_TtC32ReinventFree_ReinventFreeNpvImpl30ReinventFreeFooterElementsUnit"]);
 }

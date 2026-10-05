@@ -8,6 +8,7 @@ enum { kFifoFrames = 16384 };
 
 struct SGTimePitch {
     AudioUnit unit;
+    bool varispeed;
     double sampleRate;
     UInt32 channels;
     SGTimePitchSource source;
@@ -48,17 +49,18 @@ static OSStatus input(void *refCon, AudioUnitRenderActionFlags *flags, const Aud
     return noErr;
 }
 
-SGTimePitch *SGTimePitchCreate(double sampleRate, UInt32 channels, SGTimePitchSource source, void *context) {
+static SGTimePitch *create(bool varispeed, double sampleRate, UInt32 channels, SGTimePitchSource source, void *context) {
     if (sampleRate <= 0 || channels < 1 || channels > kSGTimePitchMaxChannels) return NULL;
     AudioComponentDescription description = {
         .componentType = kAudioUnitType_FormatConverter,
-        .componentSubType = kAudioUnitSubType_NewTimePitch,
+        .componentSubType = varispeed ? kAudioUnitSubType_Varispeed : kAudioUnitSubType_NewTimePitch,
         .componentManufacturer = kAudioUnitManufacturer_Apple,
     };
     AudioComponent component = AudioComponentFindNext(NULL, &description);
     if (!component) return NULL;
     SGTimePitch *unit = calloc(1, sizeof *unit);
     if (!unit) return NULL;
+    unit->varispeed = varispeed;
     unit->sampleRate = sampleRate;
     unit->channels = channels;
     unit->source = source;
@@ -83,7 +85,7 @@ SGTimePitch *SGTimePitchCreate(double sampleRate, UInt32 channels, SGTimePitchSo
     if (!status) status = AudioUnitSetProperty(unit->unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0, &format, sizeof format);
     if (!status) status = AudioUnitSetProperty(unit->unit, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFrames, sizeof maxFrames);
     if (!status) status = AudioUnitSetProperty(unit->unit, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &callback, sizeof callback);
-    if (!status) status = AudioUnitSetParameter(unit->unit, kNewTimePitchParam_Rate, kAudioUnitScope_Global, 0, 1, 0);
+    if (!status) status = AudioUnitSetParameter(unit->unit, varispeed ? kVarispeedParam_PlaybackRate : kNewTimePitchParam_Rate, kAudioUnitScope_Global, 0, 1, 0);
     if (!status) status = AudioUnitInitialize(unit->unit);
     if (status) {
         AudioComponentInstanceDispose(unit->unit);
@@ -103,6 +105,18 @@ SGTimePitch *SGTimePitchCreate(double sampleRate, UInt32 channels, SGTimePitchSo
     return unit;
 }
 
+SGTimePitch *SGTimePitchCreate(double sampleRate, UInt32 channels, SGTimePitchSource source, void *context) {
+    return create(false, sampleRate, channels, source, context);
+}
+
+SGTimePitch *SGTimePitchCreateVarispeed(double sampleRate, UInt32 channels, SGTimePitchSource source, void *context) {
+    return source ? create(true, sampleRate, channels, source, context) : NULL;
+}
+
+bool SGTimePitchIsVarispeed(const SGTimePitch *unit) {
+    return unit->varispeed;
+}
+
 double SGTimePitchSampleRate(const SGTimePitch *unit) {
     return unit->sampleRate;
 }
@@ -112,10 +126,11 @@ UInt32 SGTimePitchChannels(const SGTimePitch *unit) {
 }
 
 void SGTimePitchSetRate(SGTimePitch *unit, float rate) {
-    AudioUnitSetParameter(unit->unit, kNewTimePitchParam_Rate, kAudioUnitScope_Global, 0, rate, 0);
+    AudioUnitSetParameter(unit->unit, unit->varispeed ? kVarispeedParam_PlaybackRate : kNewTimePitchParam_Rate, kAudioUnitScope_Global, 0, rate, 0);
 }
 
 void SGTimePitchSetSemitones(SGTimePitch *unit, float semitones) {
+    if (unit->varispeed) return;
     AudioUnitSetParameter(unit->unit, kNewTimePitchParam_Pitch, kAudioUnitScope_Global, 0, semitones * 100, 0);
 }
 

@@ -1,0 +1,15 @@
+{
+	"Body": {
+		"Type": "Line",
+		"StartTime": 2.0,
+		"EndTime": 9.0,
+		"id": "HarnessTrack0000000002",
+		"source": "spotify",
+		"Content": [
+			{"Type": "Vocal", "OppositeAligned": false, "Text": "juliett kilo", "StartTime": 2.0, "EndTime": 4.5, "TranslatedText": "lima"},
+			{"Type": "Vocal", "OppositeAligned": true, "Text": "mike november (oscar)", "StartTime": 5.0, "EndTime": 9.0}
+		]
+	},
+	"Status": 200,
+	"Type": "object"
+}

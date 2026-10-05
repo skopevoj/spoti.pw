@@ -3,6 +3,7 @@
 // line's -at at -rate, and holds at -pauseAt for -holdFor seconds before it runs on.
 #import <UIKit/UIKit.h>
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsSources/LyricsSources.h"
 
 UIColor *SGRAccentColor(void) { return nil; }
 
@@ -12,7 +13,15 @@ CFTimeInterval SGPlayerTransitionEnds(void) { return 0; }
 
 void SGRPlayFeedback(NSInteger feedback) {}
 void SGPlayFeedback(NSInteger feedback) {}   // the name it has had since Haptics moved to Shared
-NSString *SGLyricsCreditFor(NSString *trackID) { return @"the harness"; }
+@implementation SGLyricsCredit
+@end
+SGLyricsCredit *SGLyricsCreditFor(NSString *trackID) {
+    SGLyricsCredit *credit = [SGLyricsCredit new];
+    credit.text = @"the harness";
+    return credit;
+}
+void SGLyricsOpenCredit(SGLyricsCredit *credit) {}
+BOOL SGLyricsActive(void) { return NO; }
 // -translateTo es: the language the Lyrics page would ask translations for.
 NSString *SGLyricsTranslationLanguage(void) { return [NSUserDefaults.standardUserDefaults stringForKey:@"translateTo"]; }
 

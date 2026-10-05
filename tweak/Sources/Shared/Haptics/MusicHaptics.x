@@ -33,7 +33,7 @@
 #import <pthread.h>
 #import <stdatomic.h>
 #import "Core/SGCore.h"
-#import "Core/SGRebind.h"
+#import "Shared/Audio/SGAudioPipeline.h"
 #import "Haptics.h"
 #import "SGMusicAnalyzer.h"
 
@@ -171,7 +171,6 @@ static OSStatus rendered(void *refCon, AudioUnitRenderActionFlags *flags, const 
 
 #pragma mark - the output unit
 
-static OSStatus (*sg_startOutput)(AudioUnit unit);
 
 static NSString *fourCC(UInt32 code) {
     char text[5] = {(char)(code >> 24), (char)(code >> 16), (char)(code >> 8), (char)code, 0};
@@ -214,32 +213,6 @@ static void readFormat(AudioUnit unit) {
     }
     storeDouble(&sg_sampleRateBits, format.mSampleRate);
     atomic_store(&sg_layout, (uint64_t)format.mFormatFlags | (uint64_t)(format.mChannelsPerFrame & 0xffff) << 32 | (uint64_t)bytes << 48);
-}
-
-// The hardware's format changing under a running unit (a route to a device at another rate).
-static void formatChanged(void *refCon, AudioUnit unit, AudioUnitPropertyID property, AudioUnitScope scope, AudioUnitElement element) {
-    if (property == kAudioUnitProperty_StreamFormat && scope == kAudioUnitScope_Output && element == 0) readFormat(unit);
-}
-
-static void listenTo(AudioUnit unit) {
-    AudioComponentDescription description = {0};
-    if (AudioComponentGetDescription(AudioComponentInstanceGetComponent(unit), &description) != noErr) return;
-    if (description.componentType != kAudioUnitType_Output || description.componentSubType != kAudioUnitSubType_RemoteIO) {
-        static int logged;
-        if (logged++ < 8) SGLog(@"music haptics: a started unit is not RemoteIO ('%@' '%@'), not listened to", fourCC(description.componentType), fourCC(description.componentSubType));
-        return;
-    }
-    AudioUnitRemoveRenderNotify(unit, rendered, NULL);
-    AudioUnitRemovePropertyListenerWithUserData(unit, kAudioUnitProperty_StreamFormat, formatChanged, NULL);
-    AudioUnitAddPropertyListener(unit, kAudioUnitProperty_StreamFormat, formatChanged, NULL);
-    readFormat(unit);
-    OSStatus status = AudioUnitAddRenderNotify(unit, rendered, NULL);
-    if (status != noErr) SGLog(@"music haptics: the render notify could not be added (%d)", (int)status);
-}
-
-static OSStatus startOutput(AudioUnit unit) {
-    if (unit) listenTo(unit);
-    return sg_startOutput(unit);
 }
 
 #pragma mark - the player thread
@@ -539,10 +512,8 @@ void SGMusicHapticsSettingsChanged(void) {
     mach_timebase_info_data_t timebase;
     mach_timebase_info(&timebase);
     sg_secondsPerTick = (double)timebase.numer / timebase.denom / 1e9;
-    if (!SGRebindImport("AudioOutputUnitStart", startOutput, (void **)&sg_startOutput) || !sg_startOutput) {
-        SGLog(@"music haptics: Spotify does not import AudioOutputUnitStart, Music Haptics is inactive");
-        return;
-    }
+    static const SGAudioProcessor processor = {readFormat, rendered};
+    if (!SGAudioPipelineRegister(SGAudioStageHaptics, &processor)) return;
     sg_wake = dispatch_semaphore_create(0);
     readSettings();
     atomic_store(&sg_enabled, SGFlag(SGKeyMusicHaptics, NO));

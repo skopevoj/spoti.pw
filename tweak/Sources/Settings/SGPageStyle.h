@@ -28,11 +28,17 @@ void SGFillCell(UITableViewCell *cell, NSString *title, NSString *subtitle, UICo
 UIView *SGSectionHeader(UITableView *table, NSString *title);
 UIView *SGSectionFooter(UITableView *table, NSString *text);
 CGFloat SGSectionFooterHeight(UITableView *table, NSString *text);
+// The same with a link after the text, in the accent colour and read out by its host; a tap on the
+// footer opens it. Measured by SGSectionFooterHeight with SGLinkedFooterText.
+UIView *SGLinkedSectionFooter(UITableView *table, NSString *text, NSString *url);
+NSString *SGLinkedFooterText(NSString *text, NSString *url);
 UITableViewCell *SGDequeueCell(UITableView *table, NSString *identifier);
 
 void SGOpenURL(NSString *url);
 extern NSString *const SGSiteURL;
 extern NSString *const SGRepoURL;
 extern NSString *const SGDiscordURL;
+// The one Spotify build the mod is made for (AGENTS.md lists what else follows it on a bump).
+extern NSString *const SGSupportedSpotifyVersion;
 // The controller on top of the key window, through whatever is presented over it.
 UIViewController *SGTopController(void);

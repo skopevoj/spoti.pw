@@ -11,6 +11,7 @@
 #import "SGRTokens.h"
 #import "SGRAccent.h"
 #import "SGRDownload.h"
+#import "SGRReveal.h"
 
 // The capsule: the glyph is Spotify's own 48pt canvas with the triangle small in the middle of it, so the
 // lead is short and the gap to the word comes out of the canvas itself.
@@ -456,9 +457,10 @@ SGRMirrorButton *SGRPinnedMore(UIView *page, const void *key, UIView *source) {
         [button addTarget:recorder action:@selector(sgr_moreTapped:) forControlEvents:UIControlEventTouchDown];
         objc_setAssociatedObject(page, key, button, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    // Over the page's list and its header both, and put back on top whenever Spotify adds to the page.
+    // Over the page's list and its header both, and put back on top whenever Spotify adds to the page -- under
+    // the curtain while the page has one, so it comes in with the rest of the page.
     if (button.superview != page) [page addSubview:button];
-    else if (page.subviews.lastObject != button) [page bringSubviewToFront:button];
+    SGRRevealBringToFront(page, button);
     if (source) [button feedFrom:source];
     if (button.hidden != (source == nil)) button.hidden = source == nil;
 

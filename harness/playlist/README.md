@@ -50,3 +50,8 @@ identifier and in a mock of the Encore object behind it (`currentState`, `progre
 None, waiting, downloading (held at 50%), downloaded, shuffle on, removed with shuffle off, error, each held a
 few seconds and announced with a `[harness] state:` line to take a screenshot on. Nothing in it lays anything
 out, as on the phone.
+
+The creator's button carries Spotify's facepile (`../faces-mock.h`, placeholder pictures drawn in code), with the
+glyph disc an own playlist has before the face. `facelate` lands the picture at 3 s over a header already drawn,
+`noface` has only Spotify's initial; both hold the header at rest with nothing else scripted and log
+`[harness] faces` at 2.5 s and 4 s. `liked` logs that Liked Songs draws none.

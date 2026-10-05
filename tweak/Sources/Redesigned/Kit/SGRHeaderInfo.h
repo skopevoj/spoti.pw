@@ -27,6 +27,10 @@ extern const CGFloat SGRHeaderInfoTitleRise;  // 56, of the content over the pic
 // The line keeps its colour: it is the page's one piece of secondary text, not a link to be tinted. nil
 // leaves it as text.
 - (void)showCreatorLink:(UIView *)control;
+// The faces Spotify draws before the creator's name (the album's artists, the playlist's owner), read off
+// the Encore facepile under `row` and drawn before the line, the two centred as one and tapped as one. Only
+// faces with a picture, at most three; none leaves the name alone with no gap. nil clears them.
+- (void)showFacesIn:(UIView *)row;
 // For a trailing control that shows its state only as a word (the artist's Follow): SGRMirrorButton's
 // readState and its two symbols. Set before the first -showShuffle:...; -trailingStateChanged redraws it.
 @property (nonatomic, copy) BOOL (^trailingState)(BOOL *on);

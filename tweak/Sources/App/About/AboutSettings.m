@@ -41,12 +41,14 @@ UIViewController *SGAboutPage(void) {
     // The row reads out where the build stands and opens the changelog of everything newer than it.
     SGModRow *updates = SGPageRow(@"Updates", ^UIViewController *{ return SGUpdatePage(); });
     updates.value = ^NSString *{ return SGUpdateStatus(); };
-    return [[SGModPage alloc] initWithTitle:@"Mod" intro:nil sections:@[
-        SGSection(nil, @[
-            updates,
-            SGStatRow(@"Version", ^NSString *{ return @(SG_VERSION); }),
-            SGStatRow(@"Spotify", ^NSString *{ return spotify; }),
-        ]),
+    NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGSection(nil, @[
+        updates,
+        SGStatRow(@"Version", ^NSString *{ return @(SG_VERSION); }),
+        SGStatRow(@"Spotify", ^NSString *{ return spotify; }),
+    ])];
+    SGModRow *appIcon = SGAppIconRow();
+    if (appIcon) [sections addObject:SGSection(nil, @[withSymbol(appIcon, @"app")])];
+    [sections addObjectsFromArray:@[
         SGSection(nil, @[
             withSymbol(SGLinkRow(@"Website", nil, SGSiteURL), @"safari"),
             withSymbol(SGLinkRow(@"Discord", nil, SGDiscordURL), @"bubble.left.and.bubble.right"),
@@ -59,5 +61,6 @@ UIViewController *SGAboutPage(void) {
             withSymbol(SGActionRow(@"Import settings", nil, ^{ SGImportSettings(); }), @"square.and.arrow.down"),
         ]),
         SGSection(nil, @[reset]),
-    ] footer:nil];
+    ]];
+    return [[SGModPage alloc] initWithTitle:@"Mod" intro:nil sections:sections footer:nil];
 }
