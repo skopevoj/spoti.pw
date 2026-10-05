@@ -157,7 +157,12 @@ Shared:
                   its own; the file effects read their files from Documents/spoti.pw/Audio effects
                   (AudioEffectsFiles.m). Tested on the Mac against harness/audio-effects/, the hook in the simulator
                   against its sim/
-    Haptics/      Vibrations (Haptics.h lists its files): a tap of UIKit's feedback generators for the player's and the now
+    HeadGestures/ a nod and a shake of the head, read from AirPods' motion sensors (CMHeadphoneMotionManager) while a song
+              plays, doing what a double tap on the cover can do (Gestures.h's SGGesturePerform). SGHeadDetector.m is plain C
+              that harness/headgestures tests on any machine; HeadGestures.x feeds it from the sensors; the Head gestures page
+              (HeadGesturesSettings.m, under Player) sets what each gesture does, how far the head has to move, and learns a
+              person's own swing from a short run. It needs the NSMotionUsageDescription plist/ adds, and CoreMotion linked
+Haptics/      Vibrations (Haptics.h lists its files): a tap of UIKit's feedback generators for the player's and the now
                   playing bar's controls, the scrubber's tenths and ends, cover swipes, gestures and the lyrics page's tap to
                   seek, at the strength set for them (ControlHaptics.x, SGFeedback.m); and Music Haptics, Core Haptics
                   playing along with the song: Audio/SGAudioPipeline supplies final samples after speed, pitch and audio effects;

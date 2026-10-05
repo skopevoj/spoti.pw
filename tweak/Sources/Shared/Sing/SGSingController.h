@@ -27,6 +27,10 @@ BOOL SGSingEnabled(void); // user's intent, retained across playback changes
 float SGSingVocalLevel(void);
 float SGSingReducedLevel(void); // the last level below 100 %, which turning Sing on goes back to
 void SGSingSetVocalLevel(float level);
+// Vocals only: the instrumental is taken out and the vocals play at full, whatever the level. Sing's switch
+// still decides whether it runs; this changes what it plays. Safe before Sing is configured.
+BOOL SGSingVocalsOnly(void);
+void SGSingSetVocalsOnly(BOOL vocalsOnly);
 void SGSingSetEnabled(BOOL enabled);
 // Before/after an explicit seek or skip. The first invalidates render output immediately.
 void SGSingPlaybackWillChange(void);

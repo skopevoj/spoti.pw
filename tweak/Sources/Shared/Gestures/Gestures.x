@@ -50,6 +50,10 @@ static void perform(SGGestureAction action) {
     }
 }
 
+void SGGesturePerform(SGGestureAction action) {
+    perform(action);
+}
+
 #pragma mark - the recognizer
 
 @interface SGGestureTarget : NSObject

@@ -9,7 +9,12 @@ void SGRSingApplySwitch(void) {
     SGSingConfigure(SGFlag(SGRKeySing, NO));
 }
 
+void SGRSingApplyVocalsOnly(void) {
+    if (!SGRedesignedUI()) return;
+    SGSingSetVocalsOnly(SGFlag(SGRKeySingVocalsOnly, NO));
+}
+
 %ctor {
     if (!SGRedesignedUI()) return;
-    dispatch_async(dispatch_get_main_queue(), ^{ SGRSingApplySwitch(); });
+    dispatch_async(dispatch_get_main_queue(), ^{ SGRSingApplySwitch(); SGRSingApplyVocalsOnly(); });
 }

@@ -79,7 +79,33 @@ static void recoverWithoutChattering(bool sustained) {
     SGSingTimelineDestroy(t);
     #undef ADVANCE
 }
+// Vocals only through the timeline: set while still Preparing it takes hold when the timeline goes Active, plays the
+// vocals alone once the 30 ms ramp is over, and switching it off returns the level's own mix.
+static void vocalsOnlyThroughTimeline(void) {
+    SGSingTimeline *t = SGSingTimelineCreate(44100 * 8, 88200);
+    SGSingTimelineBegin(t, stamp(0), .7f);
+    SGSingTimelineSetVocalsOnly(t, true);
+    uint64_t captured = 0, processed = 0, consumed = 0;
+    for (; captured < 44100 * 6; captured += block) { fill(captured); assert(SGSingTimelineCapture(t, stamp(captured), dry)); }
+    for (; processed < 44100 * 4; processed += block) { fill(processed); assert(SGSingTimelineVocals(t, stamp(processed), vocal)); }
+    for (unsigned n = 0; n < 100; n++, consumed += block) {
+        assert(SGSingTimelineRead(t, output, block) == block);
+        if (n < 4) continue;                                           // 4 blocks = 1764 frames, past the 1323 of the ramp
+        assert(SGSingTimelineGetState(t) == SGSingTimelineActive);
+        for (unsigned i = 0; i < block; i++) assert(fabsf(output[i*2] - signal(consumed + i) * .4f) < 1e-6f);
+    }
+    SGSingTimelineSetVocalsOnly(t, false);
+    for (unsigned n = 0; n < 20; n++, consumed += block) {
+        assert(SGSingTimelineRead(t, output, block) == block);
+        if (n < 4) continue;
+        float mix = 1 - (1 - .7f * .7f) * .4f;                      // original - (1 - level^2) * vocals
+        for (unsigned i = 0; i < block; i++) assert(fabsf(output[i*2] - signal(consumed + i) * mix) < 1e-5f);
+    }
+    SGSingTimelineDestroy(t);
+}
+
 int main(void) {
+    vocalsOnlyThroughTimeline();
     SGSingTimeline *cold = SGSingTimelineCreate(block * 40, block * 2);
     SGSingTimelineBegin(cold, stamp(0), .7f);
     for (unsigned n = 0; n < 32; n++) { fill(n*block); assert(SGSingTimelineCapture(cold,stamp(n*block),dry)); }

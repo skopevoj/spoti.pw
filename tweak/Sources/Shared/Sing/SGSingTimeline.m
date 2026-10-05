@@ -10,6 +10,7 @@ struct SGSingTimeline {
     uint64_t captured, processed, consumed;
     uint64_t recoveryStart, recoveredAt;
     float level;
+    bool vocalsOnly; // the mixer's mode once Active; kept here while it is not
     SGAudioStamp origin;
     SGSingTimelineState state;
     SGSingMixer mixer;
@@ -39,6 +40,10 @@ void SGSingTimelineBegin(SGSingTimeline *t, SGAudioStamp origin, float level) {
 void SGSingTimelineSetLevel(SGSingTimeline *t, float level) {
     t->level = SGSingClampLevel(level);
     if (t->state == SGSingTimelineActive) SGSingMixerSetLevel(&t->mixer, level);
+}
+void SGSingTimelineSetVocalsOnly(SGSingTimeline *t, bool vocalsOnly) {
+    t->vocalsOnly = vocalsOnly;
+    if (t->state == SGSingTimelineActive) SGSingMixerSetVocalsOnly(&t->mixer, t->level, vocalsOnly);
 }
 void SGSingTimelineBypass(SGSingTimeline *t) {
     if (t->state == SGSingTimelineIdle || t->state == SGSingTimelineDraining) return;
@@ -104,7 +109,7 @@ uint32_t SGSingTimelineRead(SGSingTimeline *t, float *out, uint32_t frames) {
         uint64_t ready = SGSingTimelineReadyFrames(t);
         // Keep enough aligned vocals to finish a 120 ms bypass even if the worker stops now.
         if (ready >= t->reserve && ready >= SGSingReserveFrames + (uint64_t)frames) {
-            SGSingMixerSetLevel(&t->mixer, t->level);
+            SGSingMixerSetVocalsOnly(&t->mixer, t->level, t->vocalsOnly);
             t->state = SGSingTimelineActive;
         }
     }
@@ -124,7 +129,7 @@ uint32_t SGSingTimelineRead(SGSingTimeline *t, float *out, uint32_t frames) {
         } else if (ready >= t->reserve && ready > SGSingReserveFrames + (uint64_t)frames) {
             // Rebuild the same reserve required on first activation. Half a reserve let
             // a single late result toggle Sing on/off every time the worker fell behind.
-            SGSingMixerSetLevel(&t->mixer, t->level);
+            SGSingMixerSetVocalsOnly(&t->mixer, t->level, t->vocalsOnly);
             t->state = SGSingTimelineActive;
             t->recoveredAt = t->consumed;
         }

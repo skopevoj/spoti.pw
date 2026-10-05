@@ -38,6 +38,10 @@ NSInteger SGGestureCellAt(CGPoint point, CGSize size);
 
 UIViewController *SGGesturesSettingsPage(void);
 
+// Does what a double tap in a zone with `action` would, from anywhere (the head gestures do): the playback
+// controller Spotify made for its player, so nothing before the app has made it. Main thread.
+void SGGesturePerform(SGGestureAction action);
+
 // Told of each action a double tap is about to perform, before the player has acted on it; one observer,
 // for a look that answers the gesture (the redesign's haptics). Main thread.
 void SGGestureSetObserver(void (^observer)(SGGestureAction action));

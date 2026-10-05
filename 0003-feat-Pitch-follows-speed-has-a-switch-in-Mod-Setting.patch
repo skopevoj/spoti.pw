@@ -1,0 +1,67 @@
+From 8f03851a95cdf6432e2f0d4c9e3216bb9137e60b Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 5 Oct 2026 23:57:14 +0200
+Subject: [PATCH 3/3] feat: Pitch follows speed has a switch in Mod Settings >
+ Player
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018kDT8vFyubSsgomCWtALih
+---
+ tweak/Sources/App/Pages.m                    |  1 +
+ tweak/Sources/Shared/Player/PlayerSettings.h |  4 ++++
+ tweak/Sources/Shared/Player/PlayerSettings.m | 11 +++++++++++
+ 3 files changed, 16 insertions(+)
+
+diff --git a/tweak/Sources/App/Pages.m b/tweak/Sources/App/Pages.m
+index abeac57..c786dbf 100644
+--- a/tweak/Sources/App/Pages.m
++++ b/tweak/Sources/App/Pages.m
+@@ -94,6 +94,7 @@ UIViewController *SGPlayerSettingsPage(void) {
+     }
+     [pages addObject:SGWithSymbol(SGPageRow(@"Lock screen widget", ^UIViewController *{ return SGLockScreenWidgetPage(); }), @"lock")];
+     [sections addObject:SGSection(nil, pages)];
++    [sections addObject:SGSpeedPitchSection()];
+     [sections addObjectsFromArray:native ? SGNativePlayerScreenSections() : SGRNowPlayingSections()];
+     // Vibrations hook Spotify's own controls and its audio, so they answer under either look.
+     [sections addObjectsFromArray:SGVibrationsSections()];
+diff --git a/tweak/Sources/Shared/Player/PlayerSettings.h b/tweak/Sources/Shared/Player/PlayerSettings.h
+index 29ac701..576884f 100644
+--- a/tweak/Sources/Shared/Player/PlayerSettings.h
++++ b/tweak/Sources/Shared/Player/PlayerSettings.h
+@@ -2,3 +2,7 @@
+ #import <UIKit/UIKit.h>
+ 
+ UIViewController *SGLockScreenWidgetPage(void);
++@class SGModSection;
++// Speed and pitch, which the player's more menu draws its sliders for: here the switch that has the pitch follow
++// the speed, as a record played faster, by resampling rather than the time and pitch unit's stretching.
++SGModSection *SGSpeedPitchSection(void);
+diff --git a/tweak/Sources/Shared/Player/PlayerSettings.m b/tweak/Sources/Shared/Player/PlayerSettings.m
+index 47b4ebc..ffa3eaa 100644
+--- a/tweak/Sources/Shared/Player/PlayerSettings.m
++++ b/tweak/Sources/Shared/Player/PlayerSettings.m
+@@ -2,6 +2,7 @@
+ #import "Core/SGCore.h"
+ #import "Settings/SGModPage.h"
+ #import "PlayerSettings.h"
++#import "SpeedPitch.h"
+ #import "Shared/LockScreenArtwork/LockScreenArtwork.h"
+ 
+ UIViewController *SGLockScreenWidgetPage(void) {
+@@ -16,3 +17,13 @@ UIViewController *SGLockScreenWidgetPage(void) {
+             SGFlagRow(@"Companion content", @"ios-feature-lockscreen.companion_content_enabled")]),
+     ] footer:nil];
+ }
++
++SGModSection *SGSpeedPitchSection(void) {
++    SGModRow *follows = SGSwitchRow(@"Pitch follows speed", @"Faster and higher together, like a record", SGKeyPitchFollowsSpeed);
++    // The switch stores itself; the sound changes now, and turning it on puts the pitch back to normal.
++    follows.changed = ^(BOOL on) { SGSetPlayerPitchFollowsSpeed(on); };
++    return SGNotedSection(@"Speed and pitch", @[follows],
++                          @"The speed and pitch sliders are in the player's more menu. With this on, the pitch slider goes and a "
++                          "faster song is played by resampling, the way a record is, with none of the time stretch's smearing. "
++                          "It applies where speed does.");
++}
+-- 
+2.43.0
+

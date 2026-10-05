@@ -17,6 +17,8 @@ void SGSingStreamDestroy(SGSingStream *stream);
 void SGSingStreamPause(SGSingStream *stream, bool paused);
 void SGSingStreamBypass(SGSingStream *stream);
 void SGSingStreamSetLevel(SGSingStream *stream, float level);
+// Any thread. Only the vocals play, whatever the level; applied by the render owner on its next render.
+void SGSingStreamSetVocalsOnly(SGSingStream *stream, bool vocalsOnly);
 // Disable before attaching a cold model; enable once Ready. The render owner seeds the worker
 // from retained live PCM, so a slow model load cannot fill an unused input queue.
 void SGSingStreamSetModelReady(SGSingStream *stream, bool ready);

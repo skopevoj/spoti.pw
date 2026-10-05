@@ -19,6 +19,8 @@ void SGSingTimelineDestroy(SGSingTimeline *timeline); // both endpoints stopped
 // Begin also invalidates all retained audio. The caller must change generation before a seek.
 void SGSingTimelineBegin(SGSingTimeline *timeline, SGAudioStamp origin, float vocalLevel);
 void SGSingTimelineSetLevel(SGSingTimeline *timeline, float level);
+// Only the vocals play (the level is ignored) while on. Safe at any state; it takes hold when the timeline is Active.
+void SGSingTimelineSetVocalsOnly(SGSingTimeline *timeline, bool vocalsOnly);
 void SGSingTimelineBypass(SGSingTimeline *timeline);
 SGSingTimelineState SGSingTimelineGetState(const SGSingTimeline *timeline);
 uint32_t SGSingTimelineWritable(const SGSingTimeline *timeline);

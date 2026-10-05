@@ -19,7 +19,8 @@ static NSString *aboutSize(void) {
 static NSString *footer(void) {
     return [NSString stringWithFormat:@"Sing turns the vocals of the song playing down to sing over, from the microphone in its lyrics. "
             "It works on iOS 27 only. Its voice model, %@, is downloaded once and runs only on this iPhone. "
-            "The switch and the download apply straight away.", aboutSize()];
+            "Vocals only plays the singing alone, with the instrumental taken out, and the microphone's slider has no say "
+            "while it is on. The switches and the download apply straight away.", aboutSize()];
 }
 
 static void tell(NSString *title, NSString *message) {
@@ -110,6 +111,8 @@ static SGModSection *karaokeSection(void) {
     if (!SGSingSupported()) return SGNotedSection(@"Karaoke", @[unavailableRow()], footer());
     SGModRow *sing = SGOptionRow(@"Sing", @"The microphone in the lyrics", SGRKeySing);
     sing.changed = ^(BOOL on) { SGRSingApplySwitch(); };
+    SGModRow *vocalsOnly = SGOptionRow(@"Vocals only", @"The singing alone, no instrumental", SGRKeySingVocalsOnly);
+    vocalsOnly.changed = ^(BOOL on) { SGRSingApplyVocalsOnly(); };
 
     SGModRow *model = SGStatActionRow(@"Voice model", nil, ^NSString *{ return modelStatus(); }, ^{ explainModel(); });
     model.progress = ^double {
@@ -131,7 +134,7 @@ static SGModSection *karaokeSection(void) {
         SGSingModelState state = SGSingModelCurrentState();
         return state == SGSingModelInstalled || (state == SGSingModelMissing && SGSingModelReceived() > 0);
     };
-    return SGNotedSection(@"Karaoke", @[sing, model, download, cancel, remove], footer());
+    return SGNotedSection(@"Karaoke", @[sing, vocalsOnly, model, download, cancel, remove], footer());
 }
 
 UIViewController *SGRKaraokeSettingsPage(void) {

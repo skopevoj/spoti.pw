@@ -1,0 +1,394 @@
+From 3b8560e2d8d00eeddfa9bd39f50c80f19ca4b1aa Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 5 Oct 2026 23:57:14 +0200
+Subject: [PATCH 1/3] feat: Vocals only in Karaoke plays the singing alone, the
+ instrumental taken out
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018kDT8vFyubSsgomCWtALih
+---
+ harness/sing/dsp_test.c                       | 26 ++++++++++++++++++
+ harness/sing/timeline_test.c                  | 26 ++++++++++++++++++
+ tweak/Sources/Redesigned/Lyrics/Sing.h        |  3 +++
+ tweak/Sources/Redesigned/Lyrics/Sing.x        |  7 ++++-
+ .../Sources/Redesigned/Lyrics/SingSettings.m  |  7 +++--
+ tweak/Sources/Shared/Sing/SGSingController.h  |  4 +++
+ tweak/Sources/Shared/Sing/SGSingController.m  | 10 +++++++
+ tweak/Sources/Shared/Sing/SGSingDSP.h         |  7 +++++
+ tweak/Sources/Shared/Sing/SGSingDSP.m         | 27 ++++++++++++-------
+ tweak/Sources/Shared/Sing/SGSingStream.h      |  2 ++
+ tweak/Sources/Shared/Sing/SGSingStream.m      |  4 ++-
+ tweak/Sources/Shared/Sing/SGSingTimeline.h    |  2 ++
+ tweak/Sources/Shared/Sing/SGSingTimeline.m    |  9 +++++--
+ 13 files changed, 119 insertions(+), 15 deletions(-)
+
+diff --git a/harness/sing/dsp_test.c b/harness/sing/dsp_test.c
+index 1934802..72a26c9 100644
+--- a/harness/sing/dsp_test.c
++++ b/harness/sing/dsp_test.c
+@@ -88,6 +88,32 @@ static void mixing(void) {
+     assert(out[0] == 0 && out[1] == 0);
+     SGSingMixerSetLevel(&m, NAN);
+     assert(m.targetGain == 1);
++
++    // Vocals only: a 30 ms ramp to the vocals alone, exact at its end, whatever the level; off, back to the level.
++    float orig2[] = {0.7f, -0.3f}, voc2[] = {0.5f, -0.5f};
++    SGSingMixerInit(&m, 44100, 1);
++    SGSingMixerSetVocalsOnly(&m, 1, true);
++    assert(m.vocalsOnly && m.targetGain == 1 && m.instrumentalTarget == 0 && m.remaining == 1323);
++    float previous = 2;
++    for (unsigned i = 0; i < 1323; i++) {
++        SGSingMixerProcess(&m, orig2, voc2, out, 1);
++        assert(fabsf(out[0]) <= previous + 1e-6f || i == 0);   // the instrumental only fades out of the first channel
++        previous = fabsf(out[0]);
++    }
++    assert(m.remaining == 0 && out[0] == voc2[0] && out[1] == voc2[1]);
++    SGSingMixerSetLevel(&m, 0.2f);                       // the level has no say while vocals only is on
++    assert(m.remaining == 0 && m.targetGain == 1 && m.instrumentalTarget == 0);
++    SGSingMixerSetVocalsOnly(&m, 0.2f, false);           // off: the level's own mix again
++    for (unsigned i = 0; i < 1323; i++) SGSingMixerProcess(&m, orig2, voc2, out, 1);
++    assert(fabsf(out[0] - 0.22f) < 1e-6f && fabsf(out[1] - 0.18f) < 1e-6f && !m.vocalsOnly);
++    SGSingMixerSetVocalsOnly(&m, 1, true);               // a bypass from vocals only returns the original sample for sample
++    for (unsigned i = 0; i < 1323; i++) SGSingMixerProcess(&m, orig2, voc2, out, 1);
++    SGSingMixerBypass(&m);
++    assert(m.remaining == 5292 && m.targetGain == 1 && m.instrumentalTarget == 1);
++    for (unsigned i = 0; i < 5292; i++) SGSingMixerProcess(&m, orig2, voc2, out, 1);
++    assert(out[0] == orig2[0] && out[1] == orig2[1]);
++    SGSingMixerSetVocalsOnly(&m, 1, false);              // already whole: nothing to ramp
++    assert(m.remaining == 0);
+ }
+ int main(void) {
+     rings(); mixing();
+diff --git a/harness/sing/timeline_test.c b/harness/sing/timeline_test.c
+index e67a7cd..47277ff 100644
+--- a/harness/sing/timeline_test.c
++++ b/harness/sing/timeline_test.c
+@@ -79,7 +79,33 @@ static void recoverWithoutChattering(bool sustained) {
+     SGSingTimelineDestroy(t);
+     #undef ADVANCE
+ }
++// Vocals only through the timeline: set while still Preparing it takes hold when the timeline goes Active, plays the
++// vocals alone once the 30 ms ramp is over, and switching it off returns the level's own mix.
++static void vocalsOnlyThroughTimeline(void) {
++    SGSingTimeline *t = SGSingTimelineCreate(44100 * 8, 88200);
++    SGSingTimelineBegin(t, stamp(0), .7f);
++    SGSingTimelineSetVocalsOnly(t, true);
++    uint64_t captured = 0, processed = 0, consumed = 0;
++    for (; captured < 44100 * 6; captured += block) { fill(captured); assert(SGSingTimelineCapture(t, stamp(captured), dry)); }
++    for (; processed < 44100 * 4; processed += block) { fill(processed); assert(SGSingTimelineVocals(t, stamp(processed), vocal)); }
++    for (unsigned n = 0; n < 100; n++, consumed += block) {
++        assert(SGSingTimelineRead(t, output, block) == block);
++        if (n < 4) continue;                                           // 4 blocks = 1764 frames, past the 1323 of the ramp
++        assert(SGSingTimelineGetState(t) == SGSingTimelineActive);
++        for (unsigned i = 0; i < block; i++) assert(fabsf(output[i*2] - signal(consumed + i) * .4f) < 1e-6f);
++    }
++    SGSingTimelineSetVocalsOnly(t, false);
++    for (unsigned n = 0; n < 20; n++, consumed += block) {
++        assert(SGSingTimelineRead(t, output, block) == block);
++        if (n < 4) continue;
++        float mix = 1 - (1 - .7f * .7f) * .4f;                      // original - (1 - level^2) * vocals
++        for (unsigned i = 0; i < block; i++) assert(fabsf(output[i*2] - signal(consumed + i) * mix) < 1e-5f);
++    }
++    SGSingTimelineDestroy(t);
++}
++
+ int main(void) {
++    vocalsOnlyThroughTimeline();
+     SGSingTimeline *cold = SGSingTimelineCreate(block * 40, block * 2);
+     SGSingTimelineBegin(cold, stamp(0), .7f);
+     for (unsigned n = 0; n < 32; n++) { fill(n*block); assert(SGSingTimelineCapture(cold,stamp(n*block),dry)); }
+diff --git a/tweak/Sources/Redesigned/Lyrics/Sing.h b/tweak/Sources/Redesigned/Lyrics/Sing.h
+index 2cd67c6..dc3c096 100644
+--- a/tweak/Sources/Redesigned/Lyrics/Sing.h
++++ b/tweak/Sources/Redesigned/Lyrics/Sing.h
+@@ -3,10 +3,13 @@
+ #import <UIKit/UIKit.h>
+ 
+ #define SGRKeySing @"spotifyglass.redesign.sing"   // off until switched on
++#define SGRKeySingVocalsOnly @"spotifyglass.redesign.sing.vocalsonly"   // off until switched on
+ 
+ // Hands the switch to Shared/Sing while the redesign runs (Sing.x), at launch and as it is turned:
+ // the microphone comes and goes at once, no restart.
+ void SGRSingApplySwitch(void);
++// The vocals only switch, handed over the same way, at launch and as it is turned.
++void SGRSingApplyVocalsOnly(void);
+ 
+ // SingSettings.m: Mod Settings > Karaoke, with the switch and the voice model's download, and what its row on
+ // the main page says beside the chevron (Off, On, No model, the download's percentage).
+diff --git a/tweak/Sources/Redesigned/Lyrics/Sing.x b/tweak/Sources/Redesigned/Lyrics/Sing.x
+index e3f0b95..48ae034 100644
+--- a/tweak/Sources/Redesigned/Lyrics/Sing.x
++++ b/tweak/Sources/Redesigned/Lyrics/Sing.x
+@@ -9,7 +9,12 @@ void SGRSingApplySwitch(void) {
+     SGSingConfigure(SGFlag(SGRKeySing, NO));
+ }
+ 
++void SGRSingApplyVocalsOnly(void) {
++    if (!SGRedesignedUI()) return;
++    SGSingSetVocalsOnly(SGFlag(SGRKeySingVocalsOnly, NO));
++}
++
+ %ctor {
+     if (!SGRedesignedUI()) return;
+-    dispatch_async(dispatch_get_main_queue(), ^{ SGRSingApplySwitch(); });
++    dispatch_async(dispatch_get_main_queue(), ^{ SGRSingApplySwitch(); SGRSingApplyVocalsOnly(); });
+ }
+diff --git a/tweak/Sources/Redesigned/Lyrics/SingSettings.m b/tweak/Sources/Redesigned/Lyrics/SingSettings.m
+index a2a7276..dffe558 100644
+--- a/tweak/Sources/Redesigned/Lyrics/SingSettings.m
++++ b/tweak/Sources/Redesigned/Lyrics/SingSettings.m
+@@ -19,7 +19,8 @@ static NSString *aboutSize(void) {
+ static NSString *footer(void) {
+     return [NSString stringWithFormat:@"Sing turns the vocals of the song playing down to sing over, from the microphone in its lyrics. "
+             "It works on iOS 27 only. Its voice model, %@, is downloaded once and runs only on this iPhone. "
+-            "The switch and the download apply straight away.", aboutSize()];
++            "Vocals only plays the singing alone, with the instrumental taken out, and the microphone's slider has no say "
++            "while it is on. The switches and the download apply straight away.", aboutSize()];
+ }
+ 
+ static void tell(NSString *title, NSString *message) {
+@@ -110,6 +111,8 @@ static SGModSection *karaokeSection(void) {
+     if (!SGSingSupported()) return SGNotedSection(@"Karaoke", @[unavailableRow()], footer());
+     SGModRow *sing = SGOptionRow(@"Sing", @"The microphone in the lyrics", SGRKeySing);
+     sing.changed = ^(BOOL on) { SGRSingApplySwitch(); };
++    SGModRow *vocalsOnly = SGOptionRow(@"Vocals only", @"The singing alone, no instrumental", SGRKeySingVocalsOnly);
++    vocalsOnly.changed = ^(BOOL on) { SGRSingApplyVocalsOnly(); };
+ 
+     SGModRow *model = SGStatActionRow(@"Voice model", nil, ^NSString *{ return modelStatus(); }, ^{ explainModel(); });
+     model.progress = ^double {
+@@ -131,7 +134,7 @@ static SGModSection *karaokeSection(void) {
+         SGSingModelState state = SGSingModelCurrentState();
+         return state == SGSingModelInstalled || (state == SGSingModelMissing && SGSingModelReceived() > 0);
+     };
+-    return SGNotedSection(@"Karaoke", @[sing, model, download, cancel, remove], footer());
++    return SGNotedSection(@"Karaoke", @[sing, vocalsOnly, model, download, cancel, remove], footer());
+ }
+ 
+ UIViewController *SGRKaraokeSettingsPage(void) {
+diff --git a/tweak/Sources/Shared/Sing/SGSingController.h b/tweak/Sources/Shared/Sing/SGSingController.h
+index 65bb3cd..2e563ca 100644
+--- a/tweak/Sources/Shared/Sing/SGSingController.h
++++ b/tweak/Sources/Shared/Sing/SGSingController.h
+@@ -27,6 +27,10 @@ BOOL SGSingEnabled(void); // user's intent, retained across playback changes
+ float SGSingVocalLevel(void);
+ float SGSingReducedLevel(void); // the last level below 100 %, which turning Sing on goes back to
+ void SGSingSetVocalLevel(float level);
++// Vocals only: the instrumental is taken out and the vocals play at full, whatever the level. Sing's switch
++// still decides whether it runs; this changes what it plays. Safe before Sing is configured.
++BOOL SGSingVocalsOnly(void);
++void SGSingSetVocalsOnly(BOOL vocalsOnly);
+ void SGSingSetEnabled(BOOL enabled);
+ // Before/after an explicit seek or skip. The first invalidates render output immediately.
+ void SGSingPlaybackWillChange(void);
+diff --git a/tweak/Sources/Shared/Sing/SGSingController.m b/tweak/Sources/Shared/Sing/SGSingController.m
+index 1e58f2d..52b9bb9 100644
+--- a/tweak/Sources/Shared/Sing/SGSingController.m
++++ b/tweak/Sources/Shared/Sing/SGSingController.m
+@@ -12,6 +12,8 @@
+ 
+ NSString *const SGSingDidChangeNotification = @"spotifyglass.singChanged";
+ static BOOL sg_configured;
++// Vocals only (SGSingSetVocalsOnly): kept here, not on the controller, so a value set before Sing is configured is not lost.
++static BOOL sg_vocalsOnly;
+ 
+ // The control state is polled this often while Sing has work; the audio and lyric clocks are render-driven.
+ static const NSTimeInterval kReconcileInterval = 0.1;
+@@ -195,6 +197,7 @@ static void workerStatus(void *context, int32_t status) {
+     session.audio = SGSingAudioCreate((SGAudioStamp){++_generation, SGSingTrackIdentifier(session.track), 0, 1, 0},
+                                       SGSingWindowFrames, SGSingHopFrames, _level);
+     if (!session.audio) { _blockedTrack = session.track; [self publish:SGSingFailed explanation:@"There is not enough memory to start Sing."]; return; }
++    SGSingStreamSetVocalsOnly(stream(session), sg_vocalsOnly);
+     SGSingStreamSetModelReady(stream(session), false);
+     _session = session;
+     [self prepareNextTrack:state];
+@@ -462,6 +465,13 @@ void SGSingSetVocalLevel(float level) {
+     if (sg_controller.session) SGSingStreamSetLevel(stream(sg_controller.session), sg_controller.level);
+     [NSNotificationCenter.defaultCenter postNotificationName:SGSingDidChangeNotification object:nil];
+ }
++BOOL SGSingVocalsOnly(void) { return sg_vocalsOnly; }
++void SGSingSetVocalsOnly(BOOL vocalsOnly) {
++    if (vocalsOnly == sg_vocalsOnly) return;
++    sg_vocalsOnly = vocalsOnly;
++    if (sg_configured && sg_controller.session) SGSingStreamSetVocalsOnly(stream(sg_controller.session), vocalsOnly);
++    [NSNotificationCenter.defaultCenter postNotificationName:SGSingDidChangeNotification object:nil];
++}
+ void SGSingSetEnabled(BOOL enabled) {
+     if (!sg_configured || sg_controller.state == SGSingUnavailable) return;
+     if (enabled && sg_controller.state == SGSingFailed && !SGSingCanRetry()) return;
+diff --git a/tweak/Sources/Shared/Sing/SGSingDSP.h b/tweak/Sources/Shared/Sing/SGSingDSP.h
+index 7f74a1c..856c51f 100644
+--- a/tweak/Sources/Shared/Sing/SGSingDSP.h
++++ b/tweak/Sources/Shared/Sing/SGSingDSP.h
+@@ -8,12 +8,19 @@ typedef struct {
+     float gain, targetGain, step;
+     uint32_t remaining;
+     double sampleRate;
++    // The instrumental's own gain, ramped together with `gain`: 1 normally, 0 while only the vocals play.
++    float instrumental, instrumentalTarget, instrumentalStep;
++    bool vocalsOnly;
+ } SGSingMixer;
+ // One render-thread owner. Control requests must be delivered atomically by the caller.
+ void SGSingMixerInit(SGSingMixer *mixer, double sampleRate, float level);
+ void SGSingMixerSetLevel(SGSingMixer *mixer, float level); // a 30 ms ramp to the new level
++// Vocals only: a 30 ms ramp that takes the instrumental out and the vocals to full, whatever the level; off, back to
++// `level`. The level keeps its own say again as soon as it is off.
++void SGSingMixerSetVocalsOnly(SGSingMixer *mixer, float level, bool vocalsOnly);
+ // Stereo interleaved. Original and vocals must have identical generation, format and source index.
+ // Instrumental = original - vocals; a unity instrumental gain preserves the original balance.
++// output = instrumental gain * (original - vocals) + vocal gain * vocals.
+ void SGSingMixerProcess(SGSingMixer *mixer, const float *original, const float *vocals, float *output, uint32_t frames);
+ // A 120 ms ramp to the aligned original, no clock change: SGSingReserveFrames at 44.1 kHz.
+ void SGSingMixerBypass(SGSingMixer *mixer);
+diff --git a/tweak/Sources/Shared/Sing/SGSingDSP.m b/tweak/Sources/Shared/Sing/SGSingDSP.m
+index 2971f13..27e359f 100644
+--- a/tweak/Sources/Shared/Sing/SGSingDSP.m
++++ b/tweak/Sources/Shared/Sing/SGSingDSP.m
+@@ -4,31 +4,40 @@
+ static const double kLevelRampSeconds = 0.030, kBypassRampSeconds = 0.120;
+ 
+ static float gain(float level) { float value = SGSingClampLevel(level); return value * value; }
+-static void ramp(SGSingMixer *m, float to, double seconds) {
++static void ramp(SGSingMixer *m, float to, float instrumentalTo, double seconds) {
+     m->targetGain = to;
++    m->instrumentalTarget = instrumentalTo;
+     m->remaining = (uint32_t)fmax(1, m->sampleRate * seconds);
+     m->step = (to - m->gain) / m->remaining;
++    m->instrumentalStep = (instrumentalTo - m->instrumental) / m->remaining;
++}
++// Where the gains go for a level and a mode: vocals only is the vocals at full and no instrumental.
++static void apply(SGSingMixer *m, float level, bool vocalsOnly) {
++    m->vocalsOnly = vocalsOnly;
++    float target = vocalsOnly ? 1 : gain(level), instrumental = vocalsOnly ? 0 : 1;
++    if (target != m->targetGain || instrumental != m->instrumentalTarget) ramp(m, target, instrumental, kLevelRampSeconds);
+ }
+ void SGSingMixerInit(SGSingMixer *m, double rate, float level) {
+-    *m = (SGSingMixer){.gain = gain(level), .targetGain = gain(level),
++    *m = (SGSingMixer){.gain = gain(level), .targetGain = gain(level), .instrumental = 1, .instrumentalTarget = 1,
+                       .sampleRate = isfinite(rate) && rate >= 8000 && rate <= 192000 ? rate : 44100};
+ }
+-void SGSingMixerSetLevel(SGSingMixer *m, float level) {
+-    float target = gain(level);
+-    if (target != m->targetGain) ramp(m, target, kLevelRampSeconds);
+-}
+-void SGSingMixerBypass(SGSingMixer *m) { ramp(m, 1, kBypassRampSeconds); }
++void SGSingMixerSetLevel(SGSingMixer *m, float level) { apply(m, level, m->vocalsOnly); }
++void SGSingMixerSetVocalsOnly(SGSingMixer *m, float level, bool vocalsOnly) { apply(m, level, vocalsOnly); }
++void SGSingMixerBypass(SGSingMixer *m) { ramp(m, 1, 1, kBypassRampSeconds); }
+ void SGSingMixerProcess(SGSingMixer *m, const float *original, const float *vocals, float *out, uint32_t frames) {
+     for (uint32_t i = 0; i < frames; i++) {
+         if (m->remaining) {
+             m->gain += m->step;
+-            if (!--m->remaining) m->gain = m->targetGain;
++            m->instrumental += m->instrumentalStep;
++            if (!--m->remaining) { m->gain = m->targetGain; m->instrumental = m->instrumentalTarget; }
+         }
+         for (unsigned c = 0; c < 2; c++) {
+             size_t at = (size_t)i * 2 + c;
+             float source = isfinite(original[at]) ? original[at] : 0;
+             float vocal = isfinite(vocals[at]) ? vocals[at] : 0;
+-            float value = source - (1 - m->gain) * vocal;
++            // With the instrumental whole this is the original formula exactly, so a bypass or a full level returns the
++            // original sample for sample; only vocals only (or the ramp into it) takes the second form.
++            float value = m->instrumental == 1 ? source - (1 - m->gain) * vocal : m->instrumental * (source - vocal) + m->gain * vocal;
+             out[at] = fmaxf(-1, fminf(1, value)); // bounded peak limiter, no per-stem normalization
+         }
+     }
+diff --git a/tweak/Sources/Shared/Sing/SGSingStream.h b/tweak/Sources/Shared/Sing/SGSingStream.h
+index 7da678e..1318e21 100644
+--- a/tweak/Sources/Shared/Sing/SGSingStream.h
++++ b/tweak/Sources/Shared/Sing/SGSingStream.h
+@@ -17,6 +17,8 @@ void SGSingStreamDestroy(SGSingStream *stream);
+ void SGSingStreamPause(SGSingStream *stream, bool paused);
+ void SGSingStreamBypass(SGSingStream *stream);
+ void SGSingStreamSetLevel(SGSingStream *stream, float level);
++// Any thread. Only the vocals play, whatever the level; applied by the render owner on its next render.
++void SGSingStreamSetVocalsOnly(SGSingStream *stream, bool vocalsOnly);
+ // Disable before attaching a cold model; enable once Ready. The render owner seeds the worker
+ // from retained live PCM, so a slow model load cannot fill an unused input queue.
+ void SGSingStreamSetModelReady(SGSingStream *stream, bool ready);
+diff --git a/tweak/Sources/Shared/Sing/SGSingStream.m b/tweak/Sources/Shared/Sing/SGSingStream.m
+index 668c905..b762806 100644
+--- a/tweak/Sources/Shared/Sing/SGSingStream.m
++++ b/tweak/Sources/Shared/Sing/SGSingStream.m
+@@ -21,7 +21,7 @@ struct SGSingStream {
+     float *vocals;
+     bool workerStarted; // sole worker consumer
+     bool forwardingStarted; // sole render owner
+-    atomic_bool paused, bypass, modelReady;
++    atomic_bool paused, bypass, modelReady, vocalsOnly;
+     atomic_uint levelBits, state, stopReason;
+     atomic_int sourceError;
+     _Atomic uint64_t queued, publishedPresented, publishedCaptured, readyFrames;
+@@ -66,6 +66,7 @@ void SGSingStreamSetLevel(SGSingStream *s, float level) {
+     level = SGSingClampLevel(level);
+     uint32_t bits; memcpy(&bits, &level, sizeof bits); atomic_store(&s->levelBits, bits);
+ }
++void SGSingStreamSetVocalsOnly(SGSingStream *s, bool vocalsOnly) { atomic_store(&s->vocalsOnly, vocalsOnly); }
+ SGSingTimelineState SGSingStreamState(const SGSingStream *s) { return atomic_load(&s->state); }
+ uint64_t SGSingStreamPresented(const SGSingStream *s) { return atomic_load(&s->publishedPresented); }
+ uint64_t SGSingStreamCaptured(const SGSingStream *s) { return atomic_load(&s->publishedCaptured); }
+@@ -115,6 +116,7 @@ int32_t SGSingStreamRender(SGSingStream *s, uint32_t frames, float *pcm, SGSingS
+     uint32_t bits = atomic_load(&s->levelBits);
+     float level; memcpy(&level, &bits, sizeof level);
+     SGSingTimelineSetLevel(s->timeline, level);
++    SGSingTimelineSetVocalsOnly(s->timeline, atomic_load(&s->vocalsOnly));
+     if (atomic_load(&s->bypass)) SGSingTimelineBypass(s->timeline);
+     // At most one whole hop per render; queued output never causes an unbounded loop.
+     SGAudioStamp result;
+diff --git a/tweak/Sources/Shared/Sing/SGSingTimeline.h b/tweak/Sources/Shared/Sing/SGSingTimeline.h
+index 547485d..3480cb1 100644
+--- a/tweak/Sources/Shared/Sing/SGSingTimeline.h
++++ b/tweak/Sources/Shared/Sing/SGSingTimeline.h
+@@ -19,6 +19,8 @@ void SGSingTimelineDestroy(SGSingTimeline *timeline); // both endpoints stopped
+ // Begin also invalidates all retained audio. The caller must change generation before a seek.
+ void SGSingTimelineBegin(SGSingTimeline *timeline, SGAudioStamp origin, float vocalLevel);
+ void SGSingTimelineSetLevel(SGSingTimeline *timeline, float level);
++// Only the vocals play (the level is ignored) while on. Safe at any state; it takes hold when the timeline is Active.
++void SGSingTimelineSetVocalsOnly(SGSingTimeline *timeline, bool vocalsOnly);
+ void SGSingTimelineBypass(SGSingTimeline *timeline);
+ SGSingTimelineState SGSingTimelineGetState(const SGSingTimeline *timeline);
+ uint32_t SGSingTimelineWritable(const SGSingTimeline *timeline);
+diff --git a/tweak/Sources/Shared/Sing/SGSingTimeline.m b/tweak/Sources/Shared/Sing/SGSingTimeline.m
+index bc9cd0f..3cbcf13 100644
+--- a/tweak/Sources/Shared/Sing/SGSingTimeline.m
++++ b/tweak/Sources/Shared/Sing/SGSingTimeline.m
+@@ -10,6 +10,7 @@ struct SGSingTimeline {
+     uint64_t captured, processed, consumed;
+     uint64_t recoveryStart, recoveredAt;
+     float level;
++    bool vocalsOnly; // the mixer's mode once Active; kept here while it is not
+     SGAudioStamp origin;
+     SGSingTimelineState state;
+     SGSingMixer mixer;
+@@ -40,6 +41,10 @@ void SGSingTimelineSetLevel(SGSingTimeline *t, float level) {
+     t->level = SGSingClampLevel(level);
+     if (t->state == SGSingTimelineActive) SGSingMixerSetLevel(&t->mixer, level);
+ }
++void SGSingTimelineSetVocalsOnly(SGSingTimeline *t, bool vocalsOnly) {
++    t->vocalsOnly = vocalsOnly;
++    if (t->state == SGSingTimelineActive) SGSingMixerSetVocalsOnly(&t->mixer, t->level, vocalsOnly);
++}
+ void SGSingTimelineBypass(SGSingTimeline *t) {
+     if (t->state == SGSingTimelineIdle || t->state == SGSingTimelineDraining) return;
+     if (t->state == SGSingTimelinePreparing) SGSingMixerInit(&t->mixer, SGSingSampleRate, 1);
+@@ -104,7 +109,7 @@ uint32_t SGSingTimelineRead(SGSingTimeline *t, float *out, uint32_t frames) {
+         uint64_t ready = SGSingTimelineReadyFrames(t);
+         // Keep enough aligned vocals to finish a 120 ms bypass even if the worker stops now.
+         if (ready >= t->reserve && ready >= SGSingReserveFrames + (uint64_t)frames) {
+-            SGSingMixerSetLevel(&t->mixer, t->level);
++            SGSingMixerSetVocalsOnly(&t->mixer, t->level, t->vocalsOnly);
+             t->state = SGSingTimelineActive;
+         }
+     }
+@@ -124,7 +129,7 @@ uint32_t SGSingTimelineRead(SGSingTimeline *t, float *out, uint32_t frames) {
+         } else if (ready >= t->reserve && ready > SGSingReserveFrames + (uint64_t)frames) {
+             // Rebuild the same reserve required on first activation. Half a reserve let
+             // a single late result toggle Sing on/off every time the worker fell behind.
+-            SGSingMixerSetLevel(&t->mixer, t->level);
++            SGSingMixerSetVocalsOnly(&t->mixer, t->level, t->vocalsOnly);
+             t->state = SGSingTimelineActive;
+             t->recoveredAt = t->consumed;
+         }
+-- 
+2.43.0
+

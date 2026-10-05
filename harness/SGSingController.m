@@ -12,8 +12,6 @@
 
 NSString *const SGSingDidChangeNotification = @"spotifyglass.singChanged";
 static BOOL sg_configured;
-// Vocals only (SGSingSetVocalsOnly): kept here, not on the controller, so a value set before Sing is configured is not lost.
-static BOOL sg_vocalsOnly;
 
 // The control state is polled this often while Sing has work; the audio and lyric clocks are render-driven.
 static const NSTimeInterval kReconcileInterval = 0.1;
@@ -197,7 +195,6 @@ static void workerStatus(void *context, int32_t status) {
     session.audio = SGSingAudioCreate((SGAudioStamp){++_generation, SGSingTrackIdentifier(session.track), 0, 1, 0},
                                       SGSingWindowFrames, SGSingHopFrames, _level);
     if (!session.audio) { _blockedTrack = session.track; [self publish:SGSingFailed explanation:@"There is not enough memory to start Sing."]; return; }
-    SGSingStreamSetVocalsOnly(stream(session), sg_vocalsOnly);
     SGSingStreamSetModelReady(stream(session), false);
     _session = session;
     [self prepareNextTrack:state];
@@ -463,13 +460,6 @@ void SGSingSetVocalLevel(float level) {
     sg_controller.level = SGSingClampLevel(level);
     if (sg_controller.level < 1) sg_controller.reduced = sg_controller.level;
     if (sg_controller.session) SGSingStreamSetLevel(stream(sg_controller.session), sg_controller.level);
-    [NSNotificationCenter.defaultCenter postNotificationName:SGSingDidChangeNotification object:nil];
-}
-BOOL SGSingVocalsOnly(void) { return sg_vocalsOnly; }
-void SGSingSetVocalsOnly(BOOL vocalsOnly) {
-    if (vocalsOnly == sg_vocalsOnly) return;
-    sg_vocalsOnly = vocalsOnly;
-    if (sg_configured && sg_controller.session) SGSingStreamSetVocalsOnly(stream(sg_controller.session), vocalsOnly);
     [NSNotificationCenter.defaultCenter postNotificationName:SGSingDidChangeNotification object:nil];
 }
 void SGSingSetEnabled(BOOL enabled) {

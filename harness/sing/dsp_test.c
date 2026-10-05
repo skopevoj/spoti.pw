@@ -88,6 +88,32 @@ static void mixing(void) {
     assert(out[0] == 0 && out[1] == 0);
     SGSingMixerSetLevel(&m, NAN);
     assert(m.targetGain == 1);
+
+    // Vocals only: a 30 ms ramp to the vocals alone, exact at its end, whatever the level; off, back to the level.
+    float orig2[] = {0.7f, -0.3f}, voc2[] = {0.5f, -0.5f};
+    SGSingMixerInit(&m, 44100, 1);
+    SGSingMixerSetVocalsOnly(&m, 1, true);
+    assert(m.vocalsOnly && m.targetGain == 1 && m.instrumentalTarget == 0 && m.remaining == 1323);
+    float previous = 2;
+    for (unsigned i = 0; i < 1323; i++) {
+        SGSingMixerProcess(&m, orig2, voc2, out, 1);
+        assert(fabsf(out[0]) <= previous + 1e-6f || i == 0);   // the instrumental only fades out of the first channel
+        previous = fabsf(out[0]);
+    }
+    assert(m.remaining == 0 && out[0] == voc2[0] && out[1] == voc2[1]);
+    SGSingMixerSetLevel(&m, 0.2f);                       // the level has no say while vocals only is on
+    assert(m.remaining == 0 && m.targetGain == 1 && m.instrumentalTarget == 0);
+    SGSingMixerSetVocalsOnly(&m, 0.2f, false);           // off: the level's own mix again
+    for (unsigned i = 0; i < 1323; i++) SGSingMixerProcess(&m, orig2, voc2, out, 1);
+    assert(fabsf(out[0] - 0.22f) < 1e-6f && fabsf(out[1] - 0.18f) < 1e-6f && !m.vocalsOnly);
+    SGSingMixerSetVocalsOnly(&m, 1, true);               // a bypass from vocals only returns the original sample for sample
+    for (unsigned i = 0; i < 1323; i++) SGSingMixerProcess(&m, orig2, voc2, out, 1);
+    SGSingMixerBypass(&m);
+    assert(m.remaining == 5292 && m.targetGain == 1 && m.instrumentalTarget == 1);
+    for (unsigned i = 0; i < 5292; i++) SGSingMixerProcess(&m, orig2, voc2, out, 1);
+    assert(out[0] == orig2[0] && out[1] == orig2[1]);
+    SGSingMixerSetVocalsOnly(&m, 1, false);              // already whole: nothing to ramp
+    assert(m.remaining == 0);
 }
 int main(void) {
     rings(); mixing();

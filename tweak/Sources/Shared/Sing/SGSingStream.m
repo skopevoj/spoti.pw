@@ -21,7 +21,7 @@ struct SGSingStream {
     float *vocals;
     bool workerStarted; // sole worker consumer
     bool forwardingStarted; // sole render owner
-    atomic_bool paused, bypass, modelReady;
+    atomic_bool paused, bypass, modelReady, vocalsOnly;
     atomic_uint levelBits, state, stopReason;
     atomic_int sourceError;
     _Atomic uint64_t queued, publishedPresented, publishedCaptured, readyFrames;
@@ -66,6 +66,7 @@ void SGSingStreamSetLevel(SGSingStream *s, float level) {
     level = SGSingClampLevel(level);
     uint32_t bits; memcpy(&bits, &level, sizeof bits); atomic_store(&s->levelBits, bits);
 }
+void SGSingStreamSetVocalsOnly(SGSingStream *s, bool vocalsOnly) { atomic_store(&s->vocalsOnly, vocalsOnly); }
 SGSingTimelineState SGSingStreamState(const SGSingStream *s) { return atomic_load(&s->state); }
 uint64_t SGSingStreamPresented(const SGSingStream *s) { return atomic_load(&s->publishedPresented); }
 uint64_t SGSingStreamCaptured(const SGSingStream *s) { return atomic_load(&s->publishedCaptured); }
@@ -115,6 +116,7 @@ int32_t SGSingStreamRender(SGSingStream *s, uint32_t frames, float *pcm, SGSingS
     uint32_t bits = atomic_load(&s->levelBits);
     float level; memcpy(&level, &bits, sizeof level);
     SGSingTimelineSetLevel(s->timeline, level);
+    SGSingTimelineSetVocalsOnly(s->timeline, atomic_load(&s->vocalsOnly));
     if (atomic_load(&s->bypass)) SGSingTimelineBypass(s->timeline);
     // At most one whole hop per render; queued output never causes an unbounded loop.
     SGAudioStamp result;

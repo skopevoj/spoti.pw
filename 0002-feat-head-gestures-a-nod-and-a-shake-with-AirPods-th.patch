@@ -1,0 +1,938 @@
+From 10dc69a4689c979e03b9d99d06ad79193fbbea49 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 5 Oct 2026 23:57:14 +0200
+Subject: [PATCH 2/3] feat: head gestures, a nod and a shake with AirPods that
+ act on the player, with a page in Mod Settings > Player
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018kDT8vFyubSsgomCWtALih
+---
+ docs/tweaks.md                                |   7 +-
+ harness/headgestures/test.c                   | 177 +++++++++++++
+ plist/liquid-glass.plist                      |   2 +
+ scripts/merge-local-network-plist.py          |   6 +-
+ tweak/Makefile                                |   2 +-
+ tweak/Sources/App/Pages.m                     |   4 +
+ tweak/Sources/Shared/Gestures/Gestures.h      |   4 +
+ tweak/Sources/Shared/Gestures/Gestures.x      |   4 +
+ .../Shared/HeadGestures/HeadGestures.h        |  38 +++
+ .../Shared/HeadGestures/HeadGestures.x        | 249 ++++++++++++++++++
+ .../HeadGestures/HeadGesturesSettings.m       |  79 ++++++
+ .../Shared/HeadGestures/SGHeadDetector.h      |  56 ++++
+ .../Shared/HeadGestures/SGHeadDetector.m      | 149 +++++++++++
+ 13 files changed, 774 insertions(+), 3 deletions(-)
+ create mode 100644 harness/headgestures/test.c
+ create mode 100644 tweak/Sources/Shared/HeadGestures/HeadGestures.h
+ create mode 100644 tweak/Sources/Shared/HeadGestures/HeadGestures.x
+ create mode 100644 tweak/Sources/Shared/HeadGestures/HeadGesturesSettings.m
+ create mode 100644 tweak/Sources/Shared/HeadGestures/SGHeadDetector.h
+ create mode 100644 tweak/Sources/Shared/HeadGestures/SGHeadDetector.m
+
+diff --git a/docs/tweaks.md b/docs/tweaks.md
+index f0744af..21206e0 100644
+--- a/docs/tweaks.md
++++ b/docs/tweaks.md
+@@ -157,7 +157,12 @@ Shared:
+                   its own; the file effects read their files from Documents/spoti.pw/Audio effects
+                   (AudioEffectsFiles.m). Tested on the Mac against harness/audio-effects/, the hook in the simulator
+                   against its sim/
+-    Haptics/      Vibrations (Haptics.h lists its files): a tap of UIKit's feedback generators for the player's and the now
++    HeadGestures/ a nod and a shake of the head, read from AirPods' motion sensors (CMHeadphoneMotionManager) while a song
++              plays, doing what a double tap on the cover can do (Gestures.h's SGGesturePerform). SGHeadDetector.m is plain C
++              that harness/headgestures tests on any machine; HeadGestures.x feeds it from the sensors; the Head gestures page
++              (HeadGesturesSettings.m, under Player) sets what each gesture does, how far the head has to move, and learns a
++              person's own swing from a short run. It needs the NSMotionUsageDescription plist/ adds, and CoreMotion linked
++Haptics/      Vibrations (Haptics.h lists its files): a tap of UIKit's feedback generators for the player's and the now
+                   playing bar's controls, the scrubber's tenths and ends, cover swipes, gestures and the lyrics page's tap to
+                   seek, at the strength set for them (ControlHaptics.x, SGFeedback.m); and Music Haptics, Core Haptics
+                   playing along with the song: Audio/SGAudioPipeline supplies final samples after speed, pitch and audio effects;
+diff --git a/harness/headgestures/test.c b/harness/headgestures/test.c
+new file mode 100644
+index 0000000..1b5994b
+--- /dev/null
++++ b/harness/headgestures/test.c
+@@ -0,0 +1,177 @@
++// Tests SGHeadDetector.m on synthetic head movement, at the rate AirPods report (25 Hz). Plain C, no iPhone. From the
++// repo root:  cc -x c -std=gnu11 -O1 -Wall -o /tmp/headgestures harness/headgestures/test.c
++//             tweak/Sources/Shared/HeadGestures/SGHeadDetector.m -lm && /tmp/headgestures
++#include "../../tweak/Sources/Shared/HeadGestures/SGHeadDetector.h"
++#include <math.h>
++#include <stdio.h>
++#include <stdlib.h>
++
++#define RATE 25.0
++static int failures;
++
++#define CHECK(condition, ...) do { if (!(condition)) { failures++; printf("FAIL line %d: ", __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
++
++// Radians for degrees.
++static double rad(double degrees) { return degrees * M_PI / 180.0; }
++
++typedef struct { double time; int nods, shakes; } Run;
++
++static void feed(SGHeadDetector *d, Run *run, double pitch, double yaw) {
++    SGHeadEvent event = SGHeadDetectorFeed(d, run->time, pitch, yaw);
++    if (event == SGHeadEventNod) run->nods++;
++    if (event == SGHeadEventShake) run->shakes++;
++    run->time += 1.0 / RATE;
++}
++
++// Seconds of a head at rest, a little noisy.
++static void rest(SGHeadDetector *d, Run *run, double seconds, double pitch, double yaw) {
++    for (int i = 0; i < seconds * RATE; i++) {
++        double noise = rad(0.4) * sin(i * 1.7);
++        feed(d, run, pitch + noise, yaw - noise);
++    }
++}
++
++// `cycles` swings on one axis of `amplitude` degrees (a shake: both ways), each `period` seconds long, the other axis still.
++static void swing(SGHeadDetector *d, Run *run, int axis, int cycles, double amplitude, double period, double pitch0, double yaw0) {
++    int steps = (int)(cycles * period * RATE);
++    for (int i = 0; i < steps; i++) {
++        double angle = rad(amplitude) * sin(2 * M_PI * i / (period * RATE));
++        feed(d, run, pitch0 + (axis == 0 ? angle : 0), yaw0 + (axis == 1 ? angle : 0));
++    }
++}
++
++// `cycles` nods of `amplitude` degrees: a real nod tips the head down and brings it back once, so the swing is one
++// sided, each `period` seconds long, the yaw still.
++static void nod(SGHeadDetector *d, Run *run, int cycles, double amplitude, double period, double pitch0, double yaw0) {
++    int steps = (int)(cycles * period * RATE);
++    for (int i = 0; i < steps; i++) {
++        double angle = -rad(amplitude) * 0.5 * (1 - cos(2 * M_PI * i / (period * RATE)));
++        feed(d, run, pitch0 + angle, yaw0);
++    }
++}
++
++int main(void) {
++    SGHeadDetector d;
++
++    // A double nod at 18 degrees is one nod, and no shake.
++    SGHeadDetectorInit(&d, rad(14), rad(20));
++    Run run = {0, 0, 0};
++    rest(&d, &run, 3, 0.1, 0.3);
++    nod(&d, &run, 2, 18, 0.6, 0.1, 0.3);
++    rest(&d, &run, 1, 0.1, 0.3);
++    CHECK(run.nods == 1 && run.shakes == 0, "double nod gave %d nods, %d shakes", run.nods, run.shakes);
++
++    // One nod alone is nothing.
++    SGHeadDetectorInit(&d, rad(14), rad(20));
++    run = (Run){0, 0, 0};
++    rest(&d, &run, 3, 0, 0);
++    nod(&d, &run, 1, 18, 0.6, 0, 0);
++    rest(&d, &run, 3, 0, 0);
++    CHECK(run.nods == 0 && run.shakes == 0, "a single nod gave %d nods, %d shakes", run.nods, run.shakes);
++
++    // A shake of three turns at 25 degrees is one shake.
++    SGHeadDetectorInit(&d, rad(14), rad(20));
++    run = (Run){0, 0, 0};
++    rest(&d, &run, 3, 0, 0);
++    swing(&d, &run, 1, 3, 25, 0.5, 0, 0);
++    rest(&d, &run, 1, 0, 0);
++    CHECK(run.shakes == 1 && run.nods == 0, "shake gave %d shakes, %d nods", run.shakes, run.nods);
++
++    // Turning to look at something and holding it, then turning back, is not a shake.
++    SGHeadDetectorInit(&d, rad(14), rad(20));
++    run = (Run){0, 0, 0};
++    rest(&d, &run, 3, 0, 0);
++    rest(&d, &run, 4, 0, rad(60));
++    rest(&d, &run, 4, 0, 0);
++    CHECK(run.shakes == 0 && run.nods == 0, "a look round gave %d shakes, %d nods", run.shakes, run.nods);
++
++    // Nodding along to a song at 6 degrees, under the nod size, is not a nod.
++    SGHeadDetectorInit(&d, rad(14), rad(20));
++    run = (Run){0, 0, 0};
++    rest(&d, &run, 3, 0, 0);
++    nod(&d, &run, 10, 6, 0.5, 0, 0);
++    CHECK(run.nods == 0, "a small nod along counted %d nods", run.nods);
++
++    // The same nod after the size is brought down to 4 degrees' worth does count.
++    SGHeadDetectorInit(&d, rad(5), rad(20));
++    run = (Run){0, 0, 0};
++    rest(&d, &run, 3, 0, 0);
++    nod(&d, &run, 3, 6, 0.5, 0, 0);
++    CHECK(run.nods >= 1, "a small nod at a small size gave %d nods", run.nods);
++
++    // Where the head rests does not matter: the same nod with the head tipped back 25 degrees.
++    SGHeadDetectorInit(&d, rad(14), rad(20));
++    run = (Run){0, 0, 0};
++    rest(&d, &run, 3, rad(-25), rad(150));
++    nod(&d, &run, 2, 18, 0.6, rad(-25), rad(150));
++    CHECK(run.nods == 1, "a nod from a tipped head gave %d nods", run.nods);
++
++    // A shake with yaw going round the half turn (-180 / 180) still counts.
++    SGHeadDetectorInit(&d, rad(14), rad(20));
++    run = (Run){0, 0, 0};
++    rest(&d, &run, 3, 0, rad(178));
++    for (int i = 0; i < 3 * 0.5 * RATE; i++) {
++        double yaw = rad(178) + rad(25) * sin(2 * M_PI * i / (0.5 * RATE));
++        if (yaw > M_PI) yaw -= 2 * M_PI;
++        feed(&d, &run, 0, yaw);
++    }
++    CHECK(run.shakes == 1, "a shake across the half turn gave %d shakes", run.shakes);
++
++    // One gesture is one action: two nods inside the two-second rest count once.
++    SGHeadDetectorInit(&d, rad(14), rad(20));
++    run = (Run){0, 0, 0};
++    rest(&d, &run, 3, 0, 0);
++    nod(&d, &run, 2, 18, 0.5, 0, 0);
++    nod(&d, &run, 2, 18, 0.5, 0, 0);
++    CHECK(run.nods == 1, "two nods in a row inside the rest gave %d", run.nods);
++
++    // A nod that also turns the head sideways about as much (a diagonal wobble) is neither.
++    SGHeadDetectorInit(&d, rad(14), rad(20));
++    run = (Run){0, 0, 0};
++    rest(&d, &run, 3, 0, 0);
++    for (int i = 0; i < 2 * 0.6 * RATE; i++) {
++        double angle = rad(18) * sin(2 * M_PI * i / (0.6 * RATE));
++        feed(&d, &run, angle, angle);
++    }
++    CHECK(run.nods == 0 && run.shakes == 0, "a diagonal wobble gave %d nods, %d shakes", run.nods, run.shakes);
++
++    // A gap in the samples starts it over: a half nod before the gap and one after are not two.
++    SGHeadDetectorInit(&d, rad(14), rad(20));
++    run = (Run){0, 0, 0};
++    rest(&d, &run, 3, 0, 0);
++    nod(&d, &run, 1, 18, 0.6, 0, 0);
++    run.time += 2;
++    rest(&d, &run, 3, 0, 0);
++    nod(&d, &run, 1, 18, 0.6, 0, 0);
++    CHECK(run.nods == 0, "nods split by a gap gave %d", run.nods);
++
++    // Out-of-range thresholds are brought in; nothing not finite does harm.
++    SGHeadDetectorInit(&d, 0.0, 10.0);
++    CHECK(d.nodThreshold >= 0.08 && d.shakeThreshold <= 0.6, "thresholds %.3f %.3f not clamped", d.nodThreshold, d.shakeThreshold);
++    CHECK(SGHeadDetectorFeed(&d, NAN, 0, 0) == SGHeadEventNone, "a NaN time was an event");
++    CHECK(SGHeadDetectorFeed(&d, 1, INFINITY, 0) == SGHeadEventNone, "an infinite pitch was an event");
++
++    // Learning: nods of 20 degrees give a threshold near 0.55 of the swing, shakes are measured apart.
++    SGHeadCalibrator c;
++    SGHeadCalibratorBegin(&c);
++    SGHeadCalibratorSetAxis(&c, 0);
++    run = (Run){0, 0, 0};
++    SGHeadDetector sink;
++    SGHeadDetectorInit(&sink, rad(14), rad(20));
++    for (int i = 0; i < 6 * RATE; i++) {
++        double pitch = rad(20) * sin(2 * M_PI * i / (0.7 * RATE));
++        SGHeadCalibratorFeed(&c, run.time, pitch, rad(1) * sin(i * 0.3));
++        run.time += 1.0 / RATE;
++    }
++    double threshold = 0;
++    CHECK(SGHeadCalibratorResult(&c, 0, &threshold), "learning a nod found no swings");
++    CHECK(fabs(threshold - 0.55 * rad(20)) < rad(4), "learned nod threshold %.1f degrees, wanted about %.1f", threshold * 180 / M_PI, 0.55 * 20);
++    CHECK(!SGHeadCalibratorResult(&c, 1, &threshold), "learning a shake found swings while only nods were made");
++
++    SGHeadCalibratorBegin(&c);
++    SGHeadCalibratorSetAxis(&c, 0);
++    CHECK(!SGHeadCalibratorResult(&c, 0, &threshold), "a still head learned a threshold");
++
++    printf(failures ? "%d FAILED\n" : "all passed\n", failures);
++    return failures ? 1 : 0;
++}
+diff --git a/plist/liquid-glass.plist b/plist/liquid-glass.plist
+index 25154b1..5386ec6 100644
+--- a/plist/liquid-glass.plist
++++ b/plist/liquid-glass.plist
+@@ -8,6 +8,8 @@
+ 	<true/>
+ 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+ 	<true/>
++	<key>NSMotionUsageDescription</key>
++	<string>Spotify reads the head movement of your AirPods so a nod or a shake of the head can pause, skip and more.</string>
+ 	<key>NSBonjourServices</key>
+ 	<array>
+ 		<string>_spotify-ln-check._tcp</string>
+diff --git a/scripts/merge-local-network-plist.py b/scripts/merge-local-network-plist.py
+index 2c6af4e..1836391 100644
+--- a/scripts/merge-local-network-plist.py
++++ b/scripts/merge-local-network-plist.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Keep Spotify's Bonjour declarations when adding the mod's service types."""
++"""Keep Spotify's Bonjour declarations when adding the mod's service types, and its own motion usage text if it has one."""
+ 
+ import plistlib
+ import sys
+@@ -16,5 +16,9 @@ overlay["NSBonjourServices"] = list(dict.fromkeys(services + overlay["NSBonjourS
+ if not original.get("NSLocalNetworkUsageDescription"):
+     overlay["NSLocalNetworkUsageDescription"] = "Find nearby speakers and devices for Spotify Connect and Cast."
+ 
++# The head gestures need a motion usage text; Spotify's own, if it has one, stays.
++if original.get("NSMotionUsageDescription"):
++    overlay.pop("NSMotionUsageDescription", None)
++
+ with open(sys.argv[3], "wb") as output:
+     plistlib.dump(overlay, output)
+diff --git a/tweak/Makefile b/tweak/Makefile
+index 106864f..a0634db 100644
+--- a/tweak/Makefile
++++ b/tweak/Makefile
+@@ -16,7 +16,7 @@ TWEAK_NAME := spotifyglass
+ # is generated from the IPA by scripts/extract-flags.py.
+ spotifyglass_FILES := $(shell find Sources -name '*.m' -o -name '*.x' -o -name '*.swift' | sort)
+ spotifyglass_CFLAGS := -fobjc-arc -ISources -DSG_VERSION=\"$(SG_VERSION)\"
+-spotifyglass_FRAMEWORKS := UIKit QuartzCore UniformTypeIdentifiers MediaPlayer CoreImage AudioToolbox AVFoundation CoreHaptics Accelerate Network Metal
++spotifyglass_FRAMEWORKS := UIKit QuartzCore UniformTypeIdentifiers MediaPlayer CoreImage AudioToolbox AVFoundation CoreHaptics CoreMotion Accelerate Network Metal
+ # Runtime swizzling instead of Substrate so the dylib has no extra dependency inside the IPA.
+ spotifyglass_LOGOS_DEFAULT_GENERATOR := internal
+ 
+diff --git a/tweak/Sources/App/Pages.m b/tweak/Sources/App/Pages.m
+index e0cfec1..abeac57 100644
+--- a/tweak/Sources/App/Pages.m
++++ b/tweak/Sources/App/Pages.m
+@@ -4,6 +4,7 @@
+ #import "Pages.h"
+ #import "Shared/ArtistBlock/ArtistBlock.h"
+ #import "Shared/Gestures/Gestures.h"
++#import "Shared/HeadGestures/HeadGestures.h"
+ #import "Shared/Lyrics/Lyrics.h"
+ #import "Shared/LyricsMeanings/Meanings.h"
+ #import "Shared/Player/PlayerSettings.h"
+@@ -77,10 +78,13 @@ UIViewController *SGPlayerSettingsPage(void) {
+     blocked.value = ^NSString *{
+         return SGFlag(SGKeyArtistBlock, NO) ? @(SGBlockedArtists().count).stringValue : @"Off";
+     };
++    SGModRow *headGestures = SGPageRow(@"Head gestures", ^UIViewController *{ return SGHeadGesturesSettingsPage(); });
++    headGestures.value = ^NSString *{ return SGFlag(SGKeyHeadGestures, NO) ? @"On" : @"Off"; };
+     BOOL native = !SGRedesignedUIStored();
+ 
+     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGSection(nil, @[
+         SGWithSymbol(SGPageRow(@"Gestures", ^UIViewController *{ return SGGesturesSettingsPage(); }), @"hand.tap"),
++        SGWithSymbol(headGestures, @"airpodspro"),
+         SGWithSymbol(blocked, @"person.crop.circle.badge.xmark"),
+     ])];
+     NSMutableArray<SGModRow *> *pages = [NSMutableArray array];
+diff --git a/tweak/Sources/Shared/Gestures/Gestures.h b/tweak/Sources/Shared/Gestures/Gestures.h
+index 203267e..b831ed3 100644
+--- a/tweak/Sources/Shared/Gestures/Gestures.h
++++ b/tweak/Sources/Shared/Gestures/Gestures.h
+@@ -38,6 +38,10 @@ NSInteger SGGestureCellAt(CGPoint point, CGSize size);
+ 
+ UIViewController *SGGesturesSettingsPage(void);
+ 
++// Does what a double tap in a zone with `action` would, from anywhere (the head gestures do): the playback
++// controller Spotify made for its player, so nothing before the app has made it. Main thread.
++void SGGesturePerform(SGGestureAction action);
++
+ // Told of each action a double tap is about to perform, before the player has acted on it; one observer,
+ // for a look that answers the gesture (the redesign's haptics). Main thread.
+ void SGGestureSetObserver(void (^observer)(SGGestureAction action));
+diff --git a/tweak/Sources/Shared/Gestures/Gestures.x b/tweak/Sources/Shared/Gestures/Gestures.x
+index 163709f..1c4b494 100644
+--- a/tweak/Sources/Shared/Gestures/Gestures.x
++++ b/tweak/Sources/Shared/Gestures/Gestures.x
+@@ -50,6 +50,10 @@ static void perform(SGGestureAction action) {
+     }
+ }
+ 
++void SGGesturePerform(SGGestureAction action) {
++    perform(action);
++}
++
+ #pragma mark - the recognizer
+ 
+ @interface SGGestureTarget : NSObject
+diff --git a/tweak/Sources/Shared/HeadGestures/HeadGestures.h b/tweak/Sources/Shared/HeadGestures/HeadGestures.h
+new file mode 100644
+index 0000000..9c97dde
+--- /dev/null
++++ b/tweak/Sources/Shared/HeadGestures/HeadGestures.h
+@@ -0,0 +1,38 @@
++// Head gestures (Mod Settings > Player > Head gestures), under either look: a double nod and a shake of the head,
++// read out of AirPods' motion sensors, doing what a double tap on the player's cover can do (Gestures.h has the
++// list: play or pause, next, previous, seek, shuffle, repeat).
++//
++//     SGHeadDetector.m        nod and shake out of pitch and yaw, and the learning of a person's own swing: plain C
++//     HeadGestures.x          CMHeadphoneMotionManager fed to the detector while a song plays, the action it fires
++//     HeadGesturesSettings.m  the Head gestures page
++//
++// The sensors are listened to only while the switch is on and a song is playing (or paused for under a minute, so a
++// nod can still resume it), and only while AirPods that report their motion are in: the system asks the person
++// once, with the NSMotionUsageDescription plist/ puts in Spotify's Info.plist. It applies at once, without a restart.
++// Threading: the settings and the actions are main thread; the detector runs on the manager's own serial queue.
++#import <UIKit/UIKit.h>
++#import "Shared/Gestures/Gestures.h"
++
++#define SGKeyHeadGestures @"spotifyglass.headgestures"                  // off until switched on
++// What each gesture does, an SGGestureAction stored as its index into SGGestureActionNames().
++#define SGKeyHeadNodAction @"spotifyglass.headgestures.nod"
++#define SGKeyHeadShakeAction @"spotifyglass.headgestures.shake"
++// How far the head has to tip (nod) or turn (shake) from where it rests, in degrees; learned or set by hand.
++#define SGKeyHeadNodDegrees @"spotifyglass.headgestures.nod.degrees"
++#define SGKeyHeadShakeDegrees @"spotifyglass.headgestures.shake.degrees"
++
++enum {
++    SGHeadDegreesMin = 5, SGHeadDegreesMax = 34,   // the detector's own range, 4.6 to 34 degrees
++    SGHeadNodDegreesDefault = 14, SGHeadShakeDegreesDefault = 20,
++};
++
++// Reads the switch and the settings again and starts or stops listening. Call after any of them changed.
++void SGHeadGesturesApply(void);
++// What the feature is doing, for the settings page: Off, Waiting for a song, Waiting for AirPods, Listening, or
++// that motion access was refused.
++NSString *SGHeadGesturesStatus(void);
++// Asks for `axis` (0 a nod, 1 a shake) to be performed for `seconds`, then stores the person's own threshold. `done`
++// is told on the main thread whether enough swings were seen and the threshold in degrees. One run at a time.
++void SGHeadGesturesCalibrate(NSInteger axis, NSTimeInterval seconds, void (^done)(BOOL found, NSInteger degrees));
++
++UIViewController *SGHeadGesturesSettingsPage(void);
+diff --git a/tweak/Sources/Shared/HeadGestures/HeadGestures.x b/tweak/Sources/Shared/HeadGestures/HeadGestures.x
+new file mode 100644
+index 0000000..c0559ce
+--- /dev/null
++++ b/tweak/Sources/Shared/HeadGestures/HeadGestures.x
+@@ -0,0 +1,249 @@
++// Head gestures: AirPods' motion (CMHeadphoneMotionManager, iOS 14) read while a song plays, handed to the detector
++// of SGHeadDetector.h, and what it finds done as a gesture of the player (Gestures.h's SGGesturePerform).
++//
++// The sensors cost the AirPods' battery, so the manager runs only while the switch is on and a song is playing, and
++// for a minute after it pauses so a nod can resume it. The attitude it reports is relative to wherever the headphones
++// started, which the detector does not mind: it follows a slow average of the head and reads only the swing around it.
++//
++// Threading: everything but the motion handler is main thread. The handler runs on a serial queue of this file's,
++// which owns the detector and the calibrator; the main thread reaches them only by adding an operation to that queue.
++#import <CoreMotion/CoreMotion.h>
++#import <stdatomic.h>
++#import "Core/SGCore.h"
++#import "Headers/SPTPlayer.h"
++#import "Shared/Player/PlayerState.h"
++#import "HeadGestures.h"
++#import "SGHeadDetector.h"
++
++// How long after a song pauses the sensors are still listened to.
++static const NSTimeInterval kListenAfterPause = 60;
++
++static double radians(NSInteger degrees) {
++    return (double)degrees * M_PI / 180.0;
++}
++
++static NSInteger degreesSetting(NSString *key, NSInteger fallback) {
++    return MAX(SGHeadDegreesMin, MIN(SGHeadDegreesMax, SGInt(key, fallback)));
++}
++
++static SGGestureAction actionSetting(NSString *key, SGGestureAction fallback) {
++    NSInteger value = SGInt(key, fallback);
++    return value >= SGGestureNothing && value <= SGGestureRepeat ? (SGGestureAction)value : fallback;
++}
++
++@interface SGHeadMotion : NSObject <CMHeadphoneMotionManagerDelegate, SGPlayerStateObserver>
+++ (instancetype)shared;
++- (void)configure;
++- (void)reconcile;
++- (NSString *)status;
++- (void)calibrateAxis:(NSInteger)axis seconds:(NSTimeInterval)seconds done:(void (^)(BOOL, NSInteger))done;
++@end
++
++@implementation SGHeadMotion {
++    CMHeadphoneMotionManager *_manager;
++    NSOperationQueue *_queue;
++    // Main thread.
++    BOOL _playing, _connected, _running, _denied;
++    NSDate *_pausedAt;
++    void (^_calibrationDone)(BOOL, NSInteger);
++    // The queue's alone, and the two switches the queue reads, set from the queue's own operations.
++    SGHeadDetector _detector;
++    SGHeadCalibrator _calibrator;
++    atomic_bool _detecting, _calibrating;
++}
++
+++ (instancetype)shared {
++    static SGHeadMotion *shared;
++    static dispatch_once_t once;
++    dispatch_once(&once, ^{ shared = [SGHeadMotion new]; });
++    return shared;
++}
++
++- (instancetype)init {
++    if (!(self = [super init])) return nil;
++    _queue = [NSOperationQueue new];
++    _queue.name = @"spotifyglass.headgestures";
++    _queue.maxConcurrentOperationCount = 1;
++    _queue.qualityOfService = NSQualityOfServiceUserInitiated;
++    SGHeadDetectorInit(&_detector, radians(SGHeadNodDegreesDefault), radians(SGHeadShakeDegreesDefault));
++    SGHeadCalibratorBegin(&_calibrator);
++    return self;
++}
++
++#pragma mark - settings
++
++// The thresholds and the switch to the queue, so the detector starts over with them.
++- (void)configure {
++    BOOL on = SGFlag(SGKeyHeadGestures, NO);
++    double nod = radians(degreesSetting(SGKeyHeadNodDegrees, SGHeadNodDegreesDefault));
++    double shake = radians(degreesSetting(SGKeyHeadShakeDegrees, SGHeadShakeDegreesDefault));
++    [_queue addOperationWithBlock:^{
++        SGHeadDetectorInit(&self->_detector, nod, shake);
++        atomic_store(&self->_detecting, on);
++    }];
++}
++
++- (BOOL)wantsSensors {
++    if (_calibrationDone) return YES;
++    if (!SGFlag(SGKeyHeadGestures, NO)) return NO;
++    return _playing || (_pausedAt && -[_pausedAt timeIntervalSinceNow] < kListenAfterPause);
++}
++
++- (void)reconcile {
++    BOOL want = [self wantsSensors];
++    if (want && !_running) [self start];
++    else if (!want && _running) [self stop];
++}
++
++#pragma mark - the sensors
++
++- (void)start {
++    CMAuthorizationStatus authorization = CMHeadphoneMotionManager.authorizationStatus;
++    _denied = authorization == CMAuthorizationStatusDenied || authorization == CMAuthorizationStatusRestricted;
++    if (_denied) return;
++    if (!_manager) {
++        _manager = [CMHeadphoneMotionManager new];
++        _manager.delegate = self;
++    }
++    __weak typeof(self) weakSelf = self;
++    [_manager startDeviceMotionUpdatesToQueue:_queue withHandler:^(CMDeviceMotion *motion, NSError *error) {
++        [weakSelf handle:motion error:error];
++    }];
++    _running = YES;
++    SGLog(@"head gestures: listening, motion available %d", _manager.isDeviceMotionAvailable);
++}
++
++- (void)stop {
++    [_manager stopDeviceMotionUpdates];
++    _running = NO;
++    _connected = NO;
++    [_queue addOperationWithBlock:^{ SGHeadDetectorReset(&self->_detector); }];
++    SGLog(@"head gestures: stopped");
++}
++
++// On the queue.
++- (void)handle:(CMDeviceMotion *)motion error:(NSError *)error {
++    if (error || !motion) return;
++    double time = motion.timestamp, pitch = motion.attitude.pitch, yaw = motion.attitude.yaw;
++    if (atomic_load(&_calibrating)) {
++        SGHeadCalibratorFeed(&_calibrator, time, pitch, yaw);
++        return;
++    }
++    if (!atomic_load(&_detecting)) return;
++    SGHeadEvent event = SGHeadDetectorFeed(&_detector, time, pitch, yaw);
++    if (event == SGHeadEventNone) return;
++    dispatch_async(dispatch_get_main_queue(), ^{ [self fire:event]; });
++}
++
++- (void)headphoneMotionManagerDidConnect:(CMHeadphoneMotionManager *)manager {
++    dispatch_async(dispatch_get_main_queue(), ^{ self->_connected = YES; });
++}
++
++- (void)headphoneMotionManagerDidDisconnect:(CMHeadphoneMotionManager *)manager {
++    dispatch_async(dispatch_get_main_queue(), ^{ self->_connected = NO; });
++    [_queue addOperationWithBlock:^{ SGHeadDetectorReset(&self->_detector); }];
++}
++
++#pragma mark - what a gesture does
++
++- (void)fire:(SGHeadEvent)event {
++    if (!SGFlag(SGKeyHeadGestures, NO) || _calibrationDone) return;
++    BOOL nod = event == SGHeadEventNod;
++    SGGestureAction action = nod ? actionSetting(SGKeyHeadNodAction, SGGesturePlayPause)
++                                 : actionSetting(SGKeyHeadShakeAction, SGGestureNextTrack);
++    SGLog(@"head gestures: %@, action %ld", nod ? @"nod" : @"shake", (long)action);
++    if (action == SGGestureNothing) return;
++    SGGesturePerform(action);
++    // A tap on the phone says the gesture was read, for a phone that is in a pocket.
++    [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium] impactOccurred];
++}
++
++#pragma mark - the player
++
++- (void)playerStateDidChange:(SPTPlayerState *)state {
++    BOOL playing = state.isPlaying && !state.isPaused;
++    if (playing == _playing) return;
++    _playing = playing;
++    if (!playing) {
++        NSDate *paused = _pausedAt = [NSDate date];
++        // The sensors stand down a minute after the pause, unless it has ended by then.
++        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((kListenAfterPause + 1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
++            if (self->_pausedAt == paused) [self reconcile];
++        });
++    }
++    [self reconcile];
++}
++
++#pragma mark - learning a person's swing
++
++- (void)calibrateAxis:(NSInteger)axis seconds:(NSTimeInterval)seconds done:(void (^)(BOOL, NSInteger))done {
++    if (_calibrationDone || (axis != 0 && axis != 1)) {
++        if (done) done(NO, 0);
++        return;
++    }
++    _calibrationDone = [done copy];
++    [_queue addOperationWithBlock:^{
++        SGHeadCalibratorBegin(&self->_calibrator);
++        SGHeadCalibratorSetAxis(&self->_calibrator, (int)axis);
++        atomic_store(&self->_calibrating, true);
++    }];
++    [self reconcile];
++    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
++        [self finishCalibration:axis];
++    });
++}
++
++- (void)finishCalibration:(NSInteger)axis {
++    [_queue addOperationWithBlock:^{
++        atomic_store(&self->_calibrating, false);
++        double threshold = 0;
++        BOOL found = SGHeadCalibratorResult(&self->_calibrator, (int)axis, &threshold);
++        dispatch_async(dispatch_get_main_queue(), ^{
++            NSInteger degrees = 0;
++            if (found) {
++                degrees = (NSInteger)llround(threshold * 180.0 / M_PI);
++                SGSetInt(axis == 0 ? SGKeyHeadNodDegrees : SGKeyHeadShakeDegrees, degrees);
++            }
++            void (^done)(BOOL, NSInteger) = self->_calibrationDone;
++            self->_calibrationDone = nil;
++            [self configure];
++            [self reconcile];
++            if (done) done(found, degrees);
++        });
++    }];
++}
++
++#pragma mark - what the page says
++
++- (NSString *)status {
++    if (!SGFlag(SGKeyHeadGestures, NO)) return @"Off";
++    if (_denied) return @"Motion access refused";
++    if (!_running) return @"Waiting for a song";
++    return _connected ? @"Listening" : @"Waiting for AirPods";
++}
++
++@end
++
++void SGHeadGesturesApply(void) {
++    dispatch_block_t apply = ^{
++        SGHeadMotion *motion = [SGHeadMotion shared];
++        SGAddPlayerStateObserver(motion);
++        [motion configure];
++        [motion reconcile];
++    };
++    if (NSThread.isMainThread) apply();
++    else dispatch_async(dispatch_get_main_queue(), apply);
++}
++
++NSString *SGHeadGesturesStatus(void) {
++    return [SGHeadMotion shared].status;
++}
++
++void SGHeadGesturesCalibrate(NSInteger axis, NSTimeInterval seconds, void (^done)(BOOL found, NSInteger degrees)) {
++    [[SGHeadMotion shared] calibrateAxis:axis seconds:seconds done:done];
++}
++
++// Listening starts once the app is up, with the state the player has reported by then.
++%ctor {
++    dispatch_async(dispatch_get_main_queue(), ^{ SGHeadGesturesApply(); });
++}
+diff --git a/tweak/Sources/Shared/HeadGestures/HeadGesturesSettings.m b/tweak/Sources/Shared/HeadGestures/HeadGesturesSettings.m
+new file mode 100644
+index 0000000..cc650fc
+--- /dev/null
++++ b/tweak/Sources/Shared/HeadGestures/HeadGesturesSettings.m
+@@ -0,0 +1,79 @@
++// Mod Settings > Player > Head gestures: the switch with what the feature is doing, what a nod and a shake do,
++// how far the head has to move for each, and a learning run for each that takes the size of the person's own swing.
++#import "Core/SGCore.h"
++#import "Settings/SGModPage.h"
++#import "Settings/SGPageStyle.h"
++#import "HeadGestures.h"
++
++static const NSTimeInterval kLearnSeconds = 6;
++
++static void tell(NSString *title, NSString *message) {
++    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
++    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
++    [SGTopController() presentViewController:alert animated:YES completion:nil];
++}
++
++// A learning run: the alert says what to do while the sensors are read, then what was found.
++static void learn(NSInteger axis) {
++    NSString *gesture = axis == 0 ? @"nod" : @"shake";
++    UIAlertController *waiting = [UIAlertController alertControllerWithTitle:@"Learning…"
++        message:[NSString stringWithFormat:@"With your AirPods in, %@ about five times, the way you would to answer. "
++                 "This takes %d seconds.", axis == 0 ? @"nod" : @"shake your head", (int)kLearnSeconds]
++        preferredStyle:UIAlertControllerStyleAlert];
++    [SGTopController() presentViewController:waiting animated:YES completion:nil];
++    SGHeadGesturesCalibrate(axis, kLearnSeconds, ^(BOOL found, NSInteger degrees) {
++        [waiting dismissViewControllerAnimated:YES completion:^{
++            if (found) {
++                tell(@"Learned", [NSString stringWithFormat:@"A %@ now counts from about %ld°. The slider shows it.", gesture, (long)degrees]);
++            } else {
++                tell(@"Nothing seen", @"Your head's movement did not come through. Put in AirPods that report head movement "
++                     "(AirPods Pro, AirPods Max or the 3rd generation and later), allow motion access when asked, and try again.");
++            }
++        }];
++    });
++}
++
++static SGModRow *sizeRow(NSString *title, NSString *key, NSInteger fallback) {
++    return SGSliderRow(title, @"How far the head has to move from where it rests", SGHeadDegreesMin, SGHeadDegreesMax, 1,
++                       ^double { return (double)MAX(SGHeadDegreesMin, MIN(SGHeadDegreesMax, SGInt(key, fallback))); },
++                       ^(double value) {
++                           SGSetInt(key, (NSInteger)llround(value));
++                           SGHeadGesturesApply();
++                       },
++                       ^NSString *(double value) { return [NSString stringWithFormat:@"%ld°", (long)llround(value)]; });
++}
++
++UIViewController *SGHeadGesturesSettingsPage(void) {
++    SGModRow *on = SGOptionRow(@"Head gestures", @"Nod and shake with AirPods", SGKeyHeadGestures);
++    on.changed = ^(BOOL enabled) { SGHeadGesturesApply(); };
++    on.info = @"Reads the head movement of AirPods that report it (AirPods Pro, AirPods Max, AirPods 3rd generation and later) "
++              "while a song plays, and for a minute after it pauses. The sensors use a little of their battery.";
++    SGModRow *status = SGStatRow(@"Status", ^NSString *{ return SGHeadGesturesStatus(); });
++
++    // The choice rows store the action's index into the names the double tap's zones use.
++    SGModRow *nod = SGChoiceRow(@"Nod twice", @"A double nod", SGKeyHeadNodAction, SGGestureActionNames(), SGGesturePlayPause);
++    SGModRow *shake = SGChoiceRow(@"Shake", @"Shaking the head side to side", SGKeyHeadShakeAction, SGGestureActionNames(), SGGestureNextTrack);
++
++    SGModRow *nodSize = sizeRow(@"Nod size", SGKeyHeadNodDegrees, SGHeadNodDegreesDefault);
++    SGModRow *shakeSize = sizeRow(@"Shake size", SGKeyHeadShakeDegrees, SGHeadShakeDegreesDefault);
++    SGModRow *learnNod = SGActionRow(@"Learn my nod", @"Nod a few times and the size follows", ^{ learn(0); });
++    SGModRow *learnShake = SGActionRow(@"Learn my shake", @"Shake your head a few times and the size follows", ^{ learn(1); });
++    SGModRow *reset = SGActionRow(@"Reset sizes", nil, ^{
++        SGSetInt(SGKeyHeadNodDegrees, SGHeadNodDegreesDefault);
++        SGSetInt(SGKeyHeadShakeDegrees, SGHeadShakeDegreesDefault);
++        SGHeadGesturesApply();
++        tell(@"Sizes reset", @"The nod and the shake are back at the sizes they started with. Reopen the page to see the sliders.");
++    });
++
++    NSArray<SGModSection *> *sections = @[
++        SGNotedSection(nil, @[on, status],
++                       @"A nod is two quick tips of the head, a shake three turns side to side. Turning to look at something "
++                       "or nodding along to the music in small movements does not count, and one gesture rests the detector "
++                       "for two seconds. Everything applies at once."),
++        SGSection(@"Actions", @[nod, shake]),
++        SGNotedSection(@"Sensitivity", @[nodSize, shakeSize, learnNod, learnShake, reset],
++                       @"A smaller size reacts to a smaller movement and to more by accident. Learning takes the size of your own "
++                       "movement from a short run."),
++    ];
++    return [[SGModPage alloc] initWithTitle:@"Head gestures" intro:nil sections:sections footer:nil];
++}
+diff --git a/tweak/Sources/Shared/HeadGestures/SGHeadDetector.h b/tweak/Sources/Shared/HeadGestures/SGHeadDetector.h
+new file mode 100644
+index 0000000..c6bbecd
+--- /dev/null
++++ b/tweak/Sources/Shared/HeadGestures/SGHeadDetector.h
+@@ -0,0 +1,56 @@
++// Nod and shake, read out of a head's attitude: plain C, no Foundation, so harness/headgestures tests it on a Mac or
++// Linux with synthetic movements. Fed pitch and yaw in radians at whatever rate the headphones report (AirPods:
++// about 25 Hz), on one thread at a time.
++//
++// The attitude is made relative to a slow average of itself, so where the head rests does not matter, only the
++// swing around it. A swing is an "excursion": the head going further than the threshold from that average and
++// coming back (or going the other way). A nod is two excursions of pitch within a short time, a shake three of yaw,
++// and the other axis must have stayed quiet, so turning to look at something and then at something else is not a
++// shake and a nod along to a song at a small amplitude is not a nod. After one gesture the detector is deaf for a
++// moment, so one nod is one action.
++#pragma once
++#include <stdbool.h>
++
++typedef enum { SGHeadEventNone, SGHeadEventNod, SGHeadEventShake } SGHeadEvent;
++
++// How many excursions make each gesture, and in how long; and the rest after one.
++enum { SGHeadNodExcursions = 2, SGHeadShakeExcursions = 3 };
++#define SGHeadNodWindow 1.4
++#define SGHeadShakeWindow 1.8
++#define SGHeadCooldown 2.0
++
++typedef struct {
++    double nodThreshold, shakeThreshold;   // radians away from the resting attitude
++    double baseline[2];                    // the slow average of pitch, yaw
++    double lastTime, cooldownUntil;
++    double recentPeak[2];                  // the furthest the head went on each axis lately, fading
++    double times[2][SGHeadShakeExcursions + 1];
++    int count[2], lastSign[2];
++    bool primed, armed[2];
++} SGHeadDetector;
++
++// Both thresholds in radians; what is out of range is brought into 0.08 ... 0.6 (4.6 to 34 degrees).
++void SGHeadDetectorInit(SGHeadDetector *detector, double nodThreshold, double shakeThreshold);
++// Forgets the resting attitude and any gesture under way: for a gap in the samples or headphones that came back.
++void SGHeadDetectorReset(SGHeadDetector *detector);
++// `time` in seconds, any origin, increasing. The event is returned once, the moment the gesture completes.
++SGHeadEvent SGHeadDetectorFeed(SGHeadDetector *detector, double time, double pitch, double yaw);
++
++// The threshold of a person's own movement, found by asking them to nod and then shake: the swings of each
++// axis are measured while its phase runs.
++enum { SGHeadCalibrationPeaks = 48 };
++typedef struct {
++    double baseline[2], lastTime;
++    double extreme[2];                     // the furthest point of the swing in progress
++    int axis;                              // which axis is being measured: 0 pitch, 1 yaw, -1 none
++    double peaks[2][SGHeadCalibrationPeaks];
++    int count[2], lastSign[2];
++    bool primed;
++} SGHeadCalibrator;
++
++void SGHeadCalibratorBegin(SGHeadCalibrator *calibrator);
++void SGHeadCalibratorSetAxis(SGHeadCalibrator *calibrator, int axis);
++void SGHeadCalibratorFeed(SGHeadCalibrator *calibrator, double time, double pitch, double yaw);
++// The threshold for `axis` (0 nod, 1 shake), a little over half the typical swing, once at least three
++// swings were seen; false with nothing written when there were fewer.
++bool SGHeadCalibratorResult(const SGHeadCalibrator *calibrator, int axis, double *threshold);
+diff --git a/tweak/Sources/Shared/HeadGestures/SGHeadDetector.m b/tweak/Sources/Shared/HeadGestures/SGHeadDetector.m
+new file mode 100644
+index 0000000..c98aaf5
+--- /dev/null
++++ b/tweak/Sources/Shared/HeadGestures/SGHeadDetector.m
+@@ -0,0 +1,149 @@
++#include "SGHeadDetector.h"
++#include <math.h>
++#include <stdlib.h>
++#include <string.h>
++
++static const double kMinimumThreshold = 0.08, kMaximumThreshold = 0.6;
++static const double kBaselineSeconds = 2.0;    // the resting attitude follows the head with this time constant
++static const double kPeakHalfLife = 0.8;       // how long the far end of a swing is remembered
++static const double kQuietAxis = 0.7;          // the other axis must have moved less than this much of the gesture's own
++static const double kLargestGap = 0.5;         // a longer silence in the samples starts the detector over
++
++static double clampThreshold(double value) {
++    return isfinite(value) ? fmax(kMinimumThreshold, fmin(kMaximumThreshold, value)) : 0.2;
++}
++// An angle difference taken the short way round, for yaw, which jumps at the half turn.
++static double wrap(double angle) {
++    while (angle > M_PI) angle -= 2 * M_PI;
++    while (angle < -M_PI) angle += 2 * M_PI;
++    return angle;
++}
++static int signOf(double value) { return value < 0 ? -1 : 1; }
++
++void SGHeadDetectorInit(SGHeadDetector *d, double nodThreshold, double shakeThreshold) {
++    memset(d, 0, sizeof *d);
++    d->nodThreshold = clampThreshold(nodThreshold);
++    d->shakeThreshold = clampThreshold(shakeThreshold);
++    SGHeadDetectorReset(d);
++}
++
++void SGHeadDetectorReset(SGHeadDetector *d) {
++    d->primed = false;
++    d->count[0] = d->count[1] = 0;
++    d->recentPeak[0] = d->recentPeak[1] = 0;
++    d->armed[0] = d->armed[1] = true;
++    d->lastSign[0] = d->lastSign[1] = 0;
++}
++
++SGHeadEvent SGHeadDetectorFeed(SGHeadDetector *d, double time, double pitch, double yaw) {
++    if (!isfinite(time) || !isfinite(pitch) || !isfinite(yaw)) return SGHeadEventNone;
++    double angle[2] = {pitch, yaw};
++    if (!d->primed || time <= d->lastTime || time - d->lastTime > kLargestGap) {
++        SGHeadDetectorReset(d);
++        d->baseline[0] = pitch;
++        d->baseline[1] = yaw;
++        d->lastTime = time;
++        d->primed = true;
++        return SGHeadEventNone;
++    }
++    double dt = time - d->lastTime;
++    d->lastTime = time;
++    double follow = 1 - exp(-dt / kBaselineSeconds), fade = pow(0.5, dt / kPeakHalfLife);
++    double threshold[2] = {d->nodThreshold, d->shakeThreshold};
++    double window[2] = {SGHeadNodWindow, SGHeadShakeWindow};
++    int needed[2] = {SGHeadNodExcursions, SGHeadShakeExcursions};
++    double offset[2];
++    for (int axis = 0; axis < 2; axis++) {
++        offset[axis] = wrap(angle[axis] - d->baseline[axis]);
++        d->baseline[axis] = wrap(d->baseline[axis] + wrap(angle[axis] - d->baseline[axis]) * follow);
++        d->recentPeak[axis] = fmax(fabs(offset[axis]), d->recentPeak[axis] * fade);
++    }
++    if (time < d->cooldownUntil) return SGHeadEventNone;
++
++    for (int axis = 0; axis < 2; axis++) {
++        double away = fabs(offset[axis]);
++        int sign = signOf(offset[axis]);
++        if (away < threshold[axis] * 0.5) d->armed[axis] = true;
++        // Past the threshold, having come back (or having gone round to the other side): one more excursion.
++        if (away > threshold[axis] && (d->armed[axis] || sign != d->lastSign[axis])) {
++            d->armed[axis] = false;
++            d->lastSign[axis] = sign;
++            // Only the ones still inside the window count.
++            int kept = 0;
++            for (int i = 0; i < d->count[axis]; i++) {
++                if (time - d->times[axis][i] <= window[axis]) d->times[axis][kept++] = d->times[axis][i];
++            }
++            d->count[axis] = kept;
++            if (d->count[axis] < SGHeadShakeExcursions + 1) d->times[axis][d->count[axis]++] = time;
++            if (d->count[axis] >= needed[axis]) {
++                int other = 1 - axis;
++                bool quiet = d->recentPeak[other] < kQuietAxis * d->recentPeak[axis];
++                d->count[0] = d->count[1] = 0;
++                if (!quiet) continue;
++                d->cooldownUntil = time + SGHeadCooldown;
++                d->recentPeak[0] = d->recentPeak[1] = 0;
++                d->armed[0] = d->armed[1] = false;
++                return axis == 0 ? SGHeadEventNod : SGHeadEventShake;
++            }
++        }
++    }
++    return SGHeadEventNone;
++}
++
++#pragma mark - learning the swing of a person
++
++void SGHeadCalibratorBegin(SGHeadCalibrator *c) {
++    memset(c, 0, sizeof *c);
++    c->axis = -1;
++}
++
++void SGHeadCalibratorSetAxis(SGHeadCalibrator *c, int axis) {
++    c->axis = axis == 0 || axis == 1 ? axis : -1;
++    c->extreme[0] = c->extreme[1] = 0;
++}
++
++static void record(SGHeadCalibrator *c, int axis) {
++    if (c->axis == axis && c->count[axis] < SGHeadCalibrationPeaks && c->extreme[axis] > kMinimumThreshold) {
++        c->peaks[axis][c->count[axis]++] = c->extreme[axis];
++    }
++    c->extreme[axis] = 0;
++}
++
++void SGHeadCalibratorFeed(SGHeadCalibrator *c, double time, double pitch, double yaw) {
++    if (!isfinite(time) || !isfinite(pitch) || !isfinite(yaw)) return;
++    double angle[2] = {pitch, yaw};
++    if (!c->primed || time <= c->lastTime || time - c->lastTime > kLargestGap) {
++        c->baseline[0] = pitch;
++        c->baseline[1] = yaw;
++        c->lastTime = time;
++        c->primed = true;
++        return;
++    }
++    double dt = time - c->lastTime, follow = 1 - exp(-dt / kBaselineSeconds);
++    c->lastTime = time;
++    for (int axis = 0; axis < 2; axis++) {
++        double offset = wrap(angle[axis] - c->baseline[axis]);
++        c->baseline[axis] = wrap(c->baseline[axis] + offset * follow);
++        int sign = signOf(offset);
++        // A swing ends when the head comes back to rest or goes round to the other side.
++        if (c->extreme[axis] > 0 && (fabs(offset) < kMinimumThreshold * 0.5 || sign != c->lastSign[axis])) record(c, axis);
++        if (fabs(offset) > c->extreme[axis]) c->extreme[axis] = fabs(offset);
++        c->lastSign[axis] = sign;
++    }
++}
++
++static int compare(const void *a, const void *b) {
++    double x = *(const double *)a, y = *(const double *)b;
++    return x < y ? -1 : x > y;
++}
++
++bool SGHeadCalibratorResult(const SGHeadCalibrator *c, int axis, double *threshold) {
++    if ((axis != 0 && axis != 1) || c->count[axis] < 3) return false;
++    double sorted[SGHeadCalibrationPeaks];
++    int n = c->count[axis];
++    memcpy(sorted, c->peaks[axis], (size_t)n * sizeof(double));
++    qsort(sorted, (size_t)n, sizeof(double), compare);
++    double median = n % 2 ? sorted[n / 2] : 0.5 * (sorted[n / 2 - 1] + sorted[n / 2]);
++    if (threshold) *threshold = clampThreshold(0.55 * median);
++    return true;
++}
+-- 
+2.43.0
+

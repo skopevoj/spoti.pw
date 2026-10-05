@@ -8,6 +8,8 @@
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
 	<true/>
+	<key>NSMotionUsageDescription</key>
+	<string>Spotify reads the head movement of your AirPods so a nod or a shake of the head can pause, skip and more.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_spotify-ln-check._tcp</string>
