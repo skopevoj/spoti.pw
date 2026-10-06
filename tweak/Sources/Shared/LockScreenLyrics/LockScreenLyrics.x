@@ -5,9 +5,11 @@
 // move, so working it out four times a second only wakes the phone. The lock screen keeps the line it
 // was left on until the sound starts again.
 #import <MediaPlayer/MediaPlayer.h>
+#import <stdatomic.h>
 #import "Core/SGCore.h"
 #import "LockScreenLyrics.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/Player/PlayerState.h"
 #import "Headers/SPTPlayer.h"
 
 static const NSTimeInterval kTick = 0.25;
@@ -16,13 +18,14 @@ static const NSInteger kBreakMs = 4000;
 // About what the lock screen's artist row fits before it cuts the text off.
 static const NSUInteger kMaxChars = 30;
 
-// Spotify may set the info from any thread; the timer reads it on the main one.
+// Spotify may set the info from any thread.
 static NSObject *sg_lock;
 static NSDictionary *sg_spotifyInfo;
 static CFAbsoluteTime sg_spotifyInfoAt;
 static NSString *sg_shownLine;
-static BOOL sg_resending;
-static NSTimer *sg_timer;
+static atomic_bool sg_resending;
+static dispatch_source_t sg_timer;
+static dispatch_queue_t sg_timerQueue;
 
 static NSString *textOf(NSArray<SGKaraokeWord *> *words) {
     SGKaraokeLine *line = [SGKaraokeLine new];
@@ -62,9 +65,9 @@ static double elapsedAt(NSDictionary *info, CFAbsoluteTime reportedAt, CFAbsolut
 
 // nil between lines and for a track without synced lyrics, plain text included.
 static NSString *lineFor(NSDictionary *info, double elapsed) {
-    SPTPlayerState *state = [(id<SPTPlayer>)SGKaraokePlayer() state];
+    SPTPlayerState *state = [(id<SPTPlayer>)SGKaraokePlayer() state] ?: SGPlayerState();
     // The player's track can lag behind the now playing info; its lyrics would then be another song's.
-    if (![state.track.trackTitle isEqualToString:info[MPMediaItemPropertyTitle]]) return nil;
+    if (!state.track.trackTitle.length || ![state.track.trackTitle isEqualToString:info[MPMediaItemPropertyTitle]]) return nil;
     NSString *trackID = SGKaraokePlayingTrack();
     NSArray<SGKaraokeLine *> *lines = SGKaraokeLinesForTrack(trackID);
     if (!lines) {
@@ -103,23 +106,47 @@ static void tick(void) {
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
     double elapsed = elapsedAt(info, reportedAt, now);
     NSString *line = lineFor(info, elapsed);
-    if (line == sg_shownLine || [line isEqualToString:sg_shownLine]) return;
-    sg_shownLine = line;
-    sg_resending = YES;
+    @synchronized (sg_lock) {
+        if (line == sg_shownLine || [line isEqualToString:sg_shownLine]) return;
+        sg_shownLine = line;
+    }
+    atomic_store(&sg_resending, true);
     MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = line ? withLine(info, line, elapsed) : info;
-    sg_resending = NO;
+    atomic_store(&sg_resending, false);
 }
 
-// Main thread, as everything the timer touches is.
+// Background-safe dispatch timer that keeps firing even when the display sleeps / AOD is active.
 static void setTicking(BOOL on) {
-    if (on == (sg_timer != nil)) return;
-    if (!on) {
-        [sg_timer invalidate];
-        sg_timer = nil;
-        return;
+    @synchronized (sg_lock) {
+        if (on == (sg_timer != nil)) return;
+        if (!on) {
+            if (sg_timer) {
+                dispatch_source_cancel(sg_timer);
+                sg_timer = nil;
+            }
+            return;
+        }
+        if (!sg_timerQueue) {
+            sg_timerQueue = dispatch_queue_create("spotifyglass.lockscreenlyrics", DISPATCH_QUEUE_SERIAL);
+        }
+        sg_timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, sg_timerQueue);
+        dispatch_source_set_timer(sg_timer, dispatch_time(DISPATCH_TIME_NOW, 0),
+                                  (uint64_t)(kTick * NSEC_PER_SEC), (uint64_t)(0.05 * NSEC_PER_SEC));
+        dispatch_source_set_event_handler(sg_timer, ^{
+            tick();
+        });
+        dispatch_resume(sg_timer);
     }
-    sg_timer = [NSTimer timerWithTimeInterval:kTick repeats:YES block:^(NSTimer *t) { tick(); }];
-    [NSRunLoop.mainRunLoop addTimer:sg_timer forMode:NSRunLoopCommonModes];
+}
+
+void SGLockScreenLyricsUpdate(void) {
+    @synchronized (sg_lock) {
+        if (sg_timerQueue) {
+            dispatch_async(sg_timerQueue, ^{ tick(); });
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{ tick(); });
+        }
+    }
 }
 
 // Whether the sound is moving. A rate Spotify did not report at all counts as moving: the line would
@@ -129,9 +156,20 @@ static BOOL playingBy(NSDictionary *info) {
     return !rate || rate.doubleValue > 0;
 }
 
+@interface SGLockScreenLyricsWatcher : NSObject <SGPlayerStateObserver>
+@end
+
+@implementation SGLockScreenLyricsWatcher
+- (void)playerStateDidChange:(SPTPlayerState *)state {
+    SGLockScreenLyricsUpdate();
+}
+@end
+
+static SGLockScreenLyricsWatcher *sg_watcher;
+
 %hook MPNowPlayingInfoCenter
 - (void)setNowPlayingInfo:(NSDictionary *)info {
-    if (sg_resending) {
+    if (atomic_load(&sg_resending)) {
         %orig;
         return;
     }
@@ -139,21 +177,21 @@ static BOOL playingBy(NSDictionary *info) {
     @synchronized (sg_lock) {
         sg_spotifyInfo = info;
         sg_spotifyInfoAt = now;
+        sg_shownLine = nil;
     }
     BOOL playing = playingBy(info) && info[MPNowPlayingInfoPropertyElapsedPlaybackTime] != nil;
-    // Karaoke's lyrics are main-thread state; off it the info goes out as it is and the next tick adds the line.
-    if (!NSThread.isMainThread || !info[MPNowPlayingInfoPropertyElapsedPlaybackTime]) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            sg_shownLine = nil;
-            setTicking(playing);
-        });
+    setTicking(playing);
+    if (!playing || !info[MPNowPlayingInfoPropertyElapsedPlaybackTime]) {
         %orig;
         return;
     }
-    setTicking(playing);
     double elapsed = elapsedAt(info, now, now);
     NSString *line = lineFor(info, elapsed);
-    sg_shownLine = line;
+    if (line) {
+        @synchronized (sg_lock) {
+            sg_shownLine = line;
+        }
+    }
     %orig(line ? withLine(info, line, elapsed) : info);
 }
 
@@ -169,6 +207,8 @@ static BOOL playingBy(NSDictionary *info) {
 %ctor {
     if (!SGFlag(SGKeyLockScreenLyrics, NO)) return;
     sg_lock = [NSObject new];
+    sg_watcher = [SGLockScreenLyricsWatcher new];
+    SGAddPlayerStateObserver(sg_watcher);
     %init;
     // The timer waits for Spotify to report a playing track; nothing before that has a line to show.
     SGLog(@"lock screen lyrics: on");
