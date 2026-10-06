@@ -4,3 +4,5 @@
 #import <Foundation/Foundation.h>
 
 #define SGKeyLockScreenLyrics @"spotifyglass.lockScreenLyrics"
+
+void SGLockScreenLyricsUpdate(void);

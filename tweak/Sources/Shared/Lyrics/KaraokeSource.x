@@ -8,6 +8,7 @@
 #import "Lyrics.h"
 #import "Shared/LockScreenLyrics/LockScreenLyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
+#import "Shared/Player/PlayerState.h"
 #import "Headers/SPTPlayer.h"
 
 static const NSUInteger kKeptTracks = 40;
@@ -75,19 +76,23 @@ static SPTPlayerTrack *upNextIn(SPTPlayerState *state) {
 // Main queue only. A full cache is emptied but for the track playing, the one up next and those still
 // being asked for; what goes can be asked for again.
 static void keep(NSString *track, NSArray<SGKaraokeLine *> *lines) {
-    if (sg_lyrics.count >= kKeptTracks && !sg_lyrics[track]) {
-        NSMutableSet<NSString *> *spared = [sg_asking mutableCopy];
-        SPTPlayerState *state = playerState();
-        NSString *playing = idOf(state.track), *next = idOf(upNextIn(state));
-        if (playing) [spared addObject:playing];
-        if (next) [spared addObject:next];
-        for (NSString *kept in sg_lyrics.allKeys) {
-            if ([spared containsObject:kept]) continue;
-            [sg_lyrics removeObjectForKey:kept];
-            [sg_requested removeObject:kept];
+    if (!track) return;
+    @synchronized (sg_lyrics) {
+        if (sg_lyrics.count >= kKeptTracks && !sg_lyrics[track]) {
+            NSMutableSet<NSString *> *spared = [sg_asking mutableCopy];
+            SPTPlayerState *state = playerState();
+            NSString *playing = idOf(state.track), *next = idOf(upNextIn(state));
+            if (playing) [spared addObject:playing];
+            if (next) [spared addObject:next];
+            for (NSString *kept in sg_lyrics.allKeys) {
+                if ([spared containsObject:kept]) continue;
+                [sg_lyrics removeObjectForKey:kept];
+                [sg_requested removeObject:kept];
+            }
         }
+        sg_lyrics[track] = lines;
     }
-    sg_lyrics[track] = lines;
+    SGLockScreenLyricsUpdate();
 }
 
 void SGKaraokeKeepLines(NSString *track, NSArray<SGKaraokeLine *> *lines) {
@@ -118,7 +123,10 @@ static void completed(NSURLSessionTask *task, NSError *error) {
 }
 
 NSArray<SGKaraokeLine *> *SGKaraokeLinesForTrack(NSString *trackID) {
-    return trackID ? sg_lyrics[trackID] : nil;
+    if (!trackID) return nil;
+    @synchronized (sg_lyrics) {
+        return sg_lyrics[trackID];
+    }
 }
 
 // Main queue only. The track stays asked for through the pause, so the readers asking on every tick
@@ -168,8 +176,8 @@ static void requestFromSpotify(NSString *trackID) {
             [sg_asking removeObject:trackID];
             [sg_losses removeObjectForKey:trackID];
             if (!lines) return;
-            // Asked after the chain found plain text only: Spotify's replace it only when they are timed.
-            NSArray<SGKaraokeLine *> *kept = sg_lyrics[trackID];
+            NSArray<SGKaraokeLine *> *kept;
+            @synchronized (sg_lyrics) { kept = sg_lyrics[trackID]; }
             if (kept && SGKaraokeLinesTiming(kept) <= SGKaraokeLinesTiming(lines)) return;
             keep(trackID, lines);
             SGLyricsSetCredit(trackID, @"Spotify");
@@ -185,7 +193,11 @@ void SGKaraokeAskSpotifyForTiming(NSString *trackID) {
 }
 
 void SGKaraokeRequestLyrics(NSString *trackID) {
-    if (!trackID || sg_lyrics[trackID] || [sg_requested containsObject:trackID]) return;
+    if (!trackID) return;
+    @synchronized (sg_lyrics) {
+        if (sg_lyrics[trackID]) return;
+    }
+    if ([sg_requested containsObject:trackID]) return;
     if (!sg_ownSources) {
         requestFromSpotify(trackID);
         return;
@@ -211,7 +223,8 @@ id SGKaraokePlayer(void) {
 
 static SPTPlayerState *playerState(void) {
     id player = sg_player;
-    return [player respondsToSelector:@selector(state)] ? [(id<SPTPlayer>)player state] : nil;
+    SPTPlayerState *state = [player respondsToSelector:@selector(state)] ? [(id<SPTPlayer>)player state] : nil;
+    return state ?: SGPlayerState();
 }
 
 NSString *SGKaraokePlayingTrack(void) {
@@ -277,10 +290,8 @@ static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *s
     SGLyricsPrefetch(nextID);
 }
 
-%hook SPTEsperantoPlayer
-- (id)state {
-    if (!sg_player) sg_player = self;
-    SPTPlayerState *state = %orig;
+static void handleTrackChange(SPTPlayerState *state) {
+    if (!state) return;
     SPTPlayerTrack *track = state.track;
     if (track && track != sg_lastSeen) {
         sg_lastSeen = track;
@@ -291,6 +302,24 @@ static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *s
             prefetch(track, trackID, state);
         }
     }
+}
+
+@interface SGKaraokeWatcher : NSObject <SGPlayerStateObserver>
+@end
+
+@implementation SGKaraokeWatcher
+- (void)playerStateDidChange:(SPTPlayerState *)state {
+    handleTrackChange(state);
+}
+@end
+
+static SGKaraokeWatcher *sg_watcher;
+
+%hook SPTEsperantoPlayer
+- (id)state {
+    if (!sg_player) sg_player = self;
+    SPTPlayerState *state = %orig;
+    handleTrackChange(state);
     return state;
 }
 %end
@@ -327,6 +356,8 @@ static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *s
     sg_asking = [NSMutableSet set];
     sg_losses = [NSMutableDictionary dictionary];
     sg_ownSources = SGLyricsEnabled();
+    sg_watcher = [SGKaraokeWatcher new];
+    SGAddPlayerStateObserver(sg_watcher);
     %init;
     SGLog(@"karaoke: on");
     SGRequireClasses(@[
