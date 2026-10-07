@@ -4,6 +4,10 @@
 // converter's callback stands in for Spotify's decoder and counts what it hands over, so the log shows
 // how fast the song is drained at each speed, and how far a mock player state's position drifts from it.
 //
+// One step of the script has the decoder stumble (its callback returns an error once, which is what takes
+// the mod's unit render out and sends the buffer through its fallback). The call count and the drained
+// rate over that second say whether the mod drew one buffer of sound or two to get past it.
+//
 //     THEOS=$HOME/theos ./build.sh && xcrun simctl install booted build/SpeedHarness.app
 //     xcrun simctl launch --console-pty booted com.vojta.speedharness
 #import <UIKit/UIKit.h>
@@ -18,6 +22,8 @@ BOOL SGPlayerSpeedAllowed(void);
 
 static const double kRate = 44100;
 static atomic_uint_fast64_t sg_decoded;
+static atomic_int sg_calls;                  // the decoder's calls, what the stumble is counted in
+static atomic_int sg_stumbles;               // calls of it that still have to fail
 
 // Spotify's player state as far as -position goes (disassembly of -[SPTPlayerState position]).
 @interface SPTPlayerState : NSObject
@@ -37,9 +43,16 @@ static atomic_uint_fast64_t sg_decoded;
 static OSStatus decoder(void *refCon, AudioUnitRenderActionFlags *flags, const AudioTimeStamp *timestamp, UInt32 bus,
                         UInt32 frames, AudioBufferList *data) {
     uint64_t start = atomic_fetch_add(&sg_decoded, frames);
+    atomic_fetch_add(&sg_calls, 1);
     for (UInt32 i = 0; i < frames; i++) {
         float value = 0.05f * sinf(2 * M_PI * 440 * (start + i) / kRate);
         for (UInt32 b = 0; b < data->mNumberBuffers; b++) ((float *)data->mBuffers[b].mData)[i] = value;
+    }
+    // A stumble, its frames already out of the stream: the error runs up through the converter and the mixer
+    // into the mod's unit render, which fails with it and passes the buffer through its fallback.
+    if (atomic_load(&sg_stumbles) > 0) {
+        atomic_fetch_sub(&sg_stumbles, 1);
+        return kAudioUnitErr_CannotDoInCurrentContext;
     }
     return noErr;
 }
@@ -62,6 +75,7 @@ static void check(OSStatus status, const char *what) {
 @implementation SGRHarnessDelegate {
     SPTPlayerState *_state;
     uint64_t _lastDecoded;
+    int _lastCalls;
     NSTimeInterval _lastAt, _startedAt;
 }
 
@@ -92,10 +106,12 @@ static void check(OSStatus status, const char *what) {
 - (void)report:(NSString *)what {
     NSTimeInterval now = CACurrentMediaTime();
     uint64_t decoded = atomic_load(&sg_decoded);
+    int calls = atomic_load(&sg_calls);
     double content = decoded / kRate;
-    NSLog(@"[harness] %-28@ decoder drained %.2fx over the last %.1f s; content %.2f s, state position %.2f s (off %+.0f ms), state speed %.2f",
-          what, (decoded - _lastDecoded) / kRate / (now - _lastAt), now - _lastAt, content, _state.position,
+    NSLog(@"[harness] %-28@ decoder drained %.2fx over the last %.1f s in %d calls; content %.2f s, state position %.2f s (off %+.0f ms), state speed %.2f",
+          what, (decoded - _lastDecoded) / kRate / (now - _lastAt), now - _lastAt, calls - _lastCalls, content, _state.position,
           (_state.position - content) * 1000, [_state playbackSpeed]);
+    _lastCalls = calls;
     _lastDecoded = decoded;
     _lastAt = now;
 }
@@ -117,7 +133,12 @@ static void check(OSStatus status, const char *what) {
     [self.window makeKeyAndVisible];
     [self startChain];
     NSLog(@"[harness] speed allowed: %d", SGPlayerSpeedAllowed());
-    [self after:1 do:^{ [self playerReports]; self->_lastDecoded = atomic_load(&sg_decoded); self->_lastAt = CACurrentMediaTime(); }];
+    [self after:1 do:^{
+        [self playerReports];
+        self->_lastDecoded = atomic_load(&sg_decoded);
+        self->_lastCalls = atomic_load(&sg_calls);
+        self->_lastAt = CACurrentMediaTime();
+    }];
     NSArray *script = @[
         @[@3, @"normal", @1, @0],
         @[@6, @"1.5x", @1.5, @0],
@@ -137,6 +158,16 @@ static void check(OSStatus status, const char *what) {
         // A report mid step, the way Spotify's player reports now and then.
         [self after:[step[0] doubleValue] + 1.5 do:^{ [self playerReports]; }];
     }
+    // A stutter at 1.5x, with a shorter window around it than the steps have: Spotify's decoder failing
+    // forty times over, as it does when it cannot keep up. The frames it hands over are the sound, so the
+    // log says whether the mod drew the decoder for a buffer of sound once or twice per failure.
+    [self after:7 do:^{
+        self->_lastDecoded = atomic_load(&sg_decoded);
+        self->_lastCalls = atomic_load(&sg_calls);
+        self->_lastAt = CACurrentMediaTime();
+        atomic_store(&sg_stumbles, 40);
+    }];
+    [self after:8 do:^{ [self report:@"1.5x, stuttering"]; }];
     [self after:21 do:^{
         [self report:label];
         exit(0);

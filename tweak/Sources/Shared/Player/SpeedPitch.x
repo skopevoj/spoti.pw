@@ -55,6 +55,7 @@ static _Atomic(AudioUnit) sg_source;
 static UInt32 sg_sourceBus;
 static atomic_uint sg_chunk = 1024;
 static Float64 sg_sourceTime;                // render thread only
+static atomic_int sg_lastFailure = -1;       // the status of the last failed render of the unit, for the log
 
 // The unit in use and whether the render thread runs it: in the chain (pull), else in place (pitch only).
 static _Atomic(SGTimePitch *) sg_pull, sg_inPlace;
@@ -151,8 +152,22 @@ static OSStatus feed(void *refCon, AudioUnitRenderActionFlags *flags, const Audi
     atomic_store(&sg_busy, true);
     OSStatus status = -1;
     SGTimePitch *unit = atomic_load(&sg_pull);
+    Float64 before = sg_sourceTime;
     if (atomic_load(&sg_engaged) && unit && fitsUnit(data, frames, unit)) status = SGTimePitchRender(unit, frames, data);
-    if (status != noErr) status = pullSource(source, timestamp, frames, data);
+    if (status != noErr) {
+        // A failed render has already taken sound out of the mixer, the unit's input callback pulling the
+        // source for its own slices. Passing this buffer through from wherever that left the mixer draws on
+        // the decoder a second time on top of it, so it hands over more frames than it has sound for: its
+        // read runs ahead of the player's position, which is an underrun to AudioUnitDriver2, whose driver
+        // then stays out of processing audio until the decoder catches up and the sound stops for about a
+        // second (issue #216; harness/speed measures the extra draw, one per failed render). Asking for the
+        // same spot again draws this buffer's own sound alone, an AU serving a time it has seen from cache,
+        // and a source that fails keeps moving on regardless, pullSource counting the frames it drew before
+        // it knew they failed.
+        sg_sourceTime = before;
+        atomic_store(&sg_lastFailure, (int)status);
+        status = pullSource(source, timestamp, frames, data);
+    }
     atomic_store(&sg_busy, false);
     return status;
 }
@@ -365,8 +380,8 @@ static SGTimePitch *unitForFormat(void) {
 static void report(void) {
     SGTimePitch *unit = atomic_load(tapped() ? &sg_pull : &sg_inPlace);
     if (!unit) return;
-    SGLog(@"redesign speed: %.2fx, %+.0f st, %u underruns, %u failures, largest pull %u, %.1f s of input", sg_speed, sg_semitones,
-          SGTimePitchUnderruns(unit), SGTimePitchFailures(unit), SGTimePitchLargestPull(unit),
+    SGLog(@"redesign speed: %.2fx, %+.0f st, %u underruns, %u failures (the chain's last failed render %d), largest pull %u, %.1f s of input", sg_speed, sg_semitones,
+          SGTimePitchUnderruns(unit), SGTimePitchFailures(unit), atomic_load(&sg_lastFailure), SGTimePitchLargestPull(unit),
           SGTimePitchConsumed(unit) / SGTimePitchSampleRate(unit));
 }
 
