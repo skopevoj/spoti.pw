@@ -55,6 +55,7 @@ static _Atomic(AudioUnit) sg_source;
 static UInt32 sg_sourceBus;
 static atomic_uint sg_chunk = 1024;
 static Float64 sg_sourceTime;                // render thread only
+static atomic_int sg_lastFailure = -1;       // the status of the last failed render of the unit, for the log
 
 // The unit in use and whether the render thread runs it: in the chain (pull), else in place (pitch only).
 static _Atomic(SGTimePitch *) sg_pull, sg_inPlace;
@@ -151,8 +152,20 @@ static OSStatus feed(void *refCon, AudioUnitRenderActionFlags *flags, const Audi
     atomic_store(&sg_busy, true);
     OSStatus status = -1;
     SGTimePitch *unit = atomic_load(&sg_pull);
+    Float64 before = sg_sourceTime;
     if (atomic_load(&sg_engaged) && unit && fitsUnit(data, frames, unit)) status = SGTimePitchRender(unit, frames, data);
-    if (status != noErr) status = pullSource(source, timestamp, frames, data);
+    if (status != noErr) {
+        // A failed render has already taken sound out of the mixer, its input callback pulling the source
+        // for its own slices, so passing this buffer through from where that failure left the mixer draws on
+        // the decoder a second time: more frames handed over than there is sound for, and a read running
+        // ahead of the player's position is an underrun to AudioUnitDriver2, which then stays out of
+        // processing audio until the decoder catches up, the sound stopping for about a second (#216). The
+        // same spot read again draws this buffer's own sound alone, an AU serving a time it has seen from
+        // cache.
+        sg_sourceTime = before;
+        atomic_store(&sg_lastFailure, (int)status);
+        status = pullSource(source, timestamp, frames, data);
+    }
     atomic_store(&sg_busy, false);
     return status;
 }
@@ -365,8 +378,8 @@ static SGTimePitch *unitForFormat(void) {
 static void report(void) {
     SGTimePitch *unit = atomic_load(tapped() ? &sg_pull : &sg_inPlace);
     if (!unit) return;
-    SGLog(@"redesign speed: %.2fx, %+.0f st, %u underruns, %u failures, largest pull %u, %.1f s of input", sg_speed, sg_semitones,
-          SGTimePitchUnderruns(unit), SGTimePitchFailures(unit), SGTimePitchLargestPull(unit),
+    SGLog(@"redesign speed: %.2fx, %+.0f st, %u underruns, %u failures (the chain's last failed render %d), largest pull %u, %.1f s of input", sg_speed, sg_semitones,
+          SGTimePitchUnderruns(unit), SGTimePitchFailures(unit), atomic_load(&sg_lastFailure), SGTimePitchLargestPull(unit),
           SGTimePitchConsumed(unit) / SGTimePitchSampleRate(unit));
 }
 
