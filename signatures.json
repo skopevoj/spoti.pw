@@ -196,5 +196,14 @@
     "signed_at": "2026-10-07T09:20:18.384Z",
     "pull_request": 221,
     "evidence": "https://github.com/skopevoj/spoti.pw/pull/221"
+  },
+  {
+    "login": "nosedove",
+    "id": 338311322,
+    "cla": "1.0",
+    "via": "checkbox",
+    "signed_at": "2026-10-08T00:20:12.191Z",
+    "pull_request": 223,
+    "evidence": "https://github.com/skopevoj/spoti.pw/pull/223"
   }
 ]
