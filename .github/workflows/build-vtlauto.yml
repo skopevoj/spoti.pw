@@ -1,0 +1,40 @@
+name: Build VTLAuto dylib
+
+on:
+  workflow_dispatch: {}
+
+env:
+  THEOS: ${{ github.workspace }}/theos
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: actions/checkout@v5
+        with:
+          repository: theos/theos
+          path: theos
+          submodules: recursive
+
+      - name: Install tools
+        run: brew install make ldid dpkg
+
+      - name: Build
+        run: env -u MAKELEVEL gmake -C tweak-vtlauto clean package FINALPACKAGE=1
+
+      - name: Locate build output
+        run: find tweak-vtlauto -name "*.deb" -o -name "vtlauto.dylib" | tee /tmp/found.txt
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: vtlauto-build
+          path: |
+            tweak-vtlauto/packages/*.deb
+            tweak-vtlauto/.theos/obj/**/vtlauto.dylib
+          if-no-files-found: error
