@@ -1,0 +1,9 @@
+Package: com.vexqyq.vtlauto
+Name: VTLAuto
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Automatic VTL lyrics fallback for spoti.pw
+Maintainer: vexqyq
+Author: vexqyq
+Section: Tweaks
+Depends: mobilesubstrate

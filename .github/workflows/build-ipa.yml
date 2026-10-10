@@ -15,6 +15,11 @@ on:
 
 env:
   THEOS: ${{ github.workspace }}/theos
+  # Rewritten to match the App ID of the profile every build here gets signed
+  # with, so MediaRemote's lock-screen card (which launches by bundle id)
+  # keeps working. See pipeline.sh's own comment on BUNDLE_ID for why this
+  # is unsafe to set blindly - it's only correct because it's fixed per signer.
+  BUNDLE_ID: app.silver9358.honey1315
 
 jobs:
   build:
