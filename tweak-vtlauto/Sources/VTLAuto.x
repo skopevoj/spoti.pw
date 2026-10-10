@@ -25,9 +25,9 @@ static NSString *trackInURL(NSURL *url) {
 // protobuf/JSON parser for every shape Spotify might reply with), good enough to decide whether to
 // also try VTL, not to replace the real mod's own, more thorough body parsing.
 static BOOL looksEmpty(NSData *body) {
-    if (body.length < 40) return YES;
+    if (body.length < 200) return YES;   // a real lyrics reply, JSON or protobuf, runs well past this
     id root = [NSJSONSerialization JSONObjectWithData:body options:0 error:nil];
-    if (![root isKindOfClass:NSDictionary.class]) return NO;   // not JSON (likely protobuf) - don't guess
+    if (![root isKindOfClass:NSDictionary.class]) return NO;   // sizeable and not JSON - has real content, don't guess further
     id lyrics = root[@"lyrics"];
     if (![lyrics isKindOfClass:NSDictionary.class]) return YES;
     id lines = lyrics[@"lines"];
@@ -190,6 +190,48 @@ static void completed(NSURLSessionTask *task, NSError *error) {
 }
 %end
 
+// Diagnostic only: proves the dylib is actually loaded and running, separate from whether the
+// lyrics-detection logic works. No key window exists yet at %ctor time, so this retries briefly
+// until one shows up, then shows a small badge for a few seconds and never again this run.
+static void showLoadedBadge(int attemptsLeft) {
+    UIWindow *win = nil;
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *w in ((UIWindowScene *)scene).windows) {
+            if (w.isKeyWindow) { win = w; break; }
+        }
+        if (win) break;
+    }
+    if (!win) {
+        if (attemptsLeft > 0) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                showLoadedBadge(attemptsLeft - 1);
+            });
+        }
+        return;
+    }
+    UILabel *badge = [UILabel new];
+    badge.text = @"VTLAuto active";
+    badge.textColor = UIColor.blackColor;
+    badge.backgroundColor = [UIColor colorWithRed:0.35 green:1.0 blue:0.43 alpha:1];
+    badge.font = [UIFont boldSystemFontOfSize:11];
+    badge.textAlignment = NSTextAlignmentCenter;
+    badge.layer.cornerRadius = 8;
+    badge.clipsToBounds = YES;
+    badge.translatesAutoresizingMaskIntoConstraints = NO;
+    [win addSubview:badge];
+    [NSLayoutConstraint activateConstraints:@[
+        [badge.topAnchor constraintEqualToAnchor:win.safeAreaLayoutGuide.topAnchor constant:6],
+        [badge.centerXAnchor constraintEqualToAnchor:win.centerXAnchor],
+        [badge.widthAnchor constraintEqualToConstant:120],
+        [badge.heightAnchor constraintEqualToConstant:22],
+    ]];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [UIView animateWithDuration:0.3 animations:^{ badge.alpha = 0; } completion:^(BOOL done) { [badge removeFromSuperview]; }];
+    });
+}
+
 %ctor {
     sg_vtlTried = [NSMutableSet set];
+    dispatch_async(dispatch_get_main_queue(), ^{ showLoadedBadge(15); });
 }
