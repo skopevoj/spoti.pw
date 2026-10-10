@@ -1,28 +1,27 @@
-// Standalone dylib, separate from spotifyglass.dylib entirely: no shared symbols, no shared state.
-// Hooks SPTEsperantoPlayer's -state, the exact same method the real mod hooks to learn the current
-// track (KaraokeSource.x) - a direct Objective-C property read, not dependent on which networking
-// API Spotify happens to use for a given request. Every time the track changes, this tries VTL for
-// it unconditionally (not just when Spotify has nothing - shows it either way) and pops up a small
-// self-contained card if VTL has something. Does not touch the real mod's lyrics page, its private
-// symbols, or Spotify's own networking at all, so there is nothing here that can corrupt their state.
+// Standalone dylib, separate from spotifyglass.dylib entirely: no shared symbols, no shared state,
+// and critically - no hooking of anything Spotify or the real mod also hooks. An earlier version
+// hooked SPTEsperantoPlayer.state, the exact method the real mod also hooks (KaraokeSource.x), and
+// two independent dylibs' Logos-generated swizzles on the same selector crashed in practice - two
+// method_exchangeImplementations swaps on the same selector from dylibs that don't know about each
+// other is not safe, whatever the theory says. This version hooks nothing at all: it polls the
+// public MPNowPlayingInfoCenter (which Spotify already populates for the lock screen and Control
+// Center, same as any audio app) and matches the title against a small known-tracks table, since
+// that API gives a title/artist, not Spotify's own track id - fine while there are only a couple of
+// VTL tracks, not a real search.
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
+#import <MediaPlayer/MediaPlayer.h>
 
 static NSString *const kVTLBase = @"https://api.vexqyq.com/lyrics/";
-static NSString *sg_lastID;
-static __weak id sg_lastTrack;
+static NSString *sg_lastTitle;
 
-// SPTPlayerTrack.URI is "spotify:track:<id>" as either NSURL or NSString - same extraction the real
-// mod's idOf() does (Shared/Lyrics/KaraokeSource.x).
-static NSString *idOf(id track) {
-    id uri = [track respondsToSelector:@selector(URI)] ? [track valueForKey:@"URI"] : nil;
-    NSString *text = [uri isKindOfClass:NSURL.class] ? ((NSURL *)uri).absoluteString : [uri description];
-    NSString *prefix = @"spotify:track:";
-    return [text hasPrefix:prefix] ? [text substringFromIndex:prefix.length] : nil;
+// title substring -> VTL track id. Add a line here for each track uploaded to VTL.
+static NSDictionary<NSString *, NSString *> *knownTracks(void) {
+    return @{
+        @"car keys": @"7tDPdMsVJFfF7p6BAi3s6n",
+        @"boxed in": @"6IoOoTChdJ6MJL4uSAyXVO",
+    };
 }
 
-// A minimal TTML line reader: just the text of each <p>, nothing about syllables, voices or
-// translations - enough for a plain scrolling lyrics card, not a full karaoke view.
 static NSArray<NSString *> *linesFromTTML(NSString *xml) {
     NSMutableArray<NSString *> *out = [NSMutableArray array];
     NSError *err = nil;
@@ -136,55 +135,53 @@ static void tryVTL(NSString *trackID) {
     }] resume];
 }
 
-%hook SPTEsperantoPlayer
-- (id)state {
-    id state = %orig;
-    id track = [state respondsToSelector:@selector(track)] ? [state valueForKey:@"track"] : nil;
-    if (track && track != sg_lastTrack) {
-        sg_lastTrack = track;
-        NSString *trackID = idOf(track);
-        if (trackID && ![trackID isEqualToString:sg_lastID]) {
-            sg_lastID = trackID;
-            tryVTL(trackID);
-        }
-    }
-    return state;
+static void pollNowPlaying(void) {
+    NSDictionary *info = MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo;
+    NSString *title = info[MPMediaItemPropertyTitle];
+    if (!title.length || [title isEqualToString:sg_lastTitle]) return;
+    sg_lastTitle = title;
+    NSString *lower = title.lowercaseString;
+    [knownTracks() enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSString *trackID, BOOL *stop) {
+        if ([lower containsString:key]) { tryVTL(trackID); *stop = YES; }
+    }];
 }
-%end
 
-// Diagnostic: proves the dylib is actually loaded and running. No key window exists yet at %ctor
-// time, so this retries briefly until one shows up, then shows a small badge once.
-static void showLoadedBadge(int attemptsLeft) {
+static UIWindow *keyWindowForBadge(int attemptsLeft, void (^onFound)(UIWindow *win)) {
     UIWindow *win = keyWindow();
-    if (!win) {
-        if (attemptsLeft > 0) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                showLoadedBadge(attemptsLeft - 1);
-            });
-        }
-        return;
+    if (win) { onFound(win); return win; }
+    if (attemptsLeft > 0) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            keyWindowForBadge(attemptsLeft - 1, onFound);
+        });
     }
-    UILabel *badge = [UILabel new];
-    badge.text = @"VTLAuto active";
-    badge.textColor = UIColor.blackColor;
-    badge.backgroundColor = [UIColor colorWithRed:0.35 green:1.0 blue:0.43 alpha:1];
-    badge.font = [UIFont boldSystemFontOfSize:11];
-    badge.textAlignment = NSTextAlignmentCenter;
-    badge.layer.cornerRadius = 8;
-    badge.clipsToBounds = YES;
-    badge.translatesAutoresizingMaskIntoConstraints = NO;
-    [win addSubview:badge];
-    [NSLayoutConstraint activateConstraints:@[
-        [badge.topAnchor constraintEqualToAnchor:win.safeAreaLayoutGuide.topAnchor constant:6],
-        [badge.centerXAnchor constraintEqualToAnchor:win.centerXAnchor],
-        [badge.widthAnchor constraintEqualToConstant:120],
-        [badge.heightAnchor constraintEqualToConstant:22],
-    ]];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [UIView animateWithDuration:0.3 animations:^{ badge.alpha = 0; } completion:^(BOOL done) { [badge removeFromSuperview]; }];
-    });
+    return nil;
 }
 
 %ctor {
-    dispatch_async(dispatch_get_main_queue(), ^{ showLoadedBadge(15); });
+    dispatch_async(dispatch_get_main_queue(), ^{
+        keyWindowForBadge(15, ^(UIWindow *win) {
+            UILabel *badge = [UILabel new];
+            badge.text = @"VTLAuto active";
+            badge.textColor = UIColor.blackColor;
+            badge.backgroundColor = [UIColor colorWithRed:0.35 green:1.0 blue:0.43 alpha:1];
+            badge.font = [UIFont boldSystemFontOfSize:11];
+            badge.textAlignment = NSTextAlignmentCenter;
+            badge.layer.cornerRadius = 8;
+            badge.clipsToBounds = YES;
+            badge.translatesAutoresizingMaskIntoConstraints = NO;
+            [win addSubview:badge];
+            [NSLayoutConstraint activateConstraints:@[
+                [badge.topAnchor constraintEqualToAnchor:win.safeAreaLayoutGuide.topAnchor constant:6],
+                [badge.centerXAnchor constraintEqualToAnchor:win.centerXAnchor],
+                [badge.widthAnchor constraintEqualToConstant:120],
+                [badge.heightAnchor constraintEqualToConstant:22],
+            ]];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [UIView animateWithDuration:0.3 animations:^{ badge.alpha = 0; } completion:^(BOOL done) { [badge removeFromSuperview]; }];
+            });
+        });
+
+        NSTimer *timer = [NSTimer timerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *t) { pollNowPlaying(); }];
+        [NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];
+    });
 }
