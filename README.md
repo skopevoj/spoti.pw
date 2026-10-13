@@ -2,7 +2,7 @@
   <img src="docs/icon.png" width="96" alt="">
 </p>
 
-<h1 align="center">SpotiSpark/h1>
+<h1 align="center">SpotiSpark</h1>
 
 <p align="center">Spotify, in glass.</p>
 
