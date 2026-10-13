@@ -2,7 +2,7 @@
   <img src="docs/icon.png" width="96" alt="">
 </p>
 
-<h1 align="center">spoti.pw</h1>
+<h1 align="center">SpotiSpark</h1>
 
 <p align="center">Spotify, in glass.</p>
 
@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://spoti.pw">spoti.pw</a> ·
+  <a href="https://spoti.pw">SpotiSpark</a> ·
   <a href="#build-it">Build it</a> ·
   <a href="docs/tweaks.md">Hack on it</a> ·
   <a href="https://ko-fi.com/darkksh">Support</a>
