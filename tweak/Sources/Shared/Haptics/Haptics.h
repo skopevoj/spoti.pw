@@ -21,6 +21,8 @@
 #define SGKeyMusicStrength @"spotifyglass.haptics.music.strength"
 // What Music Haptics plays along with, an SGMusicFollows.
 #define SGKeyMusicFollows @"spotifyglass.haptics.music.follows"
+// iOS's own Music Haptics taken part in (SystemMusicHaptics.x, iOS 18): on until switched off, read at launch.
+#define SGKeySystemMusicHaptics @"spotifyglass.haptics.music.system"
 // What the keys were called while this was the redesign's alone; the %ctors move them over.
 #define SGKeyControlHapticsWas @"spotifyglass.redesign.haptics.controls"
 #define SGKeyMusicHapticsWas @"spotifyglass.redesign.haptics.music"
@@ -58,6 +60,12 @@ typedef NS_ENUM(NSInteger, SGFeedback) {
 void SGPlayFeedback(SGFeedback feedback);
 // Wakes the Taptic Engine for feedback about to follow quickly (a finger on the scrubber).
 void SGPrepareFeedback(SGFeedback feedback);
+
+// SystemMusicHaptics.x: iOS's own Music Haptics is on and has a haptic track for the song playing, so the
+// mod's steps aside.
+BOOL SGSystemMusicHapticsCovers(void);
+// What iOS's Music Haptics is doing for the song playing, in a few words, for the Vibrations page.
+NSString *SGSystemMusicHapticsStatus(void);
 
 // From the Music Haptics switch: starts or stops listening at once.
 void SGSetMusicHapticsEnabled(BOOL on);

@@ -9,16 +9,42 @@
 //     scroll   the list moved up and down in code; the log says whether it stayed at its top
 //     artwork  issue #58: tracks change while the covers on screen and the picture server lag behind,
 //              checked by colour at the end of each step; the log says PASS or FAIL
+//     fluid    Fluid artwork: another album at 7 s (the crossfade), paused 11-13 s, the player's transition
+//              at 15 s, the sliders pushed at 17 s and reset at 20 s; the log has the warp's cost
+//     animated Animated artwork over the local clips in HARNESS_CLIPS (canvas.mp4, apple.mp4, late.mp4,
+//              bright.mp4): a Canvas, Apple's cover fetched ahead, a track without a clip, one still
+//              downloading, a pause, the lyrics, Spotify's own video, a bright clip; the log says PASS or
+//              FAIL. HARNESS_STEPPED=1 waits for `notifyutil -p com.vojta.harness.next` before each step
+// HARNESS_BACKGROUND=0|1 stores Fluid artwork or Animated artwork (animated's default); unset leaves the
+// default. HARNESS_OLD_BACKGROUND=0|1|2 stores the choice before it (Still, Colour flow, Fluid) and
+// HARNESS_OLD_MOTION=0 the Moving background switch before that, off.
+// HARNESS_COVER=<path> starts on that picture (a local file, never one from the repo).
+//     taps     real touches on the progress bar (tap to seek, the thumb's own drag, the times beside it)
+//              and on the lyrics' thumbnail, alone and not; the log says PASS or FAIL
 // HARNESS_VOLUME=0 leaves out the volume row the phone has (trees/clean/player/01.txt has none).
+// HARNESS_FREE=1 builds the units under the class names Spotify Free's player (the Reinvent Free mode)
+// gives them, around the same elements.
 #import <UIKit/UIKit.h>
+#import <notify.h>
 #import <objc/runtime.h>
 #import "Shared/Lyrics/Lyrics.h"
 #import "Redesigned/Player/Player.h"
 #import "Redesigned/Kit/SGRBridges.h"
 #import "Redesigned/Kit/SGRField.h"
+#import "Shared/Player/PlayerEvents.h"
+#import "Core/SGPrefs.h"
+
+extern CFTimeInterval sg_harnessTransitionEnds;
+#import "Redesigned/Kit/SGRGlyph.h"
+#import "touches.h"
 
 void SGRHarnessPlayFrom(NSInteger ms);
 void SGRHarnessSetTrack(NSString *uri, NSString *imageURI, BOOL paused);
+void SGRHarnessSetTrackWith(NSString *uri, NSString *imageURI, BOOL paused, NSDictionary *extra, NSArray<NSDictionary *> *future);
+extern NSMutableDictionary<NSString *, NSURL *> *SGRHarnessAppleClips;
+extern NSMutableDictionary<NSString *, NSNumber *> *SGRHarnessClipDelays;
+NSUInteger SGRHarnessLineSeeks(void);
+NSUInteger SGRHarnessSkipTaps(void);
 
 static NSString *scenario(void) {
     const char *value = getenv("HARNESS_SCENARIO");
@@ -150,6 +176,18 @@ static NSString *colorName(UIImage *image) {
 @interface _TtC20NowPlaying_ModesImpl18FooterElementsUnit : UIViewController @end
 @implementation _TtC20NowPlaying_ModesImpl18FooterElementsUnit @end
 
+@interface _TtC32ReinventFree_ReinventFreeNpvImpl35ReinventFreeInformationElementsUnit : UIViewController @end
+@implementation _TtC32ReinventFree_ReinventFreeNpvImpl35ReinventFreeInformationElementsUnit @end
+
+@interface _TtC32ReinventFree_ReinventFreeNpvImpl20DurationElementsUnit : UIViewController @end
+@implementation _TtC32ReinventFree_ReinventFreeNpvImpl20DurationElementsUnit @end
+
+@interface _TtC32ReinventFree_ReinventFreeNpvImpl40ReinventFreePlaybackControlsElementsUnit : UIViewController @end
+@implementation _TtC32ReinventFree_ReinventFreeNpvImpl40ReinventFreePlaybackControlsElementsUnit @end
+
+@interface _TtC32ReinventFree_ReinventFreeNpvImpl30ReinventFreeFooterElementsUnit : UIViewController @end
+@implementation _TtC32ReinventFree_ReinventFreeNpvImpl30ReinventFreeFooterElementsUnit @end
+
 @interface _TtC21NowPlaying_ScrollImpl23NPVScrollViewController : UIViewController <UIScrollViewDelegate> @end
 @implementation _TtC21NowPlaying_ScrollImpl23NPVScrollViewController
 - (void)scrollViewDidScroll:(UIScrollView *)list {}
@@ -167,6 +205,20 @@ static NSString *colorName(UIImage *image) {
 @interface _TtC18NowPlaying_BarImpl27NowPlayingBarViewController : UIViewController @end
 @implementation _TtC18NowPlaying_BarImpl27NowPlayingBarViewController @end
 
+// Spotify's views a music video plays on (Switch to video): PlayerAnimated.x hears a video come and go.
+@interface _TtC22NowPlaying_ElementsKit14VideoElementUI : NSObject
+- (void)videoSurfaceDidAttachVideo:(id)surface;
+- (void)videoSurfaceDidDetachVideo:(id)surface;
+@end
+@implementation _TtC22NowPlaying_ElementsKit14VideoElementUI
+- (void)videoSurfaceDidAttachVideo:(id)surface {}
+- (void)videoSurfaceDidDetachVideo:(id)surface {}
+@end
+@interface _TtC28NowPlaying_ContentLayersImpl24HorizontalVideoViewModel : _TtC22NowPlaying_ElementsKit14VideoElementUI @end
+@implementation _TtC28NowPlaying_ContentLayersImpl24HorizontalVideoViewModel @end
+@interface _TtC28NowPlaying_ContentLayersImpl31VerticalVideoCellImplementation : _TtC22NowPlaying_ElementsKit14VideoElementUI @end
+@implementation _TtC28NowPlaying_ContentLayersImpl31VerticalVideoCellImplementation @end
+
 @interface _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView : UIView
 - (void)handleTap;
 @end
@@ -179,6 +231,94 @@ static NSString *colorName(UIImage *image) {
 
 @interface MockEncoreButton : UIControl @end
 @implementation MockEncoreButton @end
+
+// Spotify's position slider: a UISlider that moves its thumb under the finger itself and whose
+// endTrackingWithTouch: sends touch cancel while it tracks, leaving the rest to UIControl's touch up.
+@interface _TtCO17NowPlaying_ECMKit11ProgressBar6Slider : UISlider @end
+@implementation _TtCO17NowPlaying_ECMKit11ProgressBar6Slider
+- (BOOL)continueTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    if (!self.isTracking) return NO;
+    CGRect track = [self trackRectForBounds:self.bounds];
+    CGFloat from = CGRectGetMidX([self thumbRectForBounds:self.bounds trackRect:track value:self.minimumValue]);
+    CGFloat to = CGRectGetMidX([self thumbRectForBounds:self.bounds trackRect:track value:self.maximumValue]);
+    CGFloat share = MIN(MAX(([touch locationInView:self].x - from) / (to - from), 0), 1);
+    [self setValue:self.minimumValue + (float)share * (self.maximumValue - self.minimumValue) animated:NO];
+    if (self.isContinuous) [self sendActionsForControlEvents:UIControlEventValueChanged];
+    return YES;
+}
+- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    if (self.isTracking) [self sendActionsForControlEvents:UIControlEventTouchCancel];
+}
+@end
+
+// NowPlaying_ECMKit.PassThroughStackView: the times' row, which takes no touch of its own.
+@interface MockPassThroughView : UIView @end
+@implementation MockPassThroughView
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    return hit == self ? nil : hit;
+}
+@end
+
+// The progress bar unit as the binary wires it: began on touch down, the time under the thumb on value
+// changed, a seek on touch up inside or outside and drag exit (each reading the value), the remaining
+// time flipping on a tap, and the player's position left off the slider while it tracks.
+static const NSInteger kSongMs = 60000;
+
+@interface SGRHarnessProgressUnit : NSObject
+@property (nonatomic, weak) UISlider *slider;
+@property (nonatomic, weak) UILabel *taken, *remaining;
+@property (nonatomic) NSUInteger began, ended, flipped;
+@property (nonatomic) float lastSeek;
+@end
+
+@implementation SGRHarnessProgressUnit
+
+- (void)attachTo:(UISlider *)slider {
+    self.slider = slider;
+    [slider addTarget:self action:@selector(scrubBegan) forControlEvents:UIControlEventTouchDown];
+    [slider addTarget:self action:@selector(scrubbed) forControlEvents:UIControlEventValueChanged];
+    [slider addTarget:self action:@selector(scrubEnded) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchDragExit];
+}
+
+- (void)scrubBegan { self.began++; }
+
+- (void)scrubbed {
+    [self showTimes:self.slider.value];
+    [self render];   // a pass the scrub itself sets off, which must leave a tracking slider alone
+}
+
+- (void)scrubEnded {
+    self.ended++;
+    self.lastSeek = self.slider.value;
+    NSLog(@"[harness] the unit seeks to %.3f", self.lastSeek);
+    SGRHarnessPlayFrom((NSInteger)(self.lastSeek * kSongMs));
+}
+
+- (void)flip { self.flipped++; }
+
+- (void)showTimes:(float)value {
+    NSInteger at = (NSInteger)(value * kSongMs / 1000), left = kSongMs / 1000 - at;
+    self.taken.text = [NSString stringWithFormat:@"%ld:%02ld", (long)at / 60, (long)at % 60];
+    self.remaining.text = [NSString stringWithFormat:@"-%ld:%02ld", (long)left / 60, (long)left % 60];
+}
+
+- (void)render {
+    UISlider *slider = self.slider;
+    if (!slider || slider.isTracking) return;
+    float value = MIN(MAX((float)SGKaraokePositionMs() / kSongMs, 0), 1);
+    slider.value = value;
+    [self showTimes:value];
+}
+
+@end
+
+static UIImage *thumbImage(void) {
+    return [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(12, 12)] imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
+        [UIColor.whiteColor setFill];
+        CGContextFillEllipseInRect(ctx.CGContext, CGRectMake(0, 0, 12, 12));
+    }];
+}
 
 #pragma mark - building the tree
 
@@ -301,6 +441,8 @@ static void loadLyrics(void) {
 
 @implementation SGRHarnessDelegate {
     NSArray<UIViewController *> *_units;
+    SGRHarnessProgressUnit *_progress;
+    UIView *_controlsView;
     UIImageView *_cover, *_barCover;
     UIViewController *_bar;
     UICollectionView *_covers;
@@ -363,7 +505,8 @@ static void loadLyrics(void) {
     tilt.accessibilityLabel = @"Inspect cover art";
     // The Encore.ImageView holding the picture (01.txt:40), which PlayerField.x reads the cover from.
     UIView *coverElement = box(tilt, UIView.class, tilt.bounds, @"Encore.ImageView");
-    UIImage *picture = artwork();
+    const char *coverPath = getenv("HARNESS_COVER");
+    UIImage *picture = (coverPath ? [UIImage imageWithContentsOfFile:@(coverPath)] : nil) ?: artwork();
     UIImageView *cover = [[UIImageView alloc] initWithFrame:coverElement.bounds];
     cover.image = picture;
     _cover = cover;
@@ -404,14 +547,31 @@ static void loadLyrics(void) {
     glyphButton(infoInner, CGRectMake(infoInner.bounds.size.width - 48, 0, 48, 48), @"star", @"Components.UI.AddToButton");
 
     UIView *durationView = box(bottom, UIView.class, CGRectMake(0, 64, W, 40), nil);
-    UIView *track = box(durationView, UIView.class, CGRectMake(24, 8, W - 48, 6), nil);
-    track.backgroundColor = [UIColor colorWithWhite:1 alpha:0.3];
-    track.layer.cornerRadius = 3;
-    UIView *played = box(track, UIView.class, CGRectMake(0, 0, (W - 48) * 0.22, 6), nil);
-    played.backgroundColor = [UIColor colorWithWhite:1 alpha:0.85];
-    played.layer.cornerRadius = 3;
+    UIView *progress = box(durationView, UIView.class, CGRectMake(24, 0, W - 48, 40), @"Components.UI.ProgressBarUnitNowPlaying");
+    UISlider *slider = (UISlider *)box(progress, _TtCO17NowPlaying_ECMKit11ProgressBar6Slider.class, CGRectMake(-2, 10, W - 44, 17), @"SPTNowPlayingSliderV2");
+    slider.minimumTrackTintColor = UIColor.whiteColor;
+    slider.maximumTrackTintColor = [UIColor colorWithWhite:1 alpha:0.3];
+    [slider setThumbImage:thumbImage() forState:UIControlStateNormal];
+    slider.value = 0.22;
+    UIView *times = box(progress, MockPassThroughView.class, CGRectMake(0, 26, W - 48, 14), nil);
+    UIView *takenBox = box(times, UIView.class, CGRectMake(0, 0, 21.67, 14), @"now-playing-time-take-label");
+    UIView *remainingBox = box(times, UIView.class, CGRectMake(W - 48 - 25.67, 0, 25.67, 14), @"now-playing-time-remaning-label");
+    UILabel *takenLabel = (UILabel *)box(takenBox, UILabel.class, takenBox.bounds, @"now-playing-time-take-label-internal");
+    UILabel *remainingLabel = (UILabel *)box(remainingBox, UILabel.class, remainingBox.bounds, @"now-playing-time-remaning-label-internal");
+    for (UILabel *label in @[takenLabel, remainingLabel]) {
+        label.font = [UIFont systemFontOfSize:10];
+        label.textColor = [UIColor colorWithWhite:1 alpha:0.7];
+        label.adjustsFontSizeToFitWidth = YES;
+    }
+    SGRHarnessProgressUnit *progressUnit = [SGRHarnessProgressUnit new];
+    progressUnit.taken = takenLabel;
+    progressUnit.remaining = remainingLabel;
+    [progressUnit attachTo:slider];
+    [remainingBox addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:progressUnit action:@selector(flip)]];
+    _progress = progressUnit;
 
     UIView *controls = box(bottom, UIView.class, CGRectMake(0, 104, W, 88), nil);
+    _controlsView = controls;
     glyphButton(controls, CGRectMake(W / 2 - 130, 20, 48, 48), @"backward.fill", nil);
     glyphButton(controls, CGRectMake(W / 2 - 24, 14, 48, 60), @"pause.fill", nil);
     glyphButton(controls, CGRectMake(W / 2 + 82, 20, 48, 48), @"forward.fill", nil);
@@ -448,16 +608,23 @@ static void loadLyrics(void) {
 
     [self.window makeKeyAndVisible];
 
-    UIViewController *info = [_TtC20NowPlaying_ModesImpl23InformationElementsUnit new];
+    const char *freeEnv = getenv("HARNESS_FREE");
+    BOOL free = freeEnv && freeEnv[0] == '1';
+    UIViewController *info = free ? [_TtC32ReinventFree_ReinventFreeNpvImpl35ReinventFreeInformationElementsUnit new]
+                                  : [_TtC20NowPlaying_ModesImpl23InformationElementsUnit new];
     info.view = infoView;
-    UIViewController *duration = [_TtC20NowPlaying_ModesImpl19DurationElementUnit new];
+    UIViewController *duration = free ? [_TtC32ReinventFree_ReinventFreeNpvImpl20DurationElementsUnit new]
+                                      : [_TtC20NowPlaying_ModesImpl19DurationElementUnit new];
     duration.view = durationView;
     UIViewController *floating = [_TtC20NowPlaying_ModesImpl20FloatingElementsUnit new];
     floating.view = floatingView;
-    UIViewController *footer = [_TtC20NowPlaying_ModesImpl18FooterElementsUnit new];
+    UIViewController *footer = free ? [_TtC32ReinventFree_ReinventFreeNpvImpl30ReinventFreeFooterElementsUnit new]
+                                    : [_TtC20NowPlaying_ModesImpl18FooterElementsUnit new];
     footer.view = footerView;
-    UIViewController *playback = [_TtC20NowPlaying_ModesImpl28PlaybackControlsElementsUnit new];
+    UIViewController *playback = free ? [_TtC32ReinventFree_ReinventFreeNpvImpl40ReinventFreePlaybackControlsElementsUnit new]
+                                      : [_TtC20NowPlaying_ModesImpl28PlaybackControlsElementsUnit new];
     playback.view = controls;
+    NSLog(@"[harness] units: %@, %@, %@, %@", info.class, duration.class, playback.class, footer.class);
     UIViewController *player = [_TtC19NowPlaying_ViewImpl24NowPlayingViewController new];
     player.view = host;
     _units = @[info, duration, floating, playback, footer, scrollUnit, background, player];
@@ -467,6 +634,8 @@ static void loadLyrics(void) {
     // Spotify lays its units out again as a track's elements arrive, which is what the redesign's
     // transforms and narrowed labels have to survive.
     [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *t) { [self layOut]; }];
+    // The player's position reaching the bar, the way the unit's model updates do.
+    [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *t) { [self->_progress render]; }];
 
     NSLog(@"[harness] lyrics available: %d", SGRPlayerLyricsAvailable());
     // With the lines up, the row that rose into them must still be Spotify's to touch, and the lines
@@ -484,6 +653,9 @@ static void loadLyrics(void) {
     if ([scenario() isEqualToString:@"artwork"]) [self runArtworkChecks];
     else if ([scenario() isEqualToString:@"look"]) [self runLook];
     else if ([scenario() isEqualToString:@"scroll"]) [self runScrollChecks];
+    else if ([scenario() isEqualToString:@"fluid"]) [self runFluid];
+    else if ([scenario() isEqualToString:@"animated"]) [self runAnimated];
+    else if ([scenario() isEqualToString:@"taps"]) [self runTaps];
     // Opened, closed and opened again, so a screenshot can be taken of each state and of the move itself.
     else for (NSNumber *at in @[@2, @6, @10]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(at.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -610,6 +782,211 @@ static void after(NSTimeInterval seconds, dispatch_block_t block) {
     });
 }
 
+- (void)runFluid {
+    NSLog(@"[harness] background style %ld, fluid look speed %.2f warp %.2f blur %.0f saturation %.2f brightness %.2f",
+          (long)SGRPlayerBackgroundStyle(), SGRPlayerFluidLook().speed, SGRPlayerFluidLook().warp, SGRPlayerFluidLook().blur,
+          SGRPlayerFluidLook().saturation, SGRPlayerFluidLook().brightness);
+    UIImage *second = secondArtwork();
+    after(7, ^{
+        serve(imageURI(@"ffff"), second, 0.25, NO);
+        [self playTrack:@"spotify:track:harnessF" image:imageURI(@"ffff")];
+    });
+    after(7.4, ^{ [self showOnScreen:second]; });
+    after(11, ^{
+        NSLog(@"[harness] paused");
+        SGRHarnessSetTrack(@"spotify:track:harnessF", imageURI(@"ffff"), YES);
+    });
+    after(13, ^{
+        NSLog(@"[harness] playing");
+        SGRHarnessSetTrack(@"spotify:track:harnessF", imageURI(@"ffff"), NO);
+    });
+    after(15, ^{
+        NSLog(@"[harness] the player's transition begins");
+        sg_harnessTransitionEnds = CACurrentMediaTime() + 0.5;
+        [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerTransitionNotification object:nil];
+    });
+    after(15.5, ^{
+        NSLog(@"[harness] the player's transition ends");
+        sg_harnessTransitionEnds = 0;
+        [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerTransitionEndedNotification object:nil];
+    });
+    after(17, ^{
+        NSLog(@"[harness] sliders pushed");
+        SGSetInt(SGRKeyFluidSpeed, 300);
+        SGSetInt(SGRKeyFluidSaturation, 250);
+        SGSetInt(SGRKeyFluidBlur, 3);
+        [NSNotificationCenter.defaultCenter postNotificationName:SGRPlayerFluidLookDidChangeNotification object:nil];
+    });
+    after(20, ^{
+        NSLog(@"[harness] sliders reset");
+        for (NSString *key in @[SGRKeyFluidSpeed, SGRKeyFluidSaturation, SGRKeyFluidBlur]) [NSUserDefaults.standardUserDefaults removeObjectForKey:key];
+        [NSNotificationCenter.defaultCenter postNotificationName:SGRPlayerFluidLookDidChangeNotification object:nil];
+    });
+}
+
+#pragma mark - Animated artwork
+
+static UIView *viewOfClass(UIView *root, NSString *name);
+
+- (UIView *)animatedView {
+    return viewOfClass(self.window, @"SGRPlayerAnimatedView");
+}
+
+- (void)checkAnimated:(NSString *)step shows:(BOOL)shows {
+    UIView *view = [self animatedView];
+    CALayer *shown = view.layer.presentationLayer ?: view.layer;
+    BOOL covered = SGRPlayerField().covered;
+    [self expect:(shows ? shown.opacity > 0.99 : shown.opacity < 0.01) && covered == shows
+            that:[NSString stringWithFormat:@"%@: the clip %@ (opacity %.2f), Fluid artwork %@", step, shows ? @"shows" : @"is away",
+                  shown.opacity, covered ? @"stopped under it" : @"drawing"]];
+}
+
+// The dim over the clip, the sublayer after the clips'.
+- (float)animatedDim {
+    CALayer *dim = [self animatedView].layer.sublayers[1];
+    return ((CALayer *)dim.presentationLayer ?: dim).opacity;
+}
+
+// Each step a moment apart, or, with HARNESS_STEPPED set, as `notifyutil -p com.vojta.harness.next` asks
+// for it, so a script can screenshot each state once it has settled.
+- (void)playSteps:(NSArray<dispatch_block_t> *)steps {
+    __block NSUInteger at = 0;
+    void (^next)(void) = ^{
+        if (at >= steps.count) return;
+        NSLog(@"[harness] step %lu", (unsigned long)at);
+        steps[at++]();
+    };
+    if (getenv("HARNESS_STEPPED")) {
+        int token;
+        notify_register_dispatch("com.vojta.harness.next", &token, dispatch_get_main_queue(), ^(int t) { next(); });
+        NSLog(@"[harness] stepped: waiting for com.vojta.harness.next");
+        return;
+    }
+    for (NSUInteger i = 0; i < steps.count; i++) after(1.5 + 3.5 * i, next);
+}
+
+- (float)clipRate {
+    id clip = [[self animatedView] valueForKey:@"clip"];
+    return [[[clip valueForKey:@"player"] valueForKey:@"rate"] floatValue];
+}
+
+- (void)runAnimated {
+    const char *folder = getenv("HARNESS_CLIPS");
+    if (!folder) {
+        NSLog(@"[harness] animated: HARNESS_CLIPS names no folder of clips");
+        return;
+    }
+    NSURL *(^clip)(NSString *) = ^NSURL *(NSString *name) { return [NSURL fileURLWithPath:[@(folder) stringByAppendingPathComponent:name]]; };
+    NSDictionary *(^canvas)(NSString *) = ^NSDictionary *(NSString *name) {
+        return @{@"canvas.url": clip(name).absoluteString, @"canvas.type": @"VIDEO_LOOPING", @"canvas.id": name.stringByDeletingPathExtension};
+    };
+    SGRHarnessAppleClips = [@{@"Low Tide": clip(@"apple.mp4")} mutableCopy];
+    SGRHarnessClipDelays = [@{@"apple.mp4": @1.0, @"late.mp4": @1.5} mutableCopy];
+    NSDictionary *lowTide = @{@"album_title": @"Low Tide", @"artist_name": @"The Harness"};
+    UIImage *first = _cover.image, *second = secondArtwork();
+    serve(imageURI(@"ffff"), second, 0.25, NO);
+    NSLog(@"[harness] animated: background style %ld", (long)SGRPlayerBackgroundStyle());
+    __block float dimBefore = 0;
+    _TtC28NowPlaying_ContentLayersImpl24HorizontalVideoViewModel *video = [_TtC28NowPlaying_ContentLayersImpl24HorizontalVideoViewModel new];
+
+    [self playSteps:@[
+        ^{ [self checkAnimated:@"1 no clip for the first track" shows:NO]; },
+        // A Canvas on disk, with Apple Music's cover of the next track fetched ahead.
+        ^{
+            NSLog(@"[harness] track: a Canvas");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessCanvas", imageURI(@"aaaa"), NO, canvas(@"canvas.mp4"),
+                                   @[@{@"uri": @"spotify:track:harnessApple", @"metadata": lowTide}]);
+            after(2, ^{ [self checkAnimated:@"2 the Canvas faded in over Fluid artwork" shows:YES]; });
+        },
+        // The next track, fetched ahead: straight to its clip.
+        ^{
+            NSLog(@"[harness] track: Apple Music's cover, fetched ahead");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessApple", imageURI(@"ffff"), NO, lowTide,
+                                   @[@{@"uri": @"spotify:track:harnessNone", @"metadata": @{}}]);
+            after(0.3, ^{ [self checkAnimated:@"3 crossing straight to the next clip, Fluid artwork still stopped" shows:YES]; });
+            after(0.4, ^{ [self showOnScreen:second]; });
+            after(2, ^{ [self checkAnimated:@"4 Apple Music's cover" shows:YES]; });
+        },
+        // Nothing anywhere: back to Fluid artwork.
+        ^{
+            NSLog(@"[harness] track: no clip anywhere");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessNone", imageURI(@"aaaa"), NO, nil,
+                                   @[@{@"uri": @"spotify:track:harnessLate", @"metadata": @{}}]);
+            after(0.4, ^{ [self showOnScreen:first]; });
+            after(2, ^{ [self checkAnimated:@"5 a track without a clip" shows:NO]; });
+        },
+        // A Canvas the track names only once it plays, 1.5 s from landing.
+        ^{
+            NSLog(@"[harness] track: a Canvas still downloading");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessLate", imageURI(@"ffff"), NO, canvas(@"late.mp4"), nil);
+            after(0.4, ^{ [self showOnScreen:second]; });
+            after(0.8, ^{ [self checkAnimated:@"6 Fluid artwork while it downloads" shows:NO]; });
+            after(3, ^{ [self checkAnimated:@"7 the downloaded Canvas faded in" shows:YES]; });
+        },
+        ^{
+            NSLog(@"[harness] paused");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessLate", imageURI(@"ffff"), YES, canvas(@"late.mp4"), nil);
+            after(1, ^{ [self expect:[self clipRate] == 0 that:[NSString stringWithFormat:@"8 paused, the clip holds its frame (rate %.0f)", [self clipRate]]]; });
+        },
+        ^{
+            NSLog(@"[harness] playing");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessLate", imageURI(@"ffff"), NO, canvas(@"late.mp4"), nil);
+            after(1, ^{ [self expect:[self clipRate] == 1 that:[NSString stringWithFormat:@"9 playing again (rate %.0f)", [self clipRate]]]; });
+        },
+        ^{
+            dimBefore = [self animatedDim];
+            NSLog(@"[harness] opening the lyrics");
+            SGRPlayerToggleLyrics();
+            after(1.5, ^{
+                float dim = [self animatedDim];
+                [self expect:SGRPlayerLyricsOpen() && dim > dimBefore + 0.1f
+                        that:[NSString stringWithFormat:@"10 the lyrics up dim the clip from %.2f to %.2f", dimBefore, dim]];
+            });
+        },
+        ^{
+            NSLog(@"[harness] closing the lyrics");
+            SGRPlayerToggleLyrics();
+        },
+        ^{
+            NSLog(@"[harness] Spotify's video comes on");
+            [video videoSurfaceDidAttachVideo:nil];
+            after(1.5, ^{ [self checkAnimated:@"11 Spotify's own video showing" shows:NO]; });
+        },
+        ^{
+            NSLog(@"[harness] Spotify's video goes");
+            [video videoSurfaceDidDetachVideo:nil];
+            after(2, ^{ [self checkAnimated:@"12 the clip back after the video" shows:YES]; });
+        },
+        ^{
+            NSLog(@"[harness] the player's transition begins");
+            sg_harnessTransitionEnds = CACurrentMediaTime() + 0.5;
+            [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerTransitionNotification object:nil];
+            after(0.2, ^{ [self expect:[self clipRate] == 0 that:@"13 held while the player opens or closes"]; });
+            after(0.5, ^{
+                NSLog(@"[harness] the player's transition ends");
+                sg_harnessTransitionEnds = 0;
+                [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerTransitionEndedNotification object:nil];
+            });
+            after(1, ^{ [self expect:[self clipRate] == 1 that:@"14 playing again once it is open"]; });
+        },
+        // The worst case for the text: a nearly white clip, with and without the lyrics.
+        ^{
+            NSLog(@"[harness] track: a bright Canvas");
+            SGRHarnessSetTrackWith(@"spotify:track:harnessBright", imageURI(@"aaaa"), NO, canvas(@"bright.mp4"), nil);
+            after(0.4, ^{ [self showOnScreen:first]; });
+            after(2, ^{ [self checkAnimated:@"15 the bright Canvas" shows:YES]; });
+        },
+        ^{ SGRPlayerToggleLyrics(); },
+        ^{
+            SGRPlayerToggleLyrics();
+            after(1, ^{
+                NSLog(@"[harness] animated checks: %lu of %lu right -- %@", (unsigned long)(self->_checks - self->_failures),
+                      (unsigned long)self->_checks, self->_failures ? @"FAIL" : @"PASS");
+            });
+        },
+    ]];
+}
+
 // One track, then another album's at 8 s, its picture on the screens 0.4 s later.
 - (void)runLook {
     UIImage *second = secondArtwork();
@@ -645,11 +1022,220 @@ static void after(NSTimeInterval seconds, dispatch_block_t block) {
     after(8.4, ^{ [self showOnScreen:second]; });
 }
 
+#pragma mark - taps
+
+static UIView *findView(UIView *root, BOOL (^match)(UIView *view)) {
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:root];
+    while (queue.count) {
+        UIView *view = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        if (match(view)) return view;
+        [queue addObjectsFromArray:view.subviews];
+    }
+    return nil;
+}
+
+static UIView *viewOfClass(UIView *root, NSString *name) {
+    return findView(root, ^BOOL(UIView *view) { return [NSStringFromClass(view.class) isEqualToString:name]; });
+}
+
+static UIView *viewWithIdentifier(UIView *root, NSString *identifier) {
+    return findView(root, ^BOOL(UIView *view) { return [view.accessibilityIdentifier isEqualToString:identifier]; });
+}
+
+- (void)expect:(BOOL)ok that:(NSString *)what {
+    _checks++;
+    if (!ok) _failures++;
+    NSLog(@"[harness] check: %@ -- %@", what, ok ? @"ok" : @"WRONG");
+}
+
+- (UISlider *)slider {
+    return (UISlider *)viewWithIdentifier(self.window, @"SPTNowPlayingSliderV2");
+}
+
+// Where the thumb's middle is at `value`, on the bar's line or `dy` from it, in the window.
+- (CGPoint)onBarAt:(float)value dy:(CGFloat)dy {
+    UISlider *slider = [self slider];
+    CGRect track = [slider trackRectForBounds:slider.bounds];
+    CGRect thumb = [slider thumbRectForBounds:slider.bounds trackRect:track value:value];
+    return [slider convertPoint:CGPointMake(CGRectGetMidX(thumb), CGRectGetMidY(track) + dy) toView:self.window];
+}
+
+// Once the slider has let go of its own touch, or after two seconds.
+- (void)whenSettled:(dispatch_block_t)block {
+    __block NSInteger polls = 0;
+    __block void (^poll)(void);
+    __weak __block void (^weakPoll)(void);
+    poll = ^{
+        if ([self slider].isTracking && polls++ < 40) {
+            after(0.05, weakPoll);
+            return;
+        }
+        after(0.1, block);
+    };
+    weakPoll = poll;
+    poll();
+}
+
+- (CGPoint)middleOf:(UIView *)view {
+    return [view convertPoint:CGPointMake(CGRectGetMidX(view.bounds), CGRectGetMidY(view.bounds)) toView:self.window];
+}
+
+- (NSString *)lyricsGlyph {
+    SGRGlyphButton *glyph = (SGRGlyphButton *)viewOfClass(self.window, @"SGRGlyphButton");
+    return glyph.glyph.symbol;
+}
+
+// A tap on the bar at `value`, `dy` from its line: the unit hears one drag, the thumb is there at once and
+// stays there while the song plays on from it.
+- (void)tapBarAt:(float)value dy:(CGFloat)dy named:(NSString *)name {
+    SGRHarnessProgressUnit *unit = _progress;
+    NSUInteger began = unit.began, ended = unit.ended, lines = SGRHarnessLineSeeks();
+    UIView *hit = SGRHarnessTap(self.window, [self onBarAt:value dy:dy], ^{
+        float now = [self slider].value;
+        [self expect:unit.began == began + 1 && unit.ended == ended + 1 && fabsf(unit.lastSeek - value) < 0.01
+                that:[NSString stringWithFormat:@"%@: the unit heard one drag to %.3f (began +%lu, ended +%lu, seek %.3f)", name, value,
+                      (unsigned long)(unit.began - began), (unsigned long)(unit.ended - ended), unit.lastSeek]];
+        [self expect:fabsf(now - value) < 0.01 that:[NSString stringWithFormat:@"%@: the thumb is at %.3f at once", name, now]];
+        [self expect:SGRHarnessLineSeeks() == lines that:[NSString stringWithFormat:@"%@: no line seeked", name]];
+        after(0.6, ^{
+            float later = [self slider].value;
+            [self expect:later > value - 0.002 && later < value + 0.03
+                    that:[NSString stringWithFormat:@"%@: no jump back, %.3f 0.6 s later", name, later]];
+        });
+    });
+    NSLog(@"[harness] %@ landed on %@", name, NSStringFromClass(hit.class));
+}
+
+// A tap that must not seek.
+- (void)tapAt:(CGPoint)point named:(NSString *)name {
+    SGRHarnessProgressUnit *unit = _progress;
+    NSUInteger ended = unit.ended, skips = SGRHarnessSkipTaps();
+    __block UIView *hit = nil;
+    hit = SGRHarnessTap(self.window, point, ^{
+        after(0.2, ^{
+            [self expect:unit.ended == ended && SGRHarnessSkipTaps() == skips
+                    that:[NSString stringWithFormat:@"%@ (on %@): no seek", name, NSStringFromClass(hit.class)]];
+        });
+    });
+}
+
+- (void)runTaps {
+    UIWindow *window = self.window;
+    SGRHarnessProgressUnit *unit = _progress;
+    after(1.5, ^{ [self tapBarAt:0.7 dy:0 named:@"1 tap on the bar"]; });
+    after(2.5, ^{ [self tapBarAt:0.3 dy:-15 named:@"2 tap 15pt above the bar"]; });
+    after(3.3, ^{
+        NSUInteger flipped = unit.flipped;
+        [self tapAt:[self middleOf:unit.remaining] named:@"3 tap on the remaining time"];
+        after(0.3, ^{ [self expect:unit.flipped == flipped + 1 that:@"3 the remaining time took its own tap"]; });
+    });
+    after(3.9, ^{
+        CGRect controls = [self->_controlsView convertRect:self->_controlsView.bounds toView:window];
+        [self tapAt:CGPointMake(CGRectGetMidX(controls) - 70, CGRectGetMinY(controls) + 6) named:@"4 tap on the controls row"];
+    });
+    after(4.4, ^{
+        UIView *title = viewWithIdentifier(window, @"now-playing-title-label");
+        [self tapAt:[self middleOf:title] named:@"5 tap on the title"];
+    });
+    // The thumb's own drag, as before: the seeks are the slider's, none a tap's. The iOS 26 slider lets
+    // go only once its thumb has settled, so the checks wait for that.
+    after(5.0, ^{
+        NSUInteger ended = unit.ended, skips = SGRHarnessSkipTaps();
+        float from = [self slider].value;
+        SGRHarnessDrag(window, [self onBarAt:from dy:0], [self onBarAt:0.6 dy:0], 0.5, ^{
+            [self whenSettled:^{
+                [self expect:unit.ended > ended && fabsf(unit.lastSeek - [self slider].value) < 0.02f && SGRHarnessSkipTaps() == skips
+                        that:[NSString stringWithFormat:@"6 the thumb dragged from %.3f: its own seek to %.3f (+%lu), no tap", from,
+                              unit.lastSeek, (unsigned long)(unit.ended - ended)]];
+            }];
+        });
+    });
+    // A tap on the thumb itself is the slider's, as it always was: no tap to seek.
+    after(7.4, ^{
+        NSUInteger skips = SGRHarnessSkipTaps();
+        float at = [self slider].value + 0.005;
+        SGRHarnessTap(window, [self onBarAt:at dy:0], ^{
+            after(0.2, ^{
+                [self expect:SGRHarnessSkipTaps() == skips that:[NSString stringWithFormat:@"7 tap on the thumb at %.3f: left to the slider", at]];
+            });
+        });
+    });
+
+    after(8.8, ^{ SGRPlayerToggleLyrics(); });
+    after(10.0, ^{
+        [self expect:SGRPlayerLyricsOpen() && [[self lyricsGlyph] isEqualToString:@"quote.bubble.fill"]
+                that:[NSString stringWithFormat:@"8 lyrics up, the footer glyph %@", [self lyricsGlyph]]];
+        [self tapBarAt:0.5 dy:0 named:@"9 tap on the bar with the lyrics up"];
+    });
+    after(10.9, ^{
+        UIView *star = viewWithIdentifier(window, @"Components.UI.AddToButton");
+        UIView *hit = [window hitTest:[self middleOf:star] withEvent:nil];
+        [self expect:[hit isDescendantOfView:star] that:@"10 the add button beside the thumbnail still takes its touch"];
+        UIView *lines = viewOfClass(window, @"SGRKaraokeView");
+        CGRect band = [lines convertRect:UIEdgeInsetsInsetRect(lines.bounds, [[lines valueForKey:@"lineInsets"] UIEdgeInsetsValue]) toView:window];
+        NSUInteger seeks = SGRHarnessLineSeeks();
+        SGRHarnessTap(window, CGPointMake(CGRectGetMidX(band), CGRectGetMinY(band) + band.size.height * 0.35), ^{
+            [self expect:SGRHarnessLineSeeks() == seeks + 1 that:@"11 a tap on a line seeks"];
+        });
+    });
+    // The thumbnail held, then let go: the cover comes back and the glyph follows.
+    after(11.8, ^{
+        UIView *thumb = viewOfClass(window, @"SGRPlayerLyricsThumb");
+        NSUInteger ended = unit.ended, lines = SGRHarnessLineSeeks();
+        UIView *hit = SGRHarnessPress(window, [self middleOf:thumb], 0.5, ^{
+            after(0.6, ^{
+                [self expect:!SGRPlayerLyricsOpen() && [[self lyricsGlyph] isEqualToString:@"quote.bubble"]
+                        && unit.ended == ended && SGRHarnessLineSeeks() == lines
+                        that:[NSString stringWithFormat:@"12 the thumbnail tapped: lyrics %@, the footer glyph %@", SGRPlayerLyricsOpen() ? @"UP" : @"away", [self lyricsGlyph]]];
+            });
+        });
+        NSLog(@"[harness] 12 the press landed on %@, the thumbnail says %@ (%@)", NSStringFromClass(hit.class), thumb.accessibilityLabel,
+              thumb.accessibilityTraits & UIAccessibilityTraitButton ? @"a button" : @"NOT A BUTTON");
+    });
+    // Alone, the thumbnail's spot only brings the controls back.
+    after(14.4, ^{ SGRPlayerToggleLyrics(); });
+    after(20.2, ^{
+        UIView *stack = viewWithIdentifier(window, @"npv.bottomStackView");
+        UIView *thumb = viewOfClass(window, @"SGRPlayerLyricsThumb");
+        [self expect:SGRPlayerLyricsOpen() && stack.alpha < 0.01 && thumb.alpha < 0.01
+                that:[NSString stringWithFormat:@"13 the lines alone (stack %.2f, thumbnail %.2f)", stack.alpha, thumb.alpha]];
+        NSUInteger lines = SGRHarnessLineSeeks(), ended = unit.ended;
+        UIView *hit = SGRHarnessTap(window, [self middleOf:thumb], ^{
+            after(0.5, ^{
+                [self expect:SGRPlayerLyricsOpen() && stack.alpha > 0.99 && SGRHarnessLineSeeks() == lines && unit.ended == ended
+                        that:[NSString stringWithFormat:@"14 a tap on the faded thumbnail: lyrics %@, controls %.2f, no seek", SGRPlayerLyricsOpen() ? @"still up" : @"CLOSED", stack.alpha]];
+            });
+        });
+        NSLog(@"[harness] 14 the tap landed on %@", NSStringFromClass(hit.class));
+    });
+    after(21.6, ^{
+        UIView *thumb = viewOfClass(window, @"SGRPlayerLyricsThumb");
+        SGRHarnessTap(window, [self middleOf:thumb], ^{
+            after(0.6, ^{ [self expect:!SGRPlayerLyricsOpen() that:@"15 the thumbnail, back with the controls, puts the cover back"]; });
+        });
+    });
+    after(23, ^{
+        NSLog(@"[harness] tap checks: %lu of %lu right -- %@", (unsigned long)(self->_checks - self->_failures), (unsigned long)self->_checks,
+              self->_failures ? @"FAIL" : @"PASS");
+    });
+}
+
 @end
 
 // Before every %ctor, so the redesign's gate reads on, and every session gets the picture server.
 __attribute__((constructor(101))) static void sgr_harnessDefaults(void) {
-    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"spotifyglass.redesign"];
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    [store setBool:YES forKey:@"spotifyglass.redesign"];
+    for (NSString *key in store.dictionaryRepresentation.allKeys) {
+        if ([key hasPrefix:@"spotifyglass.redesign.player."]) [store removeObjectForKey:key];
+    }
+    const char *background = getenv("HARNESS_BACKGROUND"), *oldBackground = getenv("HARNESS_OLD_BACKGROUND"),
+               *oldMotion = getenv("HARNESS_OLD_MOTION");
+    if (!background && [scenario() isEqualToString:@"animated"]) background = "1";
+    if (background) [store setInteger:atoi(background) forKey:SGRKeyPlayerBackground];
+    if (oldBackground) [store setInteger:atoi(oldBackground) forKey:SGRKeyPlayerBackgroundWas];
+    if (oldMotion) [store setBool:atoi(oldMotion) != 0 forKey:SGRKeyPlayerMotionWas];
     Method original = class_getClassMethod(NSURLSessionConfiguration.class, @selector(defaultSessionConfiguration));
     Method harness = class_getClassMethod(NSURLSessionConfiguration.class, @selector(sgr_harnessDefault));
     method_exchangeImplementations(original, harness);

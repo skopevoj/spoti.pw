@@ -57,6 +57,8 @@ static SGRArtworkField *fieldIn(UIView *page) {
     field = [[SGRArtworkField alloc] initWithFrame:page.bounds];
     field.bleed = kBleed;
     objc_setAssociatedObject(page, &kFieldKey, field, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    __weak UIView *weakPage = page;
+    [field whenColored:^{ SGRRevealMark(weakPage, SGRRevealColor); }];
     SGLog(@"redesign artist: field on the page %.0fx%.0f", page.bounds.size.width, page.bounds.size.height);
     return field;
 }
@@ -68,6 +70,9 @@ static SGRArtworkField *fieldIn(UIView *page) {
     if (![page.accessibilityIdentifier isEqualToString:kPageIdentifier] || page.bounds.size.height < 200) return;
     // The page the repaint hook keeps clear is the one laying out, which is the one on screen.
     sgr_artistRoot = page;
+    // Behind a curtain from the first pass (Kit/SGRReveal.h), which the header claims once it lays out the photo
+    // header (ArtistHeader.x); a page with a header the redesign does not lay out is shown a moment later.
+    SGRRevealHold(page, 0);
     SGRArtworkField *field = fieldIn(page);
     if (field.superview != page) [page insertSubview:field atIndex:0];
     else if (page.subviews.firstObject != field) [page sendSubviewToBack:field];

@@ -1,0 +1,26 @@
+{
+	"Body": {
+		"Type": "Syllable",
+		"SongWriters": ["Writer Three"],
+		"StartTime": 0.5,
+		"EndTime": 2.0,
+		"id": "HarnessTrack0000000004",
+		"source": "apple_music",
+		"Content": [
+			{
+				"Type": "Vocal",
+				"OppositeAligned": false,
+				"Lead": {
+					"StartTime": 0.5,
+					"EndTime": 2.0,
+					"Syllables": [
+						{"Text": "sierra", "StartTime": 0.5, "EndTime": 1.2, "IsPartOfWord": false},
+						{"Text": "tango", "StartTime": 1.2, "EndTime": 2.0, "IsPartOfWord": false}
+					]
+				}
+			}
+		]
+	},
+	"Status": 200,
+	"Type": "object"
+}

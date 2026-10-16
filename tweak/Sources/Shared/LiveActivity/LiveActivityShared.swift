@@ -6,9 +6,9 @@ import Foundation
 
 @available(iOS 16.1, *)
 struct SGLyricsAttributes: ActivityAttributes {
-    // Which of the three the activity shows, SGLiveActivityView's values.
+    // Which of the four the activity shows, SGLiveActivityView's values.
     enum View: Int, Codable, Hashable {
-        case lyrics, queue, panel
+        case lyrics, queue, panel, player
     }
 
     // The control menu's tabs.
@@ -39,6 +39,31 @@ struct SGLyricsAttributes: ActivityAttributes {
         var repeatMode: Int   // 0 off, 1 the playlist or album, 2 the track
         var timerEnd: Date?   // the sleep timer's end, nil when none is set
         var timerEndOfTrack: Bool
+        // The track playing was saved to Liked Songs from the card this session.
+        var liked: Bool
+        // The sung line in the Lyrics page's translation language, "" for none.
+        var translation: String
+        // The cover's colour as 0xRRGGBB, -1 before it is known.
+        var tint: Int
+        // How far into the track: while it plays the bar runs on its own from start to end; paused, it
+        // stands at progress (0...1), and start and end are nil.
+        var progress: Double
+        var trackStart: Date?
+        var trackEnd: Date?
+        // The player view. Optional, so a state from before them still decodes.
+        // The visualizer's bars, a hex digit (0...f) each, lowest band first; "" without them.
+        var bars: String?
+        // The cover's main colours as 0xRRGGBB, darkest first, for the bars' gradient.
+        var barColours: [Int]?
+        // The cover: a file the app writes into an App Group, read when the widget may open that group, and a
+        // small picture carried in the state for when it may not (left out when the state would be too big).
+        var coverGroup: String?
+        var coverKey: String?
+        var coverThumbnail: Data?
+        // The track's length in seconds, for the times by the bar and for a tap on it to seek to.
+        var duration: Double?
+        // The visualizer's Backlight: a glow behind the bars, white behind dark ones and black behind light ones.
+        var backlight: Bool?
     }
 }
 
@@ -66,7 +91,8 @@ struct SGPlayQueuedTrackIntent: LiveActivityIntent {
     }
 }
 
-// A control menu action: tab:N, toggle, previous, next, shuffle, repeat, timer:15|30|60|track|add|cancel.
+// A control menu action: tab:N, toggle, previous, next, shuffle, repeat, like, dislike,
+// timer:15|30|60|track|add|cancel, seek:F (F the share of the track, 0...1).
 @available(iOS 17.0, *)
 struct SGLiveActivityActionIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Control menu action"
@@ -86,3 +112,6 @@ struct SGLiveActivityActionIntent: LiveActivityIntent {
         return .result()
     }
 }
+
+// Where the app keeps the cover for the player view, inside an App Group's container.
+let SGLiveActivityCoverFolder = "Library/SpotifyGlass/LiveActivity"

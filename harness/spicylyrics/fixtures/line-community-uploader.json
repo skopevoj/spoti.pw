@@ -1,0 +1,17 @@
+{
+	"Body": {
+		"Type": "Line",
+		"StartTime": 1.0,
+		"EndTime": 3.0,
+		"id": "HarnessTrack0000000005",
+		"source": "spicy_lyrics",
+		"UploadAttribution": {
+			"Uploader": {"id": "3", "username": "uploader-three", "url": "https://spicylyrics.org/uid/3", "hasProfileBanner": false}
+		},
+		"Content": [
+			{"Type": "Vocal", "Text": "uniform victor", "StartTime": 1.0, "EndTime": 3.0}
+		]
+	},
+	"Status": 200,
+	"Type": "object"
+}

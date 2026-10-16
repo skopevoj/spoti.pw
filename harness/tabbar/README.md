@@ -30,6 +30,14 @@ The layout is the one 9.1.78 makes in a compact width, with the addresses it was
   anchor `MainUIContainer` gives the chrome (0x100ae0178).
 - The message bar is its message plus the safe area it pads the message by, 22 pt here.
 
+`inline` turns on the mini player in the tab bar (`SGRKeyInlinePlayer`): `MiniPlayer.m` is compiled
+too, `stubs.m` stands in a player of three tracks for the state bridge and `SGKaraokePlayer` (a swipe
+on the mini player skips through them), and a tap on the mock now playing bar logs `[harness] Spotify's
+bar was tapped`. Scroll the list down and the bar minimizes, the mini player moving in between the first
+tab and the last; scroll back to the top and it comes back. A tap on a mock tab lights it the way
+Spotify does (`[harness] Spotify's Search tab was tapped`), and `library-last` leaves Create out, so
+Your Library is the trailing circle: `xcrun simctl launch <udid> com.vojta.tabbarharness inline library-last`.
+
 Launch words: `none` no message bar; `shown` one sliding in at 1.5 s; `away` one there from the start,
 sliding away at 1.5 s; `cycle` in at 1.5 s and out at 4.5 s, for a recording. At 2.5 s everything is
 logged in window points, with the gap between the bottom of the now playing card and the top of the

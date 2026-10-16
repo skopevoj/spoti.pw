@@ -4,7 +4,7 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "package-name": "spoti.pw",
+      "package-name": "rokis.pw",
       "include-component-in-tag": false,
       "bump-minor-pre-major": true,
       "changelog-sections": [

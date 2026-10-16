@@ -1,4 +1,5 @@
 #import "SGOrderPage.h"
+#import "SGModPage.h"
 #import "SGPage.h"
 #import "SGPageStyle.h"
 
@@ -16,7 +17,7 @@ SGOrderItem *SGOrderItemMake(NSString *key, NSString *name, NSString *detail) {
 typedef NS_ENUM(NSInteger, SGOrderSection) {
     SGOrderSectionOn = 0,
     SGOrderSectionOff,
-    SGOrderSectionCount,
+    SGOrderSectionExtra,
 };
 
 @interface SGOrderController : SGPage
@@ -24,6 +25,7 @@ typedef NS_ENUM(NSInteger, SGOrderSection) {
 @property (nonatomic, copy) NSArray<NSString *> *(^read)(void);
 @property (nonatomic, copy) void (^write)(NSArray<NSString *> *order);
 @property (nonatomic, copy) NSString *note;
+@property (nonatomic, strong) SGModSection *extra;
 @end
 
 @implementation SGOrderController {
@@ -77,38 +79,79 @@ typedef NS_ENUM(NSInteger, SGOrderSection) {
     SGInsetForBars(self.tableView);
 }
 
+// A row's alert or an item's problem changes under the page, so it is drawn again when it shows and
+// whenever a row says so.
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self.tableView reloadData];
+    for (SGModRow *row in self.extra.rows) {
+        if (!row.refreshOn) continue;
+        [NSNotificationCenter.defaultCenter removeObserver:self name:row.refreshOn object:nil];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(redraw) name:row.refreshOn object:nil];
+    }
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    for (SGModRow *row in self.extra.rows) {
+        if (row.refreshOn) [NSNotificationCenter.defaultCenter removeObserver:self name:row.refreshOn object:nil];
+    }
+}
+
+- (void)redraw {
+    [self.tableView reloadData];
+}
+
 - (NSMutableArray<NSString *> *)keysIn:(NSInteger)section {
     return section == SGOrderSectionOn ? _on : _off;
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)table {
-    return SGOrderSectionCount;
+    return self.extra ? SGOrderSectionExtra + 1 : SGOrderSectionExtra;
 }
 
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
+    if (section == SGOrderSectionExtra) return (NSInteger)self.extra.rows.count;
     return (NSInteger)[self keysIn:section].count;
 }
 
 - (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
     if (section == SGOrderSectionOn) return SGSectionHeader(table, _on.count ? @"Asked in this order" : @"None on");
+    if (section == SGOrderSectionExtra) return self.extra.title ? SGSectionHeader(table, self.extra.title) : nil;
     return _off.count ? SGSectionHeader(table, @"Off") : nil;
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section {
+    if (section == SGOrderSectionExtra) return self.extra.title ? SGSectionHeaderHeight : SGSectionGap;
     return section == SGOrderSectionOn || _off.count ? SGSectionHeaderHeight : CGFLOAT_MIN;
 }
 
+- (UIView *)tableView:(UITableView *)table viewForFooterInSection:(NSInteger)section {
+    return section == SGOrderSectionExtra ? SGSectionFooterFor(table, self.extra) : nil;
+}
+
 - (CGFloat)tableView:(UITableView *)table heightForFooterInSection:(NSInteger)section {
-    return CGFLOAT_MIN;
+    return section == SGOrderSectionExtra ? SGSectionFooterHeightFor(table, self.extra) : CGFLOAT_MIN;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
+    if (path.section == SGOrderSectionExtra) {
+        UITableViewCell *cell = SGDequeueCell(table, @"row");
+        SGFillRowCell(cell, self.extra.rows[(NSUInteger)path.row]);
+        return cell;
+    }
     UITableViewCell *cell = SGDequeueCell(table, @"source");
     SGOrderItem *item = [self itemFor:[self keysIn:path.section][(NSUInteger)path.row]];
     BOOL on = path.section == SGOrderSectionOn;
     // The asked ones are numbered, so the order reads as an order rather than a list.
     NSString *title = on ? [NSString stringWithFormat:@"%ld. %@", (long)path.row + 1, item.name] : item.name;
-    SGFillCell(cell, title, item.detail, on ? nil : SGGrey(), on ? @"checkmark.circle.fill" : @"circle");
+    NSString *problem = item.problem ? item.problem() : nil;
+    SGFillCell(cell, title, problem ?: item.detail, on ? nil : SGGrey(), on ? @"checkmark.circle.fill" : @"circle");
+    if (problem && on) {
+        UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
+        content.secondaryTextProperties.color = SGRed();
+        cell.contentConfiguration = content;
+    }
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     return cell;
 }
@@ -118,7 +161,7 @@ typedef NS_ENUM(NSInteger, SGOrderSection) {
 }
 
 - (BOOL)tableView:(UITableView *)table canEditRowAtIndexPath:(NSIndexPath *)path {
-    return YES;
+    return path.section != SGOrderSectionExtra;
 }
 
 - (UITableViewCellEditingStyle)tableView:(UITableView *)table editingStyleForRowAtIndexPath:(NSIndexPath *)path {
@@ -145,6 +188,12 @@ typedef NS_ENUM(NSInteger, SGOrderSection) {
 
 - (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
     [table deselectRowAtIndexPath:path animated:YES];
+    if (path.section == SGOrderSectionExtra) {
+        SGModRow *row = self.extra.rows[(NSUInteger)path.row];
+        if (row.page) [self.navigationController pushViewController:row.page() animated:YES];
+        if (row.action) row.action();
+        return;
+    }
     NSString *key = [self keysIn:path.section][(NSUInteger)path.row];
     if (path.section == SGOrderSectionOn) {
         [_on removeObject:key];
@@ -165,13 +214,19 @@ typedef NS_ENUM(NSInteger, SGOrderSection) {
 
 @end
 
-UIViewController *SGOrderPage(NSString *title, NSArray<SGOrderItem *> *items, NSArray<NSString *> *(^read)(void),
-                              void (^write)(NSArray<NSString *> *order), NSString *note) {
+UIViewController *SGOrderPageWithSection(NSString *title, NSArray<SGOrderItem *> *items, NSArray<NSString *> *(^read)(void),
+                                         void (^write)(NSArray<NSString *> *order), NSString *note, SGModSection *extra) {
     SGOrderController *page = [SGOrderController new];
     page.title = title;
     page.items = items;
     page.read = read;
     page.write = write;
     page.note = note;
+    page.extra = extra;
     return page;
+}
+
+UIViewController *SGOrderPage(NSString *title, NSArray<SGOrderItem *> *items, NSArray<NSString *> *(^read)(void),
+                              void (^write)(NSArray<NSString *> *order), NSString *note) {
+    return SGOrderPageWithSection(title, items, read, write, note, nil);
 }

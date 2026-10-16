@@ -1,0 +1,69 @@
+{
+	"Body": {
+		"Type": "Syllable",
+		"SongWriters": ["Writer One", "Writer Two"],
+		"StartTime": 1.5,
+		"EndTime": 9.0,
+		"id": "HarnessTrack0000000001",
+		"source": "spicy_lyrics",
+		"HasTransliterations": true,
+		"HasTranslations": true,
+		"UploadAttribution": {
+			"Uploader": {"id": "1", "username": "uploader-one", "url": "https://spicylyrics.org/uid/1", "hasProfileBanner": false},
+			"Maker": {"id": "2", "username": "maker-two", "url": "https://spicylyrics.org/uid/2", "avatar": "https://example.invalid/avatar.webp", "hasProfileBanner": true}
+		},
+		"Content": [
+			{
+				"Type": "Vocal",
+				"OppositeAligned": false,
+				"Lead": {
+					"StartTime": 1.5,
+					"EndTime": 4.25,
+					"TranslatedText": "charlie delta",
+					"HasTransliterations": true,
+					"HasTranslations": true,
+					"Syllables": [
+						{"Text": "al", "StartTime": 1.5, "EndTime": 1.9, "IsPartOfWord": true, "TransliteratedText": "ar"},
+						{"Text": "pha", "StartTime": 1.9, "EndTime": 2.401, "IsPartOfWord": false, "TransliteratedText": "fa"},
+						{"Text": "bravo", "StartTime": 2.401, "EndTime": 4.25, "IsPartOfWord": false, "TransliteratedText": "burabo"}
+					]
+				},
+				"Background": [
+					{
+						"StartTime": 3.0,
+						"EndTime": 3.6,
+						"Syllables": [
+							{"Text": "(echo", "StartTime": 3.0, "EndTime": 3.3, "IsPartOfWord": false},
+							{"Text": "foxtrot)", "StartTime": 3.3, "EndTime": 3.6, "IsPartOfWord": false}
+						]
+					}
+				]
+			},
+			{
+				"Type": "Vocal",
+				"OppositeAligned": true,
+				"Lead": {
+					"StartTime": 5.0,
+					"EndTime": 7.0,
+					"Syllables": [
+						{"Text": "golf", "StartTime": 5.0, "EndTime": 6.0, "IsPartOfWord": false},
+						{"Text": "hotel", "StartTime": 6.0, "EndTime": 7.0, "IsPartOfWord": false}
+					]
+				}
+			},
+			{
+				"Type": "Vocal",
+				"OppositeAligned": false,
+				"Lead": {
+					"StartTime": 6.5,
+					"EndTime": 9.0,
+					"Syllables": [
+						{"Text": "india", "StartTime": 6.5, "EndTime": 9.0, "IsPartOfWord": false}
+					]
+				}
+			}
+		]
+	},
+	"Status": 200,
+	"Type": "object"
+}

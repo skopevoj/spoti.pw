@@ -1,7 +1,10 @@
 // The Live Activity (Mod Settings > Live Activity), on the lock screen and in the Dynamic
-// Island (iOS 17+), under either look: it draws on no Spotify screen of its own. In one of three views: the line being sung with the next one under it, the tracks
-// up next (a tap on one skipping ahead to it), or the control menu, tabs of Controls (previous, play and
-// pause, next, shuffle, repeat), Queue and a sleep Timer of the mod's own that pauses Spotify.
+// Island (iOS 17+), under either look: it draws on no Spotify screen of its own. In one of four views: the line being sung with the next one under it, the tracks
+// up next (a tap on one skipping ahead to it), the player (the cover in a ring of the visualizer's bars, in the
+// cover's colours, previous, play and pause, next and like, and a bar showing how far in, a tap on it seeking
+// there), or the control menu, tabs of Controls (previous, play and
+// pause, next, shuffle, repeat, and like and dislike: Liked Songs through Spotify's Web API with the app's own
+// token, a dislike skipping the track), Queue and a sleep Timer of the mod's own that pauses Spotify.
 //
 //     LiveActivity.x              polls the player, sends the activity a new state when what it shows changes
 //     LiveActivityBridge.swift    ActivityKit, which is Swift only
@@ -24,6 +27,8 @@
 #define SGKeyLiveActivity @"spotifyglass.liveActivity"
 // Which view it shows, the index into the page's list.
 #define SGKeyLiveActivityView @"spotifyglass.liveActivity.view"
+// The sung line's translation under it, where the lyrics have one. On until switched off.
+#define SGKeyLiveActivityTranslation @"spotifyglass.liveActivity.translation"
 // What the keys were called while this was the redesign's alone; LiveActivity.x's %ctor moves them over.
 #define SGKeyLiveActivityWas @"spotifyglass.redesign.liveActivity"
 #define SGKeyLiveActivityViewWas @"spotifyglass.redesign.liveActivity.view"
@@ -32,7 +37,15 @@ typedef NS_ENUM(NSInteger, SGLiveActivityView) {
     SGLiveActivityLyrics = 0,
     SGLiveActivityQueue,
     SGLiveActivityPanel,   // the control menu
+    SGLiveActivityPlayer,  // the cover in a ring of the visualizer's bars, the controls and a bar to seek on
 };
+
+// The player view's bars, on until switched off, and how often they move: an index into 1, 2 (unset) and 4 a
+// second. A Live Activity is a picture iOS draws again each time the app sends it something, so the bars glide
+// from one to the next rather than move with every beat.
+#define SGKeyLiveActivityBars @"spotifyglass.liveActivity.bars"
+#define SGKeyLiveActivityBarsRate @"spotifyglass.liveActivity.bars.rate"
+
 
 // From the switch: starts following the player (and the activity, the app being in front) or ends both.
 void SGSetLiveActivityEnabled(BOOL on);

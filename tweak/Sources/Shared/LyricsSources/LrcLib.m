@@ -15,7 +15,7 @@ static NSString *const kSearch = @"https://lrclib.net/api/search";
 static const NSInteger kLengthSlack = 4;
 
 static NSDictionary<NSString *, NSString *> *headers(void) {
-    return @{@"User-Agent": @"spoti.pw " @SG_VERSION @" (https://github.com/skopevoj/spoti.pw)"};
+    return @{@"User-Agent": @"rokis.pw " @SG_VERSION @" (https://github.com/rodrigoniebla-cyber/rokis.pw)"};
 }
 
 // [00:34.30] Look — the timestamp in minutes, seconds and hundredths, or thousandths where a line
@@ -62,6 +62,10 @@ static NSArray<SGKaraokeLine *> *linesFromLRC(NSString *lrc) {
         [texts addObject:row[@"text"]];
     }
     return SGKaraokeEstimatedLines(starts, texts);
+}
+
+NSArray<SGKaraokeLine *> *SGLyricsLinesFromLRC(NSString *lrc) {
+    return [lrc isKindOfClass:NSString.class] ? linesFromLRC(lrc) : nil;
 }
 
 static SGLyricsResult *resultFrom(NSDictionary *record) {

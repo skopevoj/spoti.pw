@@ -12,6 +12,11 @@
 // Measured on the Mac (harness/pitch): the pitch exact to 0.01% at any rate, the rate exact in frames
 // consumed, about 0.2% of a core, and the sound 4096 frames (93 ms at 44.1 kHz) later than it went in.
 //
+// Made as a varispeed instead (SGTimePitchCreateVarispeed), it is Apple's varispeed unit (AUVarispeed),
+// which plays its input faster or slower the way a record does, the pitch going with the speed: it
+// resamples rather than stretches, so none of the time and pitch unit's smearing is heard. Pull mode
+// only, and its semitones are the rate's (SGTimePitchSetSemitones does nothing to it).
+//
 // Plain C over audio units: SGTimePitchRender and SGTimePitchProcess run on Core Audio's render
 // thread, so they never allocate, lock, log or send a message. The rest is for any other thread.
 // Compiles on the Mac as is.
@@ -29,6 +34,9 @@ typedef OSStatus (*SGTimePitchSource)(void *context, UInt32 frames, AudioBufferL
 // frames. With a source it pulls from it, without one it works in place. NULL when the unit could not be
 // made. Not on the render thread.
 SGTimePitch *SGTimePitchCreate(double sampleRate, UInt32 channels, SGTimePitchSource source, void *context);
+// The varispeed: the same, but pull mode only, so NULL without a source.
+SGTimePitch *SGTimePitchCreateVarispeed(double sampleRate, UInt32 channels, SGTimePitchSource source, void *context);
+bool SGTimePitchIsVarispeed(const SGTimePitch *unit);
 double SGTimePitchSampleRate(const SGTimePitch *unit);
 UInt32 SGTimePitchChannels(const SGTimePitch *unit);
 

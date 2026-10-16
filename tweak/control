@@ -1,7 +1,7 @@
 Package: com.spotipw
-Name: spoti.pw
+Name: rokis.pw
 Architecture: iphoneos-arm
 Description: Liquid Glass for the Spotify iOS app
-Maintainer: spoti.pw
-Author: spoti.pw
+Maintainer: rokis.pw
+Author: rokis.pw
 Section: Tweaks

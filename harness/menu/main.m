@@ -2,14 +2,16 @@
 // so SpeedPitchMenu.x's hook adds Speed and pitch the way it would on the phone.
 //
 //     THEOS=$HOME/theos ./build.sh && xcrun simctl install <udid> build/MenuHarness.app
-//     xcrun simctl launch --console-pty <udid> com.vojta.menuharness [footer] [nospeed] [loading] [stuck] [open]
+//     xcrun simctl launch --console-pty <udid> com.vojta.menuharness [footer] [nospeed] [loading] [stuck] [open] [follow]
 //
 // The plain run opens the menu at 1 s, opens the block at 3 s, moves both sliders at 5 s and closes the
 // block at 7 s. `loading` builds the sheet the way Spotify's is (the ivars of ContextMenuViewController in
 // 9.1.78: a header, a content container holding a ContextMenuTableView whose height follows its
 // contentSize by KVO, a loading spinner) and hands it its rows only 4 s after it is up, as Spotify does
 // once its item factories have answered; `stuck` never hands them over. `open` opens the block on a first
-// menu, closes it, and brings up a second one with the block open, as it stays for the session. Every frame of the first second the block is on screen
+// menu, closes it, and brings up a second one with the block open, as it stays for the session. `follow`
+// opens the block, sets 1.25x and turns pitch following speed on and off again, reporting the block and
+// the sheet each time and drawing the screen into the app's tmp. Every frame of the first second the block is on screen
 // is checked for a colour of the system tint on anything it draws, and what the sheet shows is reported.
 #import <UIKit/UIKit.h>
 
@@ -17,7 +19,7 @@
 
 static double sg_speed = 1;
 static float sg_pitch;
-static BOOL sg_speedAllowed = YES;
+static BOOL sg_speedAllowed = YES, sg_follows;
 void SGPlayFeedback(NSInteger feedback) { NSLog(@"[harness] feedback %ld", (long)feedback); }
 void SGPrepareFeedback(NSInteger feedback) {}
 double SGPlayerSpeed(void) { return sg_speed; }
@@ -26,6 +28,12 @@ void SGSetPlayerSpeed(double speed) { sg_speed = speed; NSLog(@"[harness] speed 
 float SGPlayerPitch(void) { return sg_pitch; }
 void SGSetPlayerPitch(float semitones) { sg_pitch = semitones; NSLog(@"[harness] pitch %.0f", semitones); }
 BOOL SGPlayerPitchAvailable(void) { return YES; }
+BOOL SGPlayerPitchFollowsSpeed(void) { return sg_follows && sg_speedAllowed; }
+void SGSetPlayerPitchFollowsSpeed(BOOL follows) {
+    sg_follows = follows;
+    if (follows) sg_pitch = 0;
+    NSLog(@"[harness] pitch follows speed %d", follows);
+}
 
 static BOOL argument(NSString *name) {
     return [NSProcessInfo.processInfo.arguments containsObject:name];
@@ -290,6 +298,42 @@ static void tapRow(UIViewController *menu) {
     [row sendActionsForControlEvents:UIControlEventTouchUpInside];
 }
 
+static UISwitch *findSwitch(UIView *root) {
+    if ([root isKindOfClass:UISwitch.class]) return (UISwitch *)root;
+    for (UIView *child in root.subviews) {
+        UISwitch *found = findSwitch(child);
+        if (found) return found;
+    }
+    return nil;
+}
+
+// The block's parts that show: what each is and where, in the block.
+static void describeBlock(UIView *block, NSString *when) {
+    NSMutableArray<NSString *> *shown = [NSMutableArray array];
+    UIView *panel = block.subviews.count > 1 ? block.subviews[1] : nil;
+    for (UIView *view in panel.subviews) {
+        if (view.alpha < 0.01) continue;
+        CGRect frame = [view convertRect:view.bounds toView:block];
+        if (CGRectGetMinY(frame) >= block.bounds.size.height) continue;
+        NSString *what = [view isKindOfClass:UILabel.class] ? [NSString stringWithFormat:@"\"%@\"", ((UILabel *)view).text]
+                       : [view isKindOfClass:UIButton.class] ? [NSString stringWithFormat:@"[%@]", [(UIButton *)view titleForState:UIControlStateNormal]]
+                       : [view isKindOfClass:UISwitch.class] ? (((UISwitch *)view).on ? @"switch on" : @"switch off")
+                       : [view isKindOfClass:UISlider.class] ? [NSString stringWithFormat:@"slider %.2f", ((UISlider *)view).value] : NSStringFromClass(view.class);
+        [shown addObject:[NSString stringWithFormat:@"%@ at y %.0f", what, CGRectGetMinY(frame)]];
+    }
+    NSLog(@"[harness] %@: block %.0f tall showing %@", when, block.bounds.size.height, [shown componentsJoinedByString:@", "]);
+}
+
+static void drawScreen(UIWindow *window, NSString *name) {
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithBounds:window.bounds];
+    UIImage *image = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [window drawViewHierarchyInRect:window.bounds afterScreenUpdates:YES];
+    }];
+    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:[name stringByAppendingString:@".png"]];
+    [UIImagePNGRepresentation(image) writeToFile:path atomically:YES];
+    NSLog(@"[harness] drew %@", path);
+}
+
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     sg_speedAllowed = !argument(@"nospeed");
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
@@ -310,6 +354,49 @@ static void tapRow(UIViewController *menu) {
         [[CADisplayLink displayLinkWithTarget:watch selector:@selector(tick:)] addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
         [player presentViewController:navigation animated:YES completion:nil];
     };
+    if (argument(@"follow")) {
+        after(1, present);
+        after(3, ^{ tapRow(menu); });
+        after(4.5, ^{
+            describeBlock(findBlock(menu.view), @"opened");
+            report(menu, @"opened");
+            NSArray<UISlider *> *found = sliders(findBlock(menu.view));
+            found[0].value = 1.25;
+            [found[0] sendActionsForControlEvents:UIControlEventValueChanged];
+            [found[0] sendActionsForControlEvents:UIControlEventTouchUpInside];
+            found[1].value = 2;
+            [found[1] sendActionsForControlEvents:UIControlEventValueChanged];
+            [found[1] sendActionsForControlEvents:UIControlEventTouchUpInside];
+        });
+        after(5.5, ^{
+            describeBlock(findBlock(menu.view), @"1.25x, +2 st");
+            drawScreen(self.window, @"follow-off");
+            UISwitch *toggle = findSwitch(findBlock(menu.view));
+            toggle.on = YES;
+            [toggle sendActionsForControlEvents:UIControlEventValueChanged];
+        });
+        after(7, ^{
+            describeBlock(findBlock(menu.view), @"pitch follows");
+            report(menu, @"pitch follows");
+            drawScreen(self.window, @"follow-on");
+            tapRow(menu);
+        });
+        after(8.5, ^{
+            report(menu, @"closed while following");
+            drawScreen(self.window, @"follow-closed");
+            tapRow(menu);
+        });
+        after(10, ^{
+            UISwitch *toggle = findSwitch(findBlock(menu.view));
+            toggle.on = NO;
+            [toggle sendActionsForControlEvents:UIControlEventValueChanged];
+        });
+        after(11.5, ^{
+            describeBlock(findBlock(menu.view), @"no longer following");
+            report(menu, @"no longer following");
+        });
+        return;
+    }
     if (argument(@"open")) {
         // The block keeps whether it was open for the session: open it on a first menu, close that menu,
         // and watch a second one come up with the block already open.

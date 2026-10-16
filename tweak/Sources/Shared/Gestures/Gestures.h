@@ -6,6 +6,9 @@
 #define SGKeyGestureSplit @"spotifyglass.gestures.split"
 #define SGKeyGestureStep @"spotifyglass.gestures.step"
 #define SGKeyGestureZones @"spotifyglass.gestures.zones"
+// Holding the left or right third of the cover plays at twice the speed until the finger lifts, the pitch
+// following or not as Speed and pitch has it. Off until switched on; apart from the double tap's switch.
+#define SGKeyGestureHold @"spotifyglass.gestures.hold"
 
 typedef NS_ENUM(NSInteger, SGGestureAction) {
     SGGestureNothing = 0,

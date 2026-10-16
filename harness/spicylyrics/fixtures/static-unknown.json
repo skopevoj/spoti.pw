@@ -1,0 +1,14 @@
+{
+	"Body": {
+		"Type": "Static",
+		"id": "HarnessTrack0000000003",
+		"source": "unknown",
+		"Lines": [
+			{"Text": "papa"},
+			{"Text": ""},
+			{"Text": "quebec", "TranslatedText": "romeo"}
+		]
+	},
+	"Status": 200,
+	"Type": "object"
+}

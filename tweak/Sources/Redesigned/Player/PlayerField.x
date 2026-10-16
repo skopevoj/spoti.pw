@@ -8,8 +8,8 @@
 // The field goes on top of the plane's own subviews, so Spotify's gradients are covered rather than
 // fought over, and nothing depends on a repaint hook.
 //
-// With Moving background on (SGRKeyPlayerMotion, the default) the field is the Kit's moving field of the
-// artwork's colours (SGRFlow.h) rather than the still blurred artwork; a paused song holds it still.
+// The field is the artwork warped (SGRWarp.h), Fluid artwork, and a paused song holds it still. With
+// Animated artwork picked, the clip's view (PlayerAnimated.x) is kept right over it.
 //
 // The picture comes from the Kit's now playing artwork, keyed on the picture the playing track names
 // (SGRBridges.h, issue #58): the Kit's own fetch of it, the now playing bar's 40pt cover, published by
@@ -53,8 +53,8 @@ static SGRArtworkField *fieldIn(UIView *plane) {
     SGRArtworkField *field = objc_getAssociatedObject(plane, &kFieldKey);
     if (field) return field;
     field = [[SGRArtworkField alloc] initWithFrame:plane.bounds];
-    field.showsBackdrop = YES;
-    field.flows = SGEnabled(SGRKeyPlayerMotion);
+    field.warpLook = SGRPlayerFluidLook();
+    field.motion = SGRFieldMotionWarp;
     // A paused song holds the colours still, the way it rests the cover (PlayerArtwork.x).
     field.motionHeld = SGPlayerState().isPaused;
     field.bleed = kBleed;
@@ -64,8 +64,19 @@ static SGRArtworkField *fieldIn(UIView *plane) {
     // Made while the player is about to open: whatever is read lands in the first frames of the
     // animation, where a crossfade would only add work.
     showArtwork(field, NO);
-    SGLog(@"redesign player: field in the background plane %.0fx%.0f, artwork %@", plane.bounds.size.width, plane.bounds.size.height, SGRNowPlayingArtwork(NULL, NULL) ? @"ready" : @"not read yet");
+    SGLog(@"redesign player: field in the background plane %.0fx%.0f, motion %ld, artwork %@", plane.bounds.size.width, plane.bounds.size.height,
+          (long)field.motion, SGRNowPlayingArtwork(NULL, NULL) ? @"ready" : @"not read yet");
     return field;
+}
+
+// The field, and the clip's view over it, on top of the plane's own subviews in that order.
+static void keepOnTop(UIView *plane, NSArray<UIView *> *views) {
+    NSArray<UIView *> *subviews = plane.subviews;
+    if (subviews.count >= views.count && [[subviews subarrayWithRange:NSMakeRange(subviews.count - views.count, views.count)] isEqualToArray:views]) return;
+    for (UIView *view in views) {
+        if (view.superview != plane) [plane addSubview:view];
+        else [plane bringSubviewToFront:view];
+    }
 }
 
 %hook _TtC21NowPlaying_ScrollImpl27NPVBackgroundViewController
@@ -75,9 +86,13 @@ static SGRArtworkField *fieldIn(UIView *plane) {
     if (!plane || plane.bounds.size.height < 200) return;
     SGRArtworkField *field = fieldIn(plane);
     sg_field = field;
-    if (field.superview != plane) [plane addSubview:field];
-    else if (plane.subviews.lastObject != field) [plane bringSubviewToFront:field];
+    UIView *clip = SGRPlayerAnimatedViewIn(plane, field);
+    keepOnTop(plane, clip ? @[field, clip] : @[field]);
     if (!CGRectEqualToRect(field.frame, plane.bounds)) field.frame = plane.bounds;
+    // The screen the plane starts with; the pull above it shows the field.
+    CGFloat height = plane.window.bounds.size.height ?: UIScreen.mainScreen.bounds.size.height;
+    CGRect screen = CGRectMake(0, 0, plane.bounds.size.width, height);
+    if (clip && !CGRectEqualToRect(clip.frame, screen)) clip.frame = screen;
 }
 
 - (void)backgroundViewModel:(id)model didChangeColor:(id)color playerState:(id)state {
@@ -185,6 +200,11 @@ static SGRPlayerCoverWatcher *sg_coverWatcher;
     [NSNotificationCenter.defaultCenter addObserverForName:SGRNowPlayingArtworkDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
         showArtwork(sg_field, YES);
     }];
+    [NSNotificationCenter.defaultCenter addObserverForName:SGRPlayerFluidLookDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+        sg_field.warpLook = SGRPlayerFluidLook();
+    }];
+    // The shaders compile off the main thread once the launch has settled, so the first open draws at once.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ SGRWarpPrepare(); });
     SGRequireClasses(@[
         @"_TtC21NowPlaying_ScrollImpl27NPVBackgroundViewController",
         @"_TtC35NowPlaying_ContentLayerPlatformImpl24AccessibleCollectionView",

@@ -1,5 +1,5 @@
 // What the update check tells spoti.pw about this install, so installs can be counted: versions,
-// device, look, and which big switches are on. Nothing of the account or of what is played.
+// device, look, how the app is signed, and which big switches are on. Nothing of the account or of what is played.
 #import <dlfcn.h>
 #import <sys/utsname.h>
 #import "Core/SGCore.h"
@@ -82,6 +82,7 @@ NSData *SGUsageBody(void) {
     body[@"device"] = device();
     body[@"ui"] = SGRedesignedUI() ? @"redesigned" : @"native";
     body[@"kind"] = installKind();
+    body[@"cert"] = SGCertificateKind();
     body[@"lang"] = NSLocale.currentLocale.languageCode;
     body[@"region"] = NSLocale.currentLocale.countryCode;
     body[@"features"] = @{

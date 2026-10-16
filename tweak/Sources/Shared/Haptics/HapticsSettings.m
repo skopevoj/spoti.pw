@@ -68,8 +68,20 @@ NSArray<SGModSection *> *SGVibrationsSections(void) {
     follows.chosen = ^(NSInteger index) { SGMusicHapticsSettingsChanged(); };
     follows.visible = musicOn;
 
-    return @[
+    NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObjects:
         SGSection(@"Vibrations", @[SGWithSymbol(controls, @"hand.tap"), controlStrength]),
-        SGSection(nil, @[SGWithSymbol(music, @"waveform"), musicStrength, follows]),
-    ];
+        SGSection(nil, @[SGWithSymbol(music, @"waveform"), musicStrength, follows]), nil];
+    if (@available(iOS 18.0, *)) {
+        SGModRow *system = SGSwitchRow(@"iOS Music Haptics", @"In the background and on the lock screen", SGKeySystemMusicHaptics);
+        system.info = @"With Music Haptics on in Settings > Accessibility, iOS plays its own haptics for the songs Apple has them for, "
+                       "in the background and on the lock screen too. Spotify takes part, and for those songs the mod's own Music Haptics steps "
+                       "aside so they never play twice. Applies after you restart Spotify.";
+        SGModRow *status = SGStatRow(@"Now", ^NSString *{ return SGSystemMusicHapticsStatus(); });
+        status.visible = ^BOOL { return SGEnabled(SGKeySystemMusicHaptics); };
+        [sections addObject:SGNotedSection(nil, @[SGWithSymbol(system, @"accessibility"), status],
+            @"iOS lets no app play haptics of its own while it is in the background or the phone is locked, so the mod's Music Haptics "
+             "above stops when you leave Spotify. Out of the app only iOS's own Music Haptics can play, for songs Apple has made haptics for: "
+             "turn on Settings > Accessibility > Music Haptics. Now says what it is doing for the song playing.")];
+    }
+    return sections;
 }

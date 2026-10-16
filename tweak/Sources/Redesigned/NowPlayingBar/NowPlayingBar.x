@@ -13,14 +13,24 @@
 //   progress line 370x2 at the bottom. The glass pane goes on the container's view.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRRepaint.h"
+#import "Redesigned/Navbar/Navbar.h"
 #import "NowPlayingBar.h"
 
 static const CGFloat kCardRadius = 24;
 static char kGlassKey;
 static __weak UIVisualEffectView *sg_cardGlass;
 static __weak UIView *sg_cardArtwork;
+static __weak UIView *sg_barContainer;
+
+BOOL SGRInlinePlayer(void) {
+    static BOOL on;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ on = SGRedesignedUI() && SGHidden(SGRKeyInlinePlayer); });
+    return on;
+}
 
 CGRect SGRNowPlayingCardFrameIn(UIView *host, CGFloat *radius) {
+    if (SGRInlinePlayer()) return SGRMiniPlayerFrameIn(host, radius);
     UIVisualEffectView *glass = sg_cardGlass;
     if (!glass.superview || !glass.window || !host) return CGRectNull;
     if (radius) *radius = MIN(kCardRadius, glass.bounds.size.height / 2);
@@ -28,9 +38,61 @@ CGRect SGRNowPlayingCardFrameIn(UIView *host, CGFloat *radius) {
 }
 
 CGRect SGRNowPlayingArtworkFrameIn(UIView *host) {
+    if (SGRInlinePlayer()) return SGRMiniPlayerArtworkFrameIn(host);
     UIView *artwork = sg_cardArtwork;
     if (!artwork.window || !host) return CGRectNull;
     return [host convertRect:artwork.bounds fromView:artwork];
+}
+
+// The image view inside the artwork restyleCardContent found, or else the bar's first square picture.
+UIImageView *SGRNowPlayingArtworkView(void) {
+    __block UIImageView *found = nil;
+    void (^look)(UIView *) = ^(UIView *root) {
+        if (!root) return;
+        SGForEachView(root, ^(UIView *v) {
+            if (found || ![v isKindOfClass:UIImageView.class]) return;
+            CGSize size = v.bounds.size;
+            if (size.width >= 30 && size.width <= 64 && fabs(size.width - size.height) < 1) found = (UIImageView *)v;
+        });
+    };
+    UIView *artwork = sg_cardArtwork;
+    if ([artwork isKindOfClass:UIImageView.class]) return (UIImageView *)artwork;
+    look(artwork);
+    if (!found) look(sgr_nowPlayingRoot);
+    return found;
+}
+
+UIImage *SGRNowPlayingArtworkImage(void) {
+    return SGRNowPlayingArtworkView().image;
+}
+
+// The recognizer nearest the top of the bar opens the player; deeper ones belong to its buttons and the
+// device line. Breadth first from the bar's container, then up its superviews to Spotify's page.
+BOOL SGROpenPlayerFromBar(void) {
+    UIView *container = sg_barContainer;
+    if (!container) return NO;
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:container];
+    while (queue.count) {
+        UIView *view = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        if (SGRFireTapRecognizers(view)) {
+            SGLog(@"mini player: tap passed to %@ on Spotify's bar", NSStringFromClass(view.class));
+            return YES;
+        }
+        [queue addObjectsFromArray:view.subviews];
+    }
+    for (UIView *view = container.superview; view && ![view isKindOfClass:UIWindow.class]; view = view.superview) {
+        if (SGRFireTapRecognizers(view)) {
+            SGLog(@"mini player: tap passed to %@ above Spotify's bar", NSStringFromClass(view.class));
+            return YES;
+        }
+    }
+    NSMutableString *out = [NSMutableString stringWithString:@"mini player: no tap recognizer on Spotify's bar"];
+    SGForEachView(container, ^(UIView *v) {
+        for (UIGestureRecognizer *r in v.gestureRecognizers) [out appendFormat:@"\n  %@ on %@", r, NSStringFromClass(v.class)];
+    });
+    SGLogLong(@"mini player", out);
+    return NO;
 }
 
 static UIView *detectColoredCard(UIView *bar) {
@@ -95,6 +157,21 @@ static void styleNowPlayingBar(UIViewController *container) {
     UIViewController *barVC = container.childViewControllers.firstObject;
     UIView *bar = barVC.viewIfLoaded ?: container.view;
     sgr_nowPlayingRoot = bar;
+    sg_barContainer = container.view;
+    // The mini player in the tab bar takes the bar's place: Spotify's bar stays, laid out and loading its
+    // artwork for the mini player, but nobody sees or touches it.
+    // The bar's page (NowPlaying_BarPageImpl's TouchPassthroughView) stands over the tab bar container
+    // where the expanded mini player is, and took its touches (harness/tabbar), so it takes none either;
+    // the bar is all it holds.
+    if (SGRInlinePlayer()) {
+        if (container.view.alpha != 0) container.view.alpha = 0;
+        if (container.view.userInteractionEnabled) container.view.userInteractionEnabled = NO;
+        for (UIView *v = container.view.superview; v && ![v isKindOfClass:UIWindow.class]; v = v.superview) {
+            if (![NSStringFromClass(v.class) containsString:@"TouchPassthroughView"]) continue;
+            if (v.userInteractionEnabled) v.userInteractionEnabled = NO;
+            break;
+        }
+    }
 
     UIView *card = sgr_nowPlayingCard;
     if (!card || !SGIsInside(card, bar)) card = sgr_nowPlayingCard = detectColoredCard(bar);

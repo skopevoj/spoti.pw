@@ -7,6 +7,11 @@
 #import "Core/SGCore.h"
 #import "Gestures.h"
 #import "Headers/SPTNowPlayingPlaybackController.h"
+#import "Shared/Player/SpeedPitch.h"
+#import "Shared/Haptics/Haptics.h"
+
+static const double kHoldSpeed = 2;
+static const CFTimeInterval kHoldAfter = 0.35;
 
 static __weak SPTNowPlayingPlaybackControllerImplementation *sg_player;
 static void (^sg_observer)(SGGestureAction action);
@@ -55,7 +60,30 @@ static void perform(SGGestureAction action) {
 @interface SGGestureTarget : NSObject
 @end
 
-@implementation SGGestureTarget
+@implementation SGGestureTarget {
+    double _speedBefore;
+    BOOL _holding;
+}
+
+// The speed given back as the finger lifts is the one it was before, not 1×.
+- (void)held:(UILongPressGestureRecognizer *)press {
+    if (press.state == UIGestureRecognizerStateBegan) {
+        if (!SGFlag(SGKeyGestureHold, NO) || !SGPlayerSpeedAllowed()) return;
+        UIView *host = press.view;
+        CGRect visible = host.bounds;
+        CGFloat x = [press locationInView:host].x - visible.origin.x;
+        if (x > visible.size.width / 3 && x < visible.size.width * 2 / 3) return;   // the middle stays Spotify's
+        _speedBefore = SGPlayerSpeed();
+        _holding = YES;
+        SGSetPlayerSpeed(kHoldSpeed);
+        SGPlayFeedback(SGFeedbackSkip);
+    } else if (_holding && (press.state == UIGestureRecognizerStateEnded || press.state == UIGestureRecognizerStateCancelled
+                            || press.state == UIGestureRecognizerStateFailed)) {
+        _holding = NO;
+        SGSetPlayerSpeed(_speedBefore > 0 ? _speedBefore : 1);
+        SGPlayFeedback(SGFeedbackRelease);
+    }
+}
 
 - (void)doubleTapped:(UITapGestureRecognizer *)tap {
     // The recognizer outlives the switch: it stays on the player once attached, so the switch is
@@ -95,7 +123,7 @@ static void yieldSingleTaps(UIView *host, UITapGestureRecognizer *tap) {
     }
 }
 
-static char kTapKey, kSeenKey;
+static char kTapKey, kSeenKey, kHoldKey;
 
 // Spotify adds its own recognizers as the player's controllers load, which is not ordered against
 // this hook: the count of what stands above the artwork is watched so a later one still yields.
@@ -106,6 +134,13 @@ static NSUInteger tapsAbove(UIView *host) {
 }
 
 void SGGestureAttach(UIView *host) {
+    if (host && SGFlag(SGKeyGestureHold, NO) && !objc_getAssociatedObject(host, &kHoldKey)) {
+        UILongPressGestureRecognizer *hold = [[UILongPressGestureRecognizer alloc] initWithTarget:target() action:@selector(held:)];
+        hold.minimumPressDuration = kHoldAfter;
+        hold.cancelsTouchesInView = NO;
+        [host addGestureRecognizer:hold];
+        objc_setAssociatedObject(host, &kHoldKey, hold, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
     if (!host || !SGFlag(SGKeyGestures, NO)) return;
     UITapGestureRecognizer *tap = objc_getAssociatedObject(host, &kTapKey);
     if (!tap) {

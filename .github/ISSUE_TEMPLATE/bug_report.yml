@@ -13,7 +13,7 @@ body:
     attributes:
       label: Before you file
       options:
-        - label: I searched the [open and closed issues](https://github.com/skopevoj/spoti.pw/issues?q=is%3Aissue) and this isn't reported yet.
+        - label: I searched the [open and closed issues](https://github.com/rodrigoniebla-cyber/rokis.pw/issues?q=is%3Aissue) and this isn't reported yet.
           required: true
         - label: I'm on the newest release (Mod Settings → Mod → Updates).
           required: true

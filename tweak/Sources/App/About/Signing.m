@@ -12,7 +12,7 @@
 #import "App/Onboarding/Onboarding.h"
 #import <dlfcn.h>
 
-NSString *const SGSigningHelpURL = @"https://github.com/skopevoj/spoti.pw#signing-it-yourself";
+NSString *const SGSigningHelpURL = @"https://github.com/rodrigoniebla-cyber/rokis.pw#signing-it-yourself";
 
 static NSString *const kWarned = @"spotifyglass.signing.warned";
 static BOOL sg_fixPending;

@@ -7,6 +7,8 @@ import os
 @objc(SGLiveActivityBridge)
 public final class SGLiveActivityBridge: NSObject {
     private static let log = Logger(subsystem: "spotifyglass", category: "live activity")
+    // ActivityKit's limit on a state is 4 KB; this leaves room for what it adds.
+    private static let maxStateBytes = 3600
 
     private static var current: Activity<SGLyricsAttributes>? {
         Activity<SGLyricsAttributes>.activities.first { $0.activityState == .active || $0.activityState == .stale }
@@ -67,15 +69,27 @@ public final class SGLiveActivityBridge: NSObject {
     @objc public static func show(view: Int, paused: Bool, line: String, nextLine: String,
                                   titles: [String], artists: [String], uris: [String],
                                   tab: Int, title: String, artist: String, shuffle: Bool, repeatMode: Int,
-                                  timerEnd: Date?, timerEndOfTrack: Bool) {
+                                  timerEnd: Date?, timerEndOfTrack: Bool, liked: Bool,
+                                  translation: String, tint: Int, progress: Double, trackStart: Date?, trackEnd: Date?,
+                                  bars: String, barColours: [Int], coverGroup: String, coverKey: String,
+                                  coverThumbnail: Data?, duration: Double, backlight: Bool) {
         let tracks = titles.indices.map {
             SGLyricsAttributes.Track(title: titles[$0], artist: artists[$0], uri: uris[$0])
         }
-        let state = SGLyricsAttributes.ContentState(
+        var state = SGLyricsAttributes.ContentState(
             view: SGLyricsAttributes.View(rawValue: view) ?? .lyrics, paused: paused,
             line: line, nextLine: nextLine, tracks: tracks,
             tab: SGLyricsAttributes.Tab(rawValue: tab) ?? .controls, title: title, artist: artist,
-            shuffle: shuffle, repeatMode: repeatMode, timerEnd: timerEnd, timerEndOfTrack: timerEndOfTrack)
+            shuffle: shuffle, repeatMode: repeatMode, timerEnd: timerEnd, timerEndOfTrack: timerEndOfTrack, liked: liked,
+            translation: translation, tint: tint, progress: progress, trackStart: trackStart, trackEnd: trackEnd,
+            bars: bars.isEmpty ? nil : bars, barColours: barColours.isEmpty ? nil : barColours,
+            coverGroup: coverGroup.isEmpty ? nil : coverGroup, coverKey: coverKey.isEmpty ? nil : coverKey,
+            coverThumbnail: coverThumbnail, duration: duration > 0 ? duration : nil, backlight: backlight ? true : nil)
+        // ActivityKit refuses a state over 4 KB: the cover carried in it goes first, the file in the App Group
+        // being the cover the widget reads when it can.
+        if state.coverThumbnail != nil, let encoded = try? JSONEncoder().encode(state), encoded.count > maxStateBytes {
+            state.coverThumbnail = nil
+        }
         let content = ActivityContent(state: state, staleDate: nil)
         if let activity = current {
             queue(.update(activity.id, content))

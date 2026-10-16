@@ -1,9 +1,9 @@
 // What a redesigned page takes from its artwork, worked out off the main thread in one pass: the
-// colour along the artwork's bottom edge, the field colour made from it, and the blurred bitmaps the
-// field (SGRField.h) draws instead of a live blur.
+// colour along the artwork's bottom edge, the field colour made from its main colour, and a blurred
+// bitmap to draw instead of a live blur.
 //
-// The field colour is the edge colour with its saturation held to 0.55 and its relative luminance to
-// 0.07 (0.04 with Increase Contrast). On anything that dark white text is past 8:1 and SGRSecondary
+// The field colour keeps its hue, with its OKLab lightness held to 0.34 (0.30 with Increase Contrast)
+// and its chroma lifted by 1.3 up to 0.14. On anything that dark white text is past 11:1 and SGRSecondary
 // (white 65%) past 4.5:1, WCAG AA, whatever the hue.
 //
 // Threading: +paletteForImage: may be called from the main thread only and calls back on it. The work
@@ -11,28 +11,15 @@
 #import <UIKit/UIKit.h>
 
 typedef struct {
-    // The area a backdrop bitmap covers, in points; CGSizeZero when none is wanted. The bitmap is the
-    // artwork filling that area, blurred, dimmed from 0.25 black at the top to 0.45 (0.55 with
-    // AMOLED) at 55% of the height, and transparent from 55% down to the bottom, so the field colour
-    // under it shows through with no edge.
-    CGSize backdropSize;
     // A blurred copy at the artwork's own aspect, transparent down to 55% of its height and opaque
     // from 85%, to lay over the sharp picture with the same aspect fill.
     BOOL dissolve;
-    BOOL amoled;
-    // The colours of a moving field (SGRFlow.h): the artwork's main colour in each quarter and overall.
-    BOOL flow;
 } SGRPaletteRequest;
 
 @interface SGRPalette : NSObject
 @property (nonatomic, readonly) UIColor *edgeColor;
 @property (nonatomic, readonly) UIColor *fieldColor;
-@property (nonatomic, readonly) UIImage *backdrop;   // nil unless asked for, at most 160px wide
 @property (nonatomic, readonly) UIImage *dissolve;   // nil unless asked for, 96px wide
-// nil unless asked for: top left, top right, bottom left, bottom right, then the whole artwork's, each
-// the dominant colour there, its saturation lifted a little and its luminance held between
-// kFlowLuminanceMin and kFlowLuminanceMax, so white text keeps better than 5.5:1 on any of them.
-@property (nonatomic, readonly) NSArray<UIColor *> *flowColors;
 // nil to the completion when the image has no bitmap to read (a symbol, a CIImage).
 + (void)paletteForImage:(UIImage *)image request:(SGRPaletteRequest)request completion:(void (^)(SGRPalette *palette))completion;
 

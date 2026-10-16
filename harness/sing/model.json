@@ -1,0 +1,50 @@
+{
+  "repository": "mlboydaisuke/MelBandRoformer-Vocal-CoreAI",
+  "revision": "06f257a0d1d2ee4938595f872a23e9fc4c3fc97d",
+  "license": "MIT",
+  "conversionRevision": "5029e6df8100650fe175d3e276fffb0177754ca1",
+  "checkpointRevision": "ac9b0614ab3cd7f77219e18ba494dfd93956c348",
+  "referenceRevision": "25f44ffb55ee3c301281bba21b2d6d311cb69ae2",
+  "checkpointSHA256": "87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e",
+  "goldens": [
+    {
+      "rfilename": "golden_raw.f32",
+      "size": 2822400,
+      "sha256": "781ce8790bedf51d62b8bb80f06dce5cc1967d9c9aab3e0d5d88ddd207ad75c6"
+    },
+    {
+      "rfilename": "golden_vocals.f32",
+      "size": 2822400,
+      "sha256": "d72584f5795924b29859b05155775dd920914026f6786bfdb66121689bb609f8"
+    }
+  ],
+  "export": {
+    "precision": "MixedFloat16Float32",
+    "float32Operations": [
+      "reduce_l2_norm",
+      "real_div",
+      "maximum",
+      "scaled_dot_product_attention",
+      "softmax",
+      "matmul",
+      "tile"
+    ],
+    "coremltoolsVersion": "9.1.dev1",
+    "torchVersion": "2.9.0",
+    "windowFrames": 88200,
+    "overlap": 0.25,
+    "deviceValidated": false,
+    "payloadHashes": {
+      "model.mil": "b658d3105c88890bfbef55fdc3c7cc3f89d2cdf8981a7a436e84b3c632cd66b0",
+      "weights/weight.bin": "970a99fb4b15724bf76d2918ceb177df592c69265d3e2fabaab6e5ba72738e62"
+    },
+    "referencePayloadHashes": {
+      "model.mil": "79b83bfe1d161e466562dbd49bb6e1c07806dd4a565d52935b0555dade5f6cde",
+      "weights/weight.bin": "e20adb85d15d0a9176657eae540078f750047abcdf34e7aa6f1a1ded8b1891f8"
+    },
+    "unpinnedPayloadHashes": {
+      "model.mil": "966560ed5125174a98f19b94f5de04450a7112ade0e731f2236c202c0280a623",
+      "weights/weight.bin": "970a99fb4b15724bf76d2918ceb177df592c69265d3e2fabaab6e5ba72738e62"
+    }
+  }
+}

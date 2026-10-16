@@ -4,8 +4,8 @@
 #
 #   scripts/build-extension.sh <host Info.plist> <out dir>
 #
-# Writes <out dir>/SpotifyGlassLiveActivity.appex and <out dir>/app/Metadata.appintents, whose actions
-# pipeline.sh merges into Spotify's own. Needs Xcode (xcode-select or DEVELOPER_DIR): the metadata
+# Writes <out dir>/SpotifyGlassLiveActivity.appex and <out dir>/app/Metadata.appintents, whose actions,
+# entities, queries and App Shortcuts pipeline.sh merges into Spotify's own. Needs Xcode (xcode-select or DEVELOPER_DIR): the metadata
 # processor ships only with it.
 set -euo pipefail
 
@@ -15,6 +15,8 @@ OUT="${2:?usage: $0 <host Info.plist> <out dir>}"
 NAME=SpotifyGlassLiveActivity
 APPEX="$OUT/$NAME.appex"
 SHARED="$ROOT/tweak/Sources/Shared/LiveActivity/LiveActivityShared.swift"
+# Speed and pitch for Siri and Shortcuts (Shared/Player): intents that stand alone, which the app runs.
+SPEED_INTENTS="$ROOT/tweak/Sources/Shared/Player/SpeedPitchIntents.swift"
 WIDGET="$ROOT/extension/LiveActivity/LiveActivityWidget.swift"
 
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
@@ -56,8 +58,9 @@ sed -e "s/HOST_BUNDLE_ID/$(plutil -extract CFBundleIdentifier raw -o - "$HOST_PL
 plutil -convert binary1 "$APPEX/Info.plist"
 
 # The taps' intents run inside Spotify, so Spotify's metadata has to name them too, under the
-# module the tweak compiles them in (Theos names it after the tweak instance).
-metadata spotifyglass 16.0 "$OUT/app" "$SHARED"
+# module the tweak compiles them in (Theos names it after the tweak instance). So do the speed and pitch
+# intents, entities and App Shortcuts, which only the app has.
+metadata spotifyglass 16.0 "$OUT/app" "$SHARED" "$SPEED_INTENTS"
 
 codesign -f -s - "$APPEX" >/dev/null 2>&1
 rm -rf "$WORK"

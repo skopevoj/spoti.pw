@@ -35,6 +35,7 @@ UIColor *SGAccentColor(void) {
 
 NSString *SGAccentLabel(void) {
     NSInteger rgb = chosen();
+    if (rgb == 0xFA2D48) return @"Apple Music red";
     return rgb < 0 ? @"Spotify green" : [NSString stringWithFormat:@"#%06lX", (long)rgb];
 }
 

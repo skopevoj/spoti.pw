@@ -95,6 +95,8 @@ void SGWatchForUpdates(void) {
         launched = YES;
         if (!first && !SGUsageOwed()) return;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kSettle * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            // What this version brought comes first; the newer release's sheet waits for it to go.
+            if (first) SGWhatsNewAtLaunch();
             BOOL tell = first && SGEnabled(SGKeyUpdateNotice);
             if (tell && SGUpdateVersion()) {   // the last check knows one already
                 offerWhenClear(kTries);

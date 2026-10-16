@@ -50,6 +50,8 @@ static SGRArtworkField *fieldIn(UIView *page) {
     field = [[SGRArtworkField alloc] initWithFrame:page.bounds];
     field.bleed = kBleed;
     objc_setAssociatedObject(page, &kFieldKey, field, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    __weak UIView *weakPage = page;
+    [field whenColored:^{ SGRRevealMark(weakPage, SGRRevealColor); }];
     SGLog(@"redesign playlist: field on the page %.0fx%.0f", page.bounds.size.width, page.bounds.size.height);
     return field;
 }
@@ -60,6 +62,10 @@ static SGRArtworkField *fieldIn(UIView *page) {
     UIView *page = ((UIViewController *)self).viewIfLoaded;
     if (!page || page.bounds.size.height < 200) return;
     sgr_playlistRoot = page;
+    // Behind a curtain until the cover, the field's colour, the header and the first track are all in, so the
+    // page comes in at once rather than a piece at a time (Kit/SGRReveal.h). A playlist is always laid out by
+    // the redesign, so it waits for all of them from the first pass.
+    SGRRevealHold(page, SGRRevealPage);
     SGRArtworkField *field = fieldIn(page);
     if (field.superview != page) [page insertSubview:field atIndex:0];
     else if (page.subviews.firstObject != field) [page sendSubviewToBack:field];

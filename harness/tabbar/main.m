@@ -38,8 +38,13 @@
 @interface _TtC18NowPlaying_BarImpl27NowPlayingBarViewController : UIViewController
 @end
 @implementation _TtC18NowPlaying_BarImpl27NowPlayingBarViewController
+// Spotify's bar opens the player on a tap; here the tap is logged, for the mini player's hand-over.
+- (void)openPlayer {
+    NSLog(@"[harness] Spotify's bar was tapped: the player would open");
+}
 - (void)loadView {
     self.view = [UIView new];
+    [self.view addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(openPlayer)]];
     // The card, 386x56 at {8,0} with the album colour, the artwork, two lines and the progress line
     // (trees/clean/home/01.txt, SPTNowPlayingBar).
     UIView *card = [UIView new];
@@ -60,6 +65,8 @@
     art.clipsToBounds = YES;
     UIImageView *image = [[UIImageView alloc] initWithFrame:art.bounds];
     image.backgroundColor = [UIColor colorWithRed:0.85 green:0.35 blue:0.55 alpha:1];
+    image.image = [[UIImage systemImageNamed:@"music.note"] imageWithTintColor:UIColor.whiteColor renderingMode:UIImageRenderingModeAlwaysOriginal];
+    image.contentMode = UIViewContentModeCenter;
     [art addSubview:image];
     [card addSubview:art];
     UILabel *title = [UILabel new], *artist = [UILabel new];
@@ -136,6 +143,18 @@
 - (UIView *)tabBarView { return self.bar; }
 - (void)setSelectedViewController:(UIViewController *)controller {}
 
+// Spotify lights the tab it switches to and dims the rest; Create only opens its menu.
+- (void)tabTapped:(UITapGestureRecognizer *)tap {
+    UIView *tapped = tap.view;
+    UILabel *label = tapped.subviews.lastObject;
+    NSLog(@"[harness] Spotify's %@ tab was tapped", label.text);
+    if ([tapped isKindOfClass:_TtC25CreateMenu_TabBarItemImpl24CreateMenuTabBarItemView.class]) return;
+    for (UIView *item in ((UIStackView *)tapped.superview).arrangedSubviews) {
+        ((UILabel *)item.subviews.lastObject).textColor = item == tapped ? UIColor.whiteColor : [UIColor colorWithWhite:0xB3 / 255.0 alpha:1];
+        [item setNeedsLayout];
+    }
+}
+
 static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
     UIView *item = [cls new];
     UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:symbol]];
@@ -179,12 +198,15 @@ static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
     UIView *compact = [_TtC23NavigationUI_TabBarImpl17TabBarCompactView new];
     compact.translatesAutoresizingMaskIntoConstraints = NO;
     [self.bar addSubview:compact];
-    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[
+    NSMutableArray<UIView *> *items = [NSMutableArray arrayWithObjects:
         item(_TtC23NavigationUI_TabBarImpl21TabBarItemElementView.class, @"Home", @"house.fill", YES),
         item(_TtC23NavigationUI_TabBarImpl21TabBarItemElementView.class, @"Search", @"magnifyingglass", NO),
-        item(_TtC23NavigationUI_TabBarImpl21TabBarItemElementView.class, @"Your Library", @"books.vertical", NO),
-        item(_TtC25CreateMenu_TabBarItemImpl24CreateMenuTabBarItemView.class, @"Create", @"plus", NO),
-    ]];
+        item(_TtC23NavigationUI_TabBarImpl21TabBarItemElementView.class, @"Your Library", @"books.vertical", NO), nil];
+    // `library-last`: no Create, so Your Library ends the row.
+    if (![NSProcessInfo.processInfo.arguments containsObject:@"library-last"])
+        [items addObject:item(_TtC25CreateMenu_TabBarItemImpl24CreateMenuTabBarItemView.class, @"Create", @"plus", NO)];
+    for (UIView *tab in items) [tab addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tabTapped:)]];
+    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:items];
     row.distribution = UIStackViewDistributionFillEqually;
     row.accessibilityIdentifier = @"tabs-container-view-identifier";
     row.translatesAutoresizingMaskIntoConstraints = NO;
@@ -363,6 +385,9 @@ static void report(SGHarnessChrome *chrome, NSString *moment) {
 // Before every %ctor, so the redesign's gate reads on.
 __attribute__((constructor(101))) static void sgr_harnessDefaults(void) {
     [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"spotifyglass.redesign"];
+    // `inline`: the mini player in the tab bar (SGRKeyInlinePlayer).
+    BOOL inlinePlayer = [NSProcessInfo.processInfo.arguments containsObject:@"inline"];
+    [NSUserDefaults.standardUserDefaults setBool:inlinePlayer forKey:@"spotifyglass.redesign.inlinePlayer"];
 }
 
 @interface SGHarnessApp : UIResponder <UIApplicationDelegate>
@@ -392,6 +417,14 @@ static void after(double seconds, dispatch_block_t block) {
     NSArray<NSString *> *args = NSProcessInfo.processInfo.arguments;
     NSString *mode = args.count > 1 ? args[1] : @"none";
     if ([mode isEqualToString:@"away"]) [chrome setBanner:YES animated:NO];
+    // What a touch on the mini player's middle and on its button lands on, up to the window.
+    if ([mode isEqualToString:@"inline"]) after(3, ^{
+        for (NSValue *value in @[[NSValue valueWithCGPoint:CGPointMake(200, 759)], [NSValue valueWithCGPoint:CGPointMake(352, 759)]]) {
+            NSMutableString *chain = [NSMutableString string];
+            for (UIView *v = [self.window hitTest:value.CGPointValue withEvent:nil]; v; v = v.superview) [chain appendFormat:@" < %@", NSStringFromClass(v.class)];
+            NSLog(@"[harness] touch at %@ lands on%@", NSStringFromCGPoint(value.CGPointValue), chain);
+        }
+    });
     after(0.5, ^{
         UITableView *list = (UITableView *)chrome.tabs.childViewControllers.firstObject.view;
         [list scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:29 inSection:0] atScrollPosition:UITableViewScrollPositionBottom animated:NO];

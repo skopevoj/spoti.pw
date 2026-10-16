@@ -4,9 +4,17 @@
 <dict>
 	<key>UIDesignRequiresCompatibility</key>
 	<false/>
+	<key>MusicHapticsSupported</key>
+	<true/>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
 	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_spotify-ln-check._tcp</string>
+		<string>_spotify-connect._tcp</string>
+		<string>_googlecast._tcp</string>
+	</array>
 </dict>
 </plist>

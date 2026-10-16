@@ -6,7 +6,12 @@
 #import "Shared/Gestures/Gestures.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricsMeanings/Meanings.h"
+#import "Shared/LyricsTranslate/GeminiTranslate.h"
+#import "Shared/LyricsSources/LyricsSources.h"
+#import "Shared/Visualizer/Visualizer.h"
+#import "Shared/Fonts/AppFont.h"
 #import "Shared/Player/PlayerSettings.h"
+#import "Shared/Player/SpeedPitchPresets.h"
 #import "Native/Appearance/Appearance.h"
 #import "Native/Navbar/Navbar.h"
 #import "Native/NowPlayingBar/NowPlayingBar.h"
@@ -14,46 +19,38 @@
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Redesigned/Lyrics/LyricsText.h"
+#import "Redesigned/Lyrics/LyricsLook.h"
+#import "Redesigned/Lyrics/LandscapeLyrics.h"
 #import "Redesigned/Navbar/Navbar.h"
 #import "Redesigned/NowPlayingBar/NowPlayingBar.h"
+#import "Redesigned/Player/Player.h"
 #import "Redesigned/Kit/SGRAccent.h"
 
-NSString *const SGRedesignedUIInfo = @"The newest version of spoti.pw, leaning towards Apple Music's style. It is not compatible with the legacy look's settings.\n\nThe legacy look gives you more freedom, yet still looks like Spotify.";
+NSString *const SGRedesignedUIInfo = @"The newest version of rokis.pw, leaning towards Apple Music's style. It is not compatible with the legacy look's settings.\n\nThe legacy look gives you more freedom, yet still looks like Spotify.";
 
 void SGSetRedesignedUI(BOOL on) {
     SGSetEnabled(SGKeyRedesign, on);
+    if (!SGRedesignTested()) SGSetEnabled(SGKeyRedesignUntested, on);
+}
+
+NSString *SGRedesignUntestedWarning(void) {
+    return [NSString stringWithFormat:@"The redesign is made for iOS 26 and has not been tested on iOS %@ at all. Expect bugs and freezes. If Spotify stops opening, delete and reinstall it.", UIDevice.currentDevice.systemVersion];
 }
 
 // The whole look changes hands at launch, so the switch asks for the restart straight away rather than
 // leaving Spotify half in the old look.
 static void offerRestart(BOOL on) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Restart Spotify"
-        message:on ? @"The redesign takes over when Spotify starts again. Spotify closes now; open it again to see it." : @"Spotify's own look comes back when Spotify starts again. Spotify closes now; open it again to see it."
+    NSString *restart = on ? @"The redesign takes over when Spotify starts again. Spotify closes now; open it again to see it." : @"Spotify's own look comes back when Spotify starts again. Spotify closes now; open it again to see it.";
+    BOOL untested = on && !SGRedesignTested();
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:untested ? @"Not tested on this iOS" : @"Restart Spotify"
+        message:untested ? [NSString stringWithFormat:@"%@\n\n%@", SGRedesignUntestedWarning(), restart] : restart
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"Later" style:UIAlertActionStyleCancel handler:nil]];
     [alert addAction:[UIAlertAction actionWithTitle:@"Restart now" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { SGRestartSpotify(); }]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 
-// Below iOS 26 the row is not a switch: Liquid Glass is the redesign, and the system draws it from
-// that version on, so the row reads out what is missing and the card carries the native look's rows alone.
-static SGModRow *unavailableRow(void) {
-    SGModRow *row = SGStatActionRow(@"Redesigned UI", nil, ^NSString *{ return @"Needs iOS 26"; }, ^{
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Redesigned UI"
-            message:[NSString stringWithFormat:@"The redesign is built on Liquid Glass, which iOS 26 draws and no earlier version can. This phone runs iOS %@, so the mod gives you its legacy look instead: Spotify's own screens with everything else the mod adds on them.", UIDevice.currentDevice.systemVersion]
-            preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
-        [SGTopController() presentViewController:alert animated:YES completion:nil];
-    });
-    return SGWithSymbol(row, @"sparkles");
-}
-
 SGModSection *SGAppearanceSection(void) {
-    if (!SGRedesignAvailable()) {
-        NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObject:unavailableRow()];
-        [rows addObjectsFromArray:SGNativeAppearanceRows()];
-        return SGNotedSection(@"Appearance", rows, @"Changes apply after you restart Spotify.");
-    }
     SGModRow *redesign = SGOptionRow(@"Redesigned UI", nil, SGKeyRedesign);
     redesign.glows = YES;
     redesign.info = SGRedesignedUIInfo;
@@ -63,6 +60,8 @@ SGModSection *SGAppearanceSection(void) {
     };
     NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObject:SGWithSymbol(redesign, @"sparkles")];
     [rows addObjectsFromArray:SGRedesignedUIStored() ? SGRAppearanceRows() : SGNativeAppearanceRows()];
+    // The font is the text's, not a screen's, so both looks have it.
+    [rows addObject:SGAppFontRow()];
     return SGNotedSection(@"Appearance", rows, @"Changes apply after you restart Spotify.");
 }
 
@@ -70,14 +69,17 @@ UIViewController *SGNavbarPage(void) {
     return SGRedesignedUIStored() ? SGRNavbarSettingsPage() : SGNavbarSettingsPage();
 }
 
-// Pronunciation, translation, word sweeping and line meanings exist only in the redesign's lyrics view.
-static UIViewController *lyricsPage(void) {
+// Pronunciation, translation, word sweeping and line meanings exist only in the redesign's lyrics.
+UIViewController *SGLyricsSettingsPage(void) {
     BOOL redesigned = SGRedesignedUIStored();
-    NSMutableArray<SGModRow *> *more = [NSMutableArray arrayWithObject:SGLockScreenLyricsRow()];
+    NSMutableArray<SGModRow *> *more = [NSMutableArray arrayWithObjects:SGLockScreenLyricsRow(), SGLockScreenLyricsPlaceRow(), nil];
+    [more addObjectsFromArray:SGLockScreenVisualizerRows()];
+    [more addObject:SGLocalLyricsRow()];
     if (!redesigned) [more insertObject:SGGlassLyricsRow() atIndex:0];
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGLyricsSourcesSection(redesigned)];
     if (redesigned) {
-        [sections addObject:SGSection(@"Display", @[SGLyricsWordTimingRow(), SGRLyricsTextSizesRow(), SGLyricsTranslationLanguageRow(), SGLyricsMeaningsRow()])];
+        [sections addObject:SGSection(@"Display", @[SGRLyricsLookRow(), SGRLandscapeLyricsRow(), SGLyricsWordTimingRow(), SGRLyricsTextSizesRow(), SGLyricsTranslationLanguageRow(), SGLyricsMeaningsRow()])];
+        [sections addObject:SGGeminiSection()];
     }
     [sections addObject:SGSection(nil, more)];
     return [[SGModPage alloc] initWithTitle:@"Lyrics" intro:SGRestartNote sections:sections footer:nil];
@@ -88,23 +90,36 @@ UIViewController *SGPlayerSettingsPage(void) {
     blocked.value = ^NSString *{
         return SGFlag(SGKeyArtistBlock, NO) ? @(SGBlockedArtists().count).stringValue : @"Off";
     };
+    // Under the native look there is no ring in the player, so the page sets the lock screen's.
+    BOOL redesignedLook = SGRedesignedUIStored();
+    SGModRow *visualizer = SGPageRow(@"Visualizer", ^UIViewController *{
+        return redesignedLook ? SGRPlayerVisualizerPage()
+            : SGVisualizerSettingsPage(nil, nil, @"The ring round the cover is the redesigned player's. Under this look these set the "
+                                                   "lock screen's visualizer.");
+    });
+    visualizer.value = ^NSString *{
+        BOOL on = redesignedLook ? SGFlag(SGRKeyPlayerVisualizer, NO) : SGFlag(SGKeyLockScreenVisualizer, NO);
+        return on ? @"On" : @"Off";
+    };
+    SGModRow *presets = SGPageRow(@"Speed and pitch presets", ^UIViewController *{ return SGSpeedPitchPresetsPage(); });
+    presets.value = ^NSString *{ return SGSpeedPitchPresetsCountText(); };
     BOOL native = !SGRedesignedUIStored();
 
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGSection(nil, @[
         SGWithSymbol(SGPageRow(@"Gestures", ^UIViewController *{ return SGGesturesSettingsPage(); }), @"hand.tap"),
-        SGWithSymbol(SGPageRow(@"Lyrics", ^UIViewController *{ return lyricsPage(); }), @"quote.bubble"),
+        SGWithSymbol(SGOptionRow(@"Hold to play faster", @"Either side of the cover, 2× until you let go", SGKeyGestureHold), @"forward"),
         SGWithSymbol(blocked, @"person.crop.circle.badge.xmark"),
+        SGWithSymbol(visualizer, @"circle.dotted.circle"),
+        SGWithSymbol(presets, @"slider.horizontal.3"),
     ])];
     NSMutableArray<SGModRow *> *pages = [NSMutableArray array];
     if (native) {
         [pages addObject:SGWithSymbol(SGPageRow(@"Now playing bar", ^UIViewController *{ return SGNowPlayingBarSettingsPage(); }), @"rectangle.bottomthird.inset.filled")];
         [pages addObject:SGWithSymbol(SGPageRow(@"Queue & devices", ^UIViewController *{ return SGQueueSettingsPage(); }), @"text.line.first.and.arrowtriangle.forward")];
-    } else {
-        [pages addObject:SGWithSymbol(SGPageRow(@"Now playing", ^UIViewController *{ return SGRNowPlayingBarSettingsPage(); }), @"rectangle.bottomthird.inset.filled")];
     }
     [pages addObject:SGWithSymbol(SGPageRow(@"Lock screen widget", ^UIViewController *{ return SGLockScreenWidgetPage(); }), @"lock")];
     [sections addObject:SGSection(nil, pages)];
-    if (native) [sections addObjectsFromArray:SGNativePlayerScreenSections()];
+    [sections addObjectsFromArray:native ? SGNativePlayerScreenSections() : SGRNowPlayingSections()];
     // Vibrations hook Spotify's own controls and its audio, so they answer under either look.
     [sections addObjectsFromArray:SGVibrationsSections()];
 

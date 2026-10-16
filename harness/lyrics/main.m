@@ -11,6 +11,9 @@
 //   -pauseAt MS    where it stops, for -holdFor seconds (default for good)
 //   -sharp 1       no distance blur, so every line can be read in one screenshot
 //   -player 1      the view in a stage the size of the player's instead of the whole lyrics page
+//   -aloneAt S     with -player 1: the view laid over the player's whole room with the lines in the
+//                  stage's band, which grows to all of it S seconds in, as the controls go (the lines
+//                  alone, PlayerLyrics.x); -backAt S shrinks it back, as a touch brings them
 //   -light 1       the window in light mode, for the glass's appearance
 //   -perf LABEL    logs the cost of the view's frames every 240 of them, under LABEL
 //   -dump 1        prints the lines as read, with their pronunciations and translations, and quits
@@ -213,12 +216,27 @@ static void timedTick(id self, SEL _cmd) {
     // lines sit between its title row and its progress bar.
     CGRect stage = [args boolForKey:@"player"] ? CGRectMake(0, 200, bounds.size.width, 440)
                                                 : CGRectMake(0, 110, bounds.size.width, bounds.size.height - 300);
-    UIView *host = [[UIView alloc] initWithFrame:stage];
+    // The player's room with its controls away: from under the status bar to the home indicator.
+    BOOL alone = [args boolForKey:@"player"] && [args objectForKey:@"aloneAt"];
+    CGRect room = CGRectMake(0, 62, bounds.size.width, bounds.size.height - 62 - 34);
+    UIEdgeInsets band = UIEdgeInsetsMake(CGRectGetMinY(stage) - CGRectGetMinY(room), 0, CGRectGetMaxY(room) - CGRectGetMaxY(stage), 0);
+    UIView *host = [[UIView alloc] initWithFrame:alone ? room : stage];
     [root.view addSubview:host];
     SGRKaraokeView *karaoke = [[SGRKaraokeView alloc] initWithFrame:host.bounds];
     karaoke.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     if ([args boolForKey:@"sharp"]) [karaoke setValue:@0 forKey:@"maxBlur"];
     [host addSubview:karaoke];
+    if (alone) {
+        [karaoke setLineInsets:band duration:0];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)([args doubleForKey:@"aloneAt"] * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [karaoke setLineInsets:UIEdgeInsetsZero duration:0.6];
+        });
+        if ([args objectForKey:@"backAt"]) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)([args doubleForKey:@"backAt"] * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [karaoke setLineInsets:band duration:0.3];
+            });
+        }
+    }
     UILabel *caption = [[UILabel alloc] initWithFrame:CGRectMake(24, 60, bounds.size.width - 48, 20)];
     caption.font = [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightMedium];
     caption.textColor = [UIColor colorWithWhite:1 alpha:0.5];

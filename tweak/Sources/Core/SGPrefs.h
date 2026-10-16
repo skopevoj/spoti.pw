@@ -29,5 +29,18 @@ void SGSetFlagOverride(NSString *key, id value);
 // switch someone already flipped is still the one they get.
 void SGMigrateKey(NSString *from, NSString *to);
 
+// A build can leave named parts of the mod out: SG_DISABLE (make SG_DISABLE=a,b; build-ipa.yml's `disable`)
+// is a comma-separated list, and each part that has a name checks it before it starts. It is for telling
+// which part of the mod a problem comes from, by building the same code with one part left out.
+#ifndef SG_DISABLE
+#define SG_DISABLE ""
+#endif
+static inline BOOL SGOff(const char *part) {
+    static const char *const list = "," SG_DISABLE ",";
+    char key[48];
+    snprintf(key, sizeof key, ",%s,", part);
+    return strstr(list, key) != NULL;
+}
+
 // Quits Spotify so the hooks read the switches afresh on the next launch; the writes reach cfprefsd first.
 void SGRestartSpotify(void);

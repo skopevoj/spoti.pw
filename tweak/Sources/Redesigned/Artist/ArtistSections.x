@@ -19,7 +19,7 @@
 #import "Redesigned/Kit/SGRKit.h"
 #import "Artist.h"
 
-static char kSettledKey, kKindsKey, kDroppedKey;
+static char kSettledKey, kKindsKey, kDroppedKey, kTrackKey;
 
 typedef NS_ENUM(NSInteger, SGRArtistCell) {
     SGRArtistCellOther,
@@ -166,10 +166,17 @@ static void logOnce(NSString *what) {
     NSNumber *settled = objc_getAssociatedObject(self, &kSettledKey);
     if (settled) settle(cell, settled.doubleValue);
     UICollectionView *list = listOf(cell);
-    if (list && ![listOf(list) isKindOfClass:UICollectionView.class] && SGRArtistPageOf(cell)) {
+    UIView *page = list && ![listOf(list) isKindOfClass:UICollectionView.class] ? SGRArtistPageOf(cell) : nil;
+    if (page) {
         // What the cell paints over the field -- the "You liked" row, every carousel's collection and the
         // fade Popular's "See more" draws over its last track (device, trees/continuous/3.txt 2026-09-18).
         SGRClearCellPaint(cell);
+        // The first of Popular's tracks with its title in is the list the page waits for (Kit/SGRReveal.h); a
+        // row still loading is RetrievalRowLoadingElementUI, grey bars with empty labels.
+        if (SGRRevealWaitsFor(page, SGRRevealList)) {
+            UIView *track = SGRFindByIdentifier(cell, @"Components.UI.RetrievalRowElementUI*", &kTrackKey);
+            if (track && SGRRevealShowsText(track)) SGRRevealMark(page, SGRRevealList);
+        }
     }
 }
 

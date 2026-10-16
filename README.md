@@ -2,9 +2,9 @@
   <img src="docs/icon.png" width="96" alt="">
 </p>
 
-<h1 align="center">spoti.pw</h1>
+<h1 align="center">rokis.pw</h1>
 
-<p align="center">Spotify, in glass.</p>
+<p align="center">Spotify, in glass. A personal build of <a href="https://github.com/skopevoj/spoti.pw">spoti.pw</a> by Vojtěch Škopek, under its PolyForm Strict license.</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/iOS-000000?style=for-the-badge&logo=ios&logoColor=white" alt="iOS">
@@ -38,18 +38,18 @@ which change between releases, so another version may build and then break.
 
 | | |
 |---|---|
-| The redesign | **iOS 26+** |
+| The redesign | **iOS 26+** (untested below) |
 | Legacy look | iOS 16.1+ |
 | Live Activity | iOS 17+ |
 
 The redesign is `UIGlassEffect`, which only exists from iOS 26. Below that the Redesigned UI switch
-is greyed out and the mod runs Spotify's own screens with everything else it adds on top. Both live
-in Settings → Mod Settings.
+still works, but it warns first: the redesign falls back to a blur there and has not been tested at
+all. Both looks live in Settings → Mod Settings.
 
 ## Build it
 
 No IPA is distributed. Bring a decrypted **Spotify 9.1.78** IPA; you get an unsigned
-`spoti.pw-<mod version>.ipa` to sign with SideStore, Feather or any certificate signer. Each
+`rokis.pw-<mod version>.ipa` to sign with SideStore, Feather or any certificate signer. Each
 [release](https://github.com/skopevoj/spoti.pw/releases) also carries the tweak's `.deb`.
 
 ### Build with GitHub Actions
@@ -68,7 +68,7 @@ alone builds too, but without the Live Activity. Then:
 
 Put the decrypted `.ipa` in `ipa/`, then:
 
-    make release    # out/spoti.pw-<version>.ipa, ready to sign
+    make release    # out/rokis.pw-<version>.ipa, ready to sign
     make install    # the same, signed with your certificate and pushed over USB
 
 `make install` reads `SIGN_P12`, `SIGN_PROFILE` and `SIGN_P12_PASSWORD` from `.signing.env`; copy

@@ -1,4 +1,5 @@
-// The Animated lock screen rows, put on the Lock screen widget page by Shared/Player/PlayerSettings.m.
+// The Animated lock screen rows, put on the Lock screen widget page by Shared/Player/PlayerSettings.m, and
+// the Sources row for an order of these sources (the redesigned player keeps one of its own).
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGOrderPage.h"
@@ -20,23 +21,28 @@ static NSArray<SGOrderItem *> *sources(void) {
     ];
 }
 
-NSArray<SGModRow *> *SGAnimatedArtworkRows(void) {
-    if (!SGAnimatedArtworkAvailable())
-        return @[SGStatActionRow(@"Animated lock screen", nil, ^NSString *{ return @"Needs iOS 26"; }, ^{ sayWhatIsMissing(); })];
-    SGModRow *order = SGPageRow(@"Sources", ^UIViewController *{
-        return SGOrderPage(@"Artwork sources", sources(), ^NSArray<NSString *> *{ return SGArtworkOrder(); },
-                           ^(NSArray<NSString *> *keys) { SGArtworkSetOrder(keys); },
-                           @"Asked top to bottom until one has a clip. Apple Music gets only the artist and album name.");
+SGModRow *SGArtworkSourcesRow(NSString *key, NSString *note) {
+    SGModRow *row = SGPageRow(@"Sources", ^UIViewController *{
+        return SGOrderPage(@"Artwork sources", sources(), ^NSArray<NSString *> *{ return SGArtworkOrderFor(key); },
+                           ^(NSArray<NSString *> *keys) { SGArtworkSetOrderFor(key, keys); }, note);
     });
-    order.value = ^NSString *{
+    row.value = ^NSString *{
         NSMutableArray<NSString *> *names = [NSMutableArray array];
-        for (NSString *key in SGArtworkOrder()) {
+        for (NSString *source in SGArtworkOrderFor(key)) {
             for (SGOrderItem *item in sources()) {
-                if ([item.key isEqualToString:key]) [names addObject:item.name];
+                if ([item.key isEqualToString:source]) [names addObject:item.name];
             }
         }
         return names.count ? [names componentsJoinedByString:@", "] : @"None";
     };
+    return row;
+}
+
+NSArray<SGModRow *> *SGAnimatedArtworkRows(void) {
+    if (!SGAnimatedArtworkAvailable())
+        return @[SGStatActionRow(@"Animated lock screen", nil, ^NSString *{ return @"Needs iOS 26"; }, ^{ sayWhatIsMissing(); })];
+    SGModRow *order = SGArtworkSourcesRow(SGKeyLockScreenArtworkSources,
+        @"Asked top to bottom until one has a clip. Apple Music gets only the artist and album name.");
     order.visible = ^BOOL { return SGFlag(SGKeyLockScreenArtwork, YES); };
     return @[
         SGSwitchRow(@"Animated lock screen", @"A moving cover behind the lock screen's controls", SGKeyLockScreenArtwork),

@@ -6,8 +6,8 @@
 NSString *const SGArtworkSourceSpotify = @"spotify";
 NSString *const SGArtworkSourceApple = @"applemusic";
 
-NSArray<NSString *> *SGArtworkOrder(void) {
-    id stored = [NSUserDefaults.standardUserDefaults arrayForKey:SGKeyLockScreenArtworkSources];
+NSArray<NSString *> *SGArtworkOrderFor(NSString *key) {
+    id stored = [NSUserDefaults.standardUserDefaults arrayForKey:key];
     NSArray *keys = [stored isKindOfClass:NSArray.class] ? stored : @[SGArtworkSourceSpotify, SGArtworkSourceApple];
     NSMutableArray<NSString *> *order = [NSMutableArray array];
     for (id key in keys) {
@@ -17,8 +17,8 @@ NSArray<NSString *> *SGArtworkOrder(void) {
     return order;
 }
 
-void SGArtworkSetOrder(NSArray<NSString *> *order) {
-    [NSUserDefaults.standardUserDefaults setObject:order ?: @[] forKey:SGKeyLockScreenArtworkSources];
+void SGArtworkSetOrderFor(NSString *key, NSArray<NSString *> *order) {
+    [NSUserDefaults.standardUserDefaults setObject:order ?: @[] forKey:key];
 }
 
 BOOL SGAnimatedArtworkAvailable(void) {

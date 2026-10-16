@@ -64,6 +64,12 @@ static void applyRow(UIView *cell) {
     if (!row) return;
     clearSurface(row);
 
+    // The first track with its title in is the list the page waits for (Kit/SGRReveal.h). A row still loading
+    // is Components.UI.RetrievalRowLoadingElementUI rather than Encore.ListRow, grey bars with no text in them
+    // (trees/continuous/1.txt).
+    UIView *page = SGRPlaylistPageOf(cell);
+    if (SGRRevealWaitsFor(page, SGRRevealList) && SGRRevealShowsText(row)) SGRRevealMark(page, SGRRevealList);
+
     CGFloat leading = SGRSideMargin + 48 + kHairlineGap;
     UIView *art = identified(row, @"Encore.ImageView", &kArtKey);
     if (art) {

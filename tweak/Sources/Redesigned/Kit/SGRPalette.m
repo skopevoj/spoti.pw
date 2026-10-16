@@ -5,25 +5,19 @@
 
 static const size_t kSample = 64;      // the artwork shrunk to this square before its colours are read
 static const size_t kEdgeRows = 10;    // the bottom rows of it averaged into the edge colour
-static const CGFloat kMaxSaturation = 0.55;
-static const CGFloat kMaxLuminance = 0.07, kMaxLuminanceContrast = 0.04;
-static const CGFloat kBackdropWidth = 160, kBackdropMaxHeight = 400, kBackdropSigma = 12;
+// A field's OKLab lightness ceiling (0.30 with Increase Contrast), and its chroma lift and cap.
+static const CGFloat kFieldLightness = 0.34, kFieldLightnessContrast = 0.30;
+static const CGFloat kFieldChromaLift = 1.3, kFieldChroma = 0.14;
 static const CGFloat kDissolveWidth = 96, kDissolveSigma = 5;
 static const CGFloat kFadeFrom = 0.55, kDissolveOpaque = 0.85;
 // A tint: the artwork's dominant colour brought down to this luminance, then this share of it mixed into
 // the surface it tints.
 static const CGFloat kTintLuminance = 0.05, kTintShare = 0.35;
-// A moving field's colours: luminance held between these (the ceiling 0.07 with Increase Contrast, as a
-// field's), saturation lifted by this much up to a cap, and a near-black one lifted by at most this factor.
-static const CGFloat kFlowLuminanceMin = 0.03, kFlowLuminanceMax = 0.13;
-static const CGFloat kFlowSaturationLift = 1.25, kFlowSaturationMax = 0.9, kFlowMaxLift = 4;
 
 @interface SGRPalette ()
 @property (nonatomic, readwrite) UIColor *edgeColor;
 @property (nonatomic, readwrite) UIColor *fieldColor;
-@property (nonatomic, readwrite) UIImage *backdrop;
 @property (nonatomic, readwrite) UIImage *dissolve;
-@property (nonatomic, readwrite) NSArray<UIColor *> *flowColors;
 @end
 
 static dispatch_queue_t paletteQueue(void) {
@@ -73,27 +67,55 @@ static CGFloat toEncoded(CGFloat c) {
     return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1 / 2.4) - 0.055;
 }
 
+static void toOklab(const CGFloat linear[3], CGFloat lab[3]) {
+    CGFloat l = cbrt(0.4122214708 * linear[0] + 0.5363325363 * linear[1] + 0.0514459929 * linear[2]);
+    CGFloat m = cbrt(0.2119034982 * linear[0] + 0.6806995451 * linear[1] + 0.1073969566 * linear[2]);
+    CGFloat s = cbrt(0.0883024619 * linear[0] + 0.2817188376 * linear[1] + 0.6299787005 * linear[2]);
+    lab[0] = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
+    lab[1] = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+    lab[2] = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+}
+
+// NO when the colour is outside sRGB.
+static BOOL fromOklab(CGFloat lightness, CGFloat a, CGFloat b, CGFloat linear[3]) {
+    CGFloat l = pow(lightness + 0.3963377774 * a + 0.2158037573 * b, 3);
+    CGFloat m = pow(lightness - 0.1055613458 * a - 0.0638541728 * b, 3);
+    CGFloat s = pow(lightness - 0.0894841775 * a - 1.2914855480 * b, 3);
+    linear[0] = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+    linear[1] = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+    linear[2] = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
+    for (int k = 0; k < 3; k++) {
+        if (linear[k] < -1e-6 || linear[k] > 1 + 1e-6) return NO;
+    }
+    return YES;
+}
+
+// The colour's own hue, dark and a little more colourful, as the Music app draws a page: capping saturation
+// in HSV instead turned every warm hue brown. Past the chroma sRGB holds at that lightness, chroma gives way.
 static UIColor *fieldColorFor(UIColor *color, CGFloat ceiling) {
-    CGFloat r = 0, g = 0, b = 0, a = 1, h = 0, s = 0, v = 0;
+    CGFloat r = 0, g = 0, b = 0, a = 1;
     if (![color getRed:&r green:&g blue:&b alpha:&a]) {
         CGFloat white = 0;
         if (![color getWhite:&white alpha:&a]) return SGRNeutralField();
         r = g = b = white;
     }
-    UIColor *clamped = [UIColor colorWithRed:MIN(1, MAX(0, r)) green:MIN(1, MAX(0, g)) blue:MIN(1, MAX(0, b)) alpha:1];
-    [clamped getHue:&h saturation:&s brightness:&v alpha:&a];
-    [[UIColor colorWithHue:h saturation:MIN(s, kMaxSaturation) brightness:v alpha:1] getRed:&r green:&g blue:&b alpha:&a];
-    CGFloat lr = toLinear(r), lg = toLinear(g), lb = toLinear(b);
-    CGFloat luminance = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
-    if (luminance > ceiling) {
-        CGFloat k = ceiling / luminance;
-        lr *= k, lg *= k, lb *= k;
+    CGFloat linear[3] = {toLinear(MIN(1, MAX(0, r))), toLinear(MIN(1, MAX(0, g))), toLinear(MIN(1, MAX(0, b)))}, lab[3];
+    toOklab(linear, lab);
+    CGFloat lightness = MIN(lab[0], ceiling), hue = atan2(lab[2], lab[1]);
+    CGFloat chroma = MIN(hypot(lab[1], lab[2]) * kFieldChromaLift, kFieldChroma);
+    while (!fromOklab(lightness, chroma * cos(hue), chroma * sin(hue), linear) && chroma > 0) {
+        chroma = MAX(0, chroma - 0.004);
     }
-    return [UIColor colorWithRed:toEncoded(lr) green:toEncoded(lg) blue:toEncoded(lb) alpha:1];
+    return [UIColor colorWithRed:toEncoded(MIN(1, MAX(0, linear[0]))) green:toEncoded(MIN(1, MAX(0, linear[1])))
+                            blue:toEncoded(MIN(1, MAX(0, linear[2]))) alpha:1];
+}
+
+static CGFloat fieldCeiling(void) {
+    return SGRIncreaseContrast() ? kFieldLightnessContrast : kFieldLightness;
 }
 
 UIColor *SGRFieldColorFor(UIColor *color) {
-    return color ? fieldColorFor(color, SGRIncreaseContrast() ? kMaxLuminanceContrast : kMaxLuminance) : SGRNeutralField();
+    return color ? fieldColorFor(color, fieldCeiling()) : SGRNeutralField();
 }
 
 // The artwork squeezed into a small square, whatever its aspect, and the bottom rows of that averaged
@@ -146,7 +168,7 @@ static void drawRamp(CGContextRef context, size_t height, CGFloat y0, CGFloat a0
     CGGradientRelease(gradient);
 }
 
-static UIImage *finished(CGImageRef blurred, BOOL dim, CGFloat dimBottom, CGFloat rampFrom, CGFloat alphaFrom, CGFloat rampTo, CGFloat alphaTo) {
+static UIImage *finished(CGImageRef blurred, CGFloat rampFrom, CGFloat alphaFrom, CGFloat rampTo, CGFloat alphaTo) {
     size_t width = CGImageGetWidth(blurred), height = CGImageGetHeight(blurred);
     CGContextRef context = newBitmap(width, height);
     if (!context) return nil;
@@ -154,7 +176,6 @@ static UIImage *finished(CGImageRef blurred, BOOL dim, CGFloat dimBottom, CGFloa
     // Top down from here on.
     CGContextTranslateCTM(context, 0, height);
     CGContextScaleCTM(context, 1, -1);
-    if (dim) drawRamp(context, height, 0, 0.25, kFadeFrom, dimBottom, kCGBlendModeNormal);
     drawRamp(context, height, rampFrom, alphaFrom, rampTo, alphaTo, kCGBlendModeDestinationIn);
     CGImageRef result = CGBitmapContextCreateImage(context);
     CGContextRelease(context);
@@ -204,42 +225,6 @@ static BOOL dominantColorOf(CGImageRef image, CGFloat out[3]) {
     return found;
 }
 
-#pragma mark - flow
-
-// A dominant colour in linear light made fit for a moving field: a little more colourful, and within
-// the luminance band that keeps white text readable on it.
-static UIColor *flowColorFor(const CGFloat linear[3], CGFloat ceiling) {
-    CGFloat r = toEncoded(linear[0]), g = toEncoded(linear[1]), b = toEncoded(linear[2]), h = 0, s = 0, v = 0, a = 1;
-    [[UIColor colorWithRed:r green:g blue:b alpha:1] getHue:&h saturation:&s brightness:&v alpha:&a];
-    [[UIColor colorWithHue:h saturation:MIN(kFlowSaturationMax, MAX(s, s * kFlowSaturationLift)) brightness:v alpha:1] getRed:&r green:&g blue:&b alpha:&a];
-    CGFloat lr = toLinear(r), lg = toLinear(g), lb = toLinear(b);
-    CGFloat luminance = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
-    CGFloat k = 1;
-    if (luminance > ceiling) k = ceiling / luminance;
-    else if (luminance > 0 && luminance < kFlowLuminanceMin) k = MIN(kFlowMaxLift, kFlowLuminanceMin / luminance);
-    return [UIColor colorWithRed:toEncoded(MIN(1, lr * k)) green:toEncoded(MIN(1, lg * k)) blue:toEncoded(MIN(1, lb * k)) alpha:1];
-}
-
-// The artwork's main colour in each quarter, then over the whole of it: the field keeps the artwork's
-// colours roughly where the artwork has them.
-static NSArray<UIColor *> *flowColorsOf(CGImageRef image, CGFloat ceiling) {
-    CGContextRef context = newBitmap(kSample, kSample);
-    if (!context) return nil;
-    CGContextSetInterpolationQuality(context, kCGInterpolationMedium);
-    CGContextDrawImage(context, CGRectMake(0, 0, kSample, kSample), image);
-    const uint8_t *px = CGBitmapContextGetData(context);
-    size_t half = kSample / 2;
-    size_t regions[5][4] = {{0, 0, half, half}, {half, 0, kSample, half}, {0, half, half, kSample}, {half, half, kSample, kSample}, {0, 0, kSample, kSample}};
-    NSMutableArray<UIColor *> *colors = [NSMutableArray arrayWithCapacity:5];
-    CGFloat linear[3];
-    for (int i = 0; i < 5; i++) {
-        if (!dominantIn(px, regions[i][0], regions[i][1], regions[i][2], regions[i][3], linear)) break;
-        [colors addObject:flowColorFor(linear, ceiling)];
-    }
-    CGContextRelease(context);
-    return colors.count == 5 ? colors : nil;
-}
-
 static UIColor *tintOf(CGImageRef image, UIColor *surface) {
     CGFloat linear[3];
     CGFloat r = 0, g = 0, b = 0, a = 1;
@@ -275,8 +260,7 @@ static UIColor *tintOf(CGImageRef image, UIColor *surface) {
 
 + (void)paletteForImage:(UIImage *)image request:(SGRPaletteRequest)request completion:(void (^)(SGRPalette *palette))completion {
     if (!completion) return;
-    CGFloat ceiling = SGRIncreaseContrast() ? kMaxLuminanceContrast : kMaxLuminance;
-    CGFloat flowCeiling = SGRIncreaseContrast() ? kMaxLuminance : kFlowLuminanceMax;
+    CGFloat ceiling = fieldCeiling();
     dispatch_async(paletteQueue(), ^{
         SGRPalette *palette = nil;
         CGImageRef cg = image.CGImage;
@@ -285,20 +269,17 @@ static UIColor *tintOf(CGImageRef image, UIColor *surface) {
             CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
             palette = [SGRPalette new];
             palette.edgeColor = edge;
-            palette.fieldColor = fieldColorFor(edge, ceiling);
-            CGSize area = request.backdropSize;
-            if (area.width > 0 && area.height > 0) {
-                size_t width = (size_t)kBackdropWidth, height = (size_t)MIN(kBackdropMaxHeight, round(kBackdropWidth * area.height / area.width));
-                CGImageRef blurred = newBlurred(cg, width, MAX(height, 1), kBackdropSigma);
-                if (blurred) palette.backdrop = finished(blurred, YES, request.amoled ? 0.55 : 0.45, kFadeFrom, 1, 1, 0);
-                CGImageRelease(blurred);
-            }
-            if (request.flow) palette.flowColors = flowColorsOf(cg, flowCeiling);
+            // The artwork's main colour, not its edge's: a scanned sleeve's edge is the scanner's grey, a
+            // portrait's is skin.
+            CGFloat main[3];
+            UIColor *source = dominantColorOf(cg, main)
+                ? [UIColor colorWithRed:toEncoded(main[0]) green:toEncoded(main[1]) blue:toEncoded(main[2]) alpha:1] : edge;
+            palette.fieldColor = fieldColorFor(source, ceiling);
             if (request.dissolve) {
                 CGFloat aspect = (CGFloat)CGImageGetHeight(cg) / CGImageGetWidth(cg);
                 size_t height = (size_t)MIN(kDissolveWidth * 2, MAX(kDissolveWidth / 2, round(kDissolveWidth * aspect)));
                 CGImageRef blurred = newBlurred(cg, (size_t)kDissolveWidth, height, kDissolveSigma);
-                if (blurred) palette.dissolve = finished(blurred, NO, 0, kFadeFrom, 0, kDissolveOpaque, 1);
+                if (blurred) palette.dissolve = finished(blurred, kFadeFrom, 0, kDissolveOpaque, 1);
                 CGImageRelease(blurred);
             }
             static dispatch_once_t once;

@@ -63,8 +63,27 @@ rm -f "$ROOT/out/.info.plist"
 # a fork left behind by a release is named for the version it really is.
 MOD_VERSION="$(cat "$ROOT/version.txt" 2>/dev/null || true)"
 : "${MOD_VERSION:=0.0.0}"
-OUT="${OUT:-$ROOT/out/spoti.pw-$MOD_VERSION.ipa}"
-echo "==> spoti.pw $MOD_VERSION on Spotify $SPOTIFY_VERSION -> $OUT"
+OUT="${OUT:-$ROOT/out/rokis.pw-$MOD_VERSION.ipa}"
+echo "==> rokis.pw $MOD_VERSION on Spotify $SPOTIFY_VERSION -> $OUT"
+
+# What CarPlay looks for, as it stands in an IPA: the app's CarPlay entitlements, which a signing tool
+# keeps only where the profile allows them, and the CarPlay scene its Info.plist declares. Printed so a
+# build log says why Spotify does or does not show up as a CarPlay app once signed.
+carplay_report() {
+  local ipa="$1" dir exec ents
+  dir="$(mktemp -d)"
+  unzip -p "$ipa" "${APP_DIR}Info.plist" > "$dir/Info.plist" 2>/dev/null || true
+  exec="$(plutil -extract CFBundleExecutable raw -o - "$dir/Info.plist" 2>/dev/null || true)"
+  if [ -n "$exec" ] && unzip -p "$ipa" "${APP_DIR}${exec}" > "$dir/bin" 2>/dev/null; then
+    ents="$(ldid -e "$dir/bin" 2>/dev/null | grep -iE -A1 'carplay|playable-content' | grep -vE '^--$' || true)"
+    echo "    entitlements: ${ents:-none for CarPlay}" | tr '\n\t' '  '
+    echo
+  fi
+  echo "    scenes: $(plutil -p "$dir/Info.plist" 2>/dev/null | grep -oE '"(UISceneConfigurationName|UISceneDelegateClassName|UISceneClassName)" => "[^"]+"|"[A-Za-z]+SceneSessionRole[A-Za-z]+"' | tr '\n' ' ')"
+  rm -rf "$dir"
+}
+echo "==> CarPlay in Spotify's IPA"
+carplay_report "$IN"
 
 # The flag table is generated rather than committed, so it always matches the IPA being built.
 if [ ! -f "$ROOT/tweak/Sources/Shared/Flags/SGFlagList.m" ]; then
@@ -104,28 +123,57 @@ fi
 echo "==> building the App Group shim"
 GROUPS_DYLIB="$ROOT/out/SpotifyGlassAppGroups.dylib"
 xcrun --sdk iphoneos clang -target arm64-apple-ios16.0 -dynamiclib -fobjc-arc -Os -framework Foundation -framework Security \
-  -install_name @rpath/SpotifyGlassAppGroups.dylib -o "$GROUPS_DYLIB" "$ROOT/extension/AppGroups/AppGroups.m"
+  -install_name @rpath/SpotifyGlassAppGroups.dylib -o "$GROUPS_DYLIB" "$ROOT/extension/AppGroups/AppGroups.m" "$ROOT/extension/AppGroups/Keychain.m"
 FILES+=("$GROUPS_DYLIB")
 
 echo "==> injecting"
 # -w drops the Watch app: its companion-app key would still name com.spotify.client and block the install.
-cyan -i "$IN" -o "$OUT" -f "${FILES[@]}" -l "$ROOT/plist/liquid-glass.plist" ${BUNDLE_ID:+-b "$BUNDLE_ID"} ${NAME:+-n "$NAME"} ${ICON:+-k "$ICON"} -w -s --overwrite
+unzip -p "$IN" "${APP_DIR}Info.plist" > "$ROOT/out/.info.plist"
+python3 "$ROOT/scripts/merge-local-network-plist.py" "$ROOT/out/.info.plist" \
+  "$ROOT/plist/liquid-glass.plist" "$ROOT/out/.injection.plist"
+rm -f "$ROOT/out/.info.plist"
+cyan -i "$IN" -o "$OUT" -f "${FILES[@]}" -l "$ROOT/out/.injection.plist" ${BUNDLE_ID:+-b "$BUNDLE_ID"} ${NAME:+-n "$NAME"} ${ICON:+-k "$ICON"} -w -s --overwrite
+rm -f "$ROOT/out/.injection.plist"
 
-echo "==> loading the App Group shim in the home screen widget"
-WIDGET_BIN="${APP_DIR}PlugIns/WidgetExtension.appex/WidgetExtension"
-if unzip -l "$OUT" "$WIDGET_BIN" >/dev/null 2>&1; then
+# Siri's requests are answered by Spotify's Intents extension, not by the app, and it finds the signed
+# in account through the same App Groups the widget reads: re-signed, it saw an empty group and Siri
+# answered that you need to log in to Spotify. Every extension that serves the widget or Siri gets the
+# shim, so their groups land on the one the app writes to.
+echo "==> loading the App Group shim in the widget and Siri extensions"
+OUT_ABS="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
+PATCHED=0
+# SG_DISABLE=extpatch leaves them as cyan made them (Core/SGPrefs.h says what SG_DISABLE is).
+case ",${SG_DISABLE:-}," in *,extpatch,*) APPEXES="" ;; *) APPEXES="$(unzip -Z1 "$OUT" | grep -oE "^${APP_DIR}PlugIns/[^/]+\.appex/" | sort -u)" ;; esac
+for APPEX in $APPEXES; do
+  # Spotify's own extensions only: the mod's Live Activity widget has no App Groups of Spotify's to move.
+  case "$(basename "$APPEX")" in SpotifyGlass*) continue ;; esac
   PATCH="$(mktemp -d)"
-  unzip -q "$OUT" "$WIDGET_BIN" -d "$PATCH"
-  "$ROOT/scripts/insert-dylib.py" "$PATCH/$WIDGET_BIN" @rpath/SpotifyGlassAppGroups.dylib
+  unzip -q "$OUT" "${APPEX}Info.plist" -d "$PATCH"
+  POINT="$(plutil -extract NSExtension.NSExtensionPointIdentifier raw -o - "$PATCH/${APPEX}Info.plist" 2>/dev/null || true)"
+  EXEC="$(plutil -extract CFBundleExecutable raw -o - "$PATCH/${APPEX}Info.plist" 2>/dev/null || true)"
+  case "$POINT" in
+    com.apple.widgetkit-extension|com.apple.intents-service|com.apple.intents-ui-service) ;;
+    *) rm -rf "$PATCH"; continue ;;
+  esac
+  BIN="${APPEX}${EXEC}"
+  if [ -z "$EXEC" ] || ! unzip -q "$OUT" "$BIN" -d "$PATCH" 2>/dev/null; then rm -rf "$PATCH"; continue; fi
+  echo "    $(basename "$APPEX") ($POINT)"
+  "$ROOT/scripts/insert-dylib.py" "$PATCH/$BIN" @rpath/SpotifyGlassAppGroups.dylib
   # Fakesigned again with its own entitlements, the way cyan -s left it, for TrollStore.
-  ldid -e "$PATCH/$WIDGET_BIN" > "$PATCH/ents.plist"
-  ldid -S"$PATCH/ents.plist" "$PATCH/$WIDGET_BIN"
-  OUT_ABS="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
-  (cd "$PATCH" && zip -q "$OUT_ABS" "$WIDGET_BIN")
+  ldid -e "$PATCH/$BIN" > "$PATCH/ents.plist" 2>/dev/null || true
+  if [ -s "$PATCH/ents.plist" ]; then ldid -S"$PATCH/ents.plist" "$PATCH/$BIN"; else ldid -S "$PATCH/$BIN"; fi
+  (cd "$PATCH" && zip -q "$OUT_ABS" "$BIN")
   rm -rf "$PATCH"
-else
-  echo "    no WidgetExtension.appex in this IPA"
-fi
+  PATCHED=$((PATCHED + 1))
+done
+[ "$PATCHED" -gt 0 ] || echo "    no widget or Siri extension in this IPA"
+
+echo "==> adding the alternate app icons"
+# A failure leaves the IPA as it was, without them; Mod > App icon then does not show.
+"$ROOT/scripts/app-icons.sh" "$OUT" || echo "    the app icons failed: building without them"
+
+echo "==> CarPlay in the built IPA"
+carplay_report "$OUT"
 
 if [ -n "${EXT_DIR:-}" ]; then
   echo "==> adding the Live Activity intents to Spotify's App Intents metadata"

@@ -14,8 +14,38 @@
 // being where translations show), and whether lines timed only by the line are swept word by word.
 SGModSection *SGLyricsSourcesSection(BOOL namingSource);
 SGModRow *SGLockScreenLyricsRow(void);
+SGModRow *SGLockScreenLyricsPlaceRow(void);   // where the line shows, while the switch is on
 SGModRow *SGLyricsTranslationLanguageRow(void);
 SGModRow *SGLyricsWordTimingRow(void);
+
+// LyricsOffline.m: every song's lines kept on this iPhone once they load, read back before anyone is asked,
+// so they show at once and without a connection. Main queue throughout; Read answers on it.
+#define SGKeyLyricsOffline @"spotifyglass.lyricsOffline"   // on until switched off
+BOOL SGLyricsOfflineEnabled(void);
+BOOL SGLyricsOfflineHas(NSString *trackID);
+@class SGKaraokeLine;
+void SGLyricsOfflineRead(NSString *trackID, void (^done)(NSArray<SGKaraokeLine *> *lines));
+void SGLyricsOfflineSave(NSString *trackID, NSArray<SGKaraokeLine *> *lines);
+// Writes a track's lines as they are, with the credit's text, whatever the engine keeps; for the download.
+void SGLyricsOfflineStore(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *credit);
+NSArray<SGModRow *> *SGLyricsOfflineRows(void);   // the switch, Download all lyrics and the saved songs, with Remove
+
+// LyricsDownload.m: every song of the library's lyrics saved at once, without playing them. The songs are
+// listed from Spotify's Web API with the app's own sign-in (Liked Songs, and the playlists in the library
+// when asked), and each one not saved yet is asked of the same sources, in the same order, as a song that
+// plays, then written with SGLyricsOfflineStore. One song at a time, paced, so no server is pressed; it
+// stops with the app and goes on where it was when the app is back. Main queue throughout.
+typedef NS_ENUM(NSInteger, SGLyricsDownloadScope) {
+    SGLyricsDownloadLiked = 0,
+    SGLyricsDownloadLikedAndPlaylists,
+};
+void SGLyricsDownloadStart(SGLyricsDownloadScope scope);
+void SGLyricsDownloadStop(void);
+BOOL SGLyricsDownloadRunning(void);
+// Where it is, for the row: "Listing songs… 300", "120 of 1,480 · 96 saved", what stopped it.
+NSString *SGLyricsDownloadStatus(void);
+double SGLyricsDownloadProgress(void);   // 0...1 while it runs through the songs, -1 otherwise
+extern NSNotificationName const SGLyricsDownloadDidChangeNotification;
 
 // Sweeps a line timed only by the line word by word, on the estimate of when each word is sung, as if
 // the source had timed them. Off, such a line lights up whole as it starts. Off by default: the
@@ -95,6 +125,8 @@ SGKaraokeTiming SGKaraokeLinesTiming(NSArray<SGKaraokeLine *> *lines);
 
 NSArray<SGKaraokeLine *> *SGKaraokeLinesForTrack(NSString *trackID);   // nil until the lyrics came
 void SGKaraokeKeepLines(NSString *trackID, NSArray<SGKaraokeLine *> *lines);
+// Posted on the main queue when a track's lines are kept, with the track's id as the object.
+extern NSNotificationName const SGKaraokeLinesDidChangeNotification;
 // Asks spclient for a track's lyrics once, with the headers of Spotify's own requests, for when no
 // page of Spotify's has asked for them, e.g. with the app in the background.
 void SGKaraokeRequestLyrics(NSString *trackID);
@@ -104,7 +136,15 @@ void SGKaraokeAskSpotifyForTiming(NSString *trackID);
 // The Authorization header of Spotify's own requests, nil until one has gone out. Only ever sent
 // back to Spotify's servers (the lock screen's canvaz lookup), never to a lyrics source.
 NSString *SGKaraokeSpotifyAuthorization(void);
+// All the headers of Spotify's own spclient requests the engine asks color-lyrics with, nil until one has
+// gone out; and whether the engine runs at all (the redesign, lock screen lyrics or a source of the mod's).
+NSDictionary<NSString *, NSString *> *SGKaraokeSpotifyHeaders(void);
+BOOL SGKaraokeRunning(void);
 NSString *SGKaraokePlayingTrack(void);   // the base62 id, nil before the player reported
+// A local file has no base62 id, so the engine names it "local~" and a hash of its spotify:local: URI;
+// its lyrics come from Shared/LyricsSources/LocalLyrics.m and never from Spotify's servers.
+BOOL SGKaraokeIsLocalTrack(NSString *trackID);
+NSString *SGKaraokeLocalTrackID(NSString *uri);   // nil for a URI that is not spotify:local:
 NSInteger SGKaraokePositionMs(void);     // negative when unknown
 void SGKaraokeSeek(NSInteger ms);
 id SGKaraokePlayer(void);                // SPTEsperantoPlayer, nil before the app asked it for its state

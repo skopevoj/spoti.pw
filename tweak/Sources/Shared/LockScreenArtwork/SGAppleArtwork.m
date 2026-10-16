@@ -164,6 +164,7 @@ NSURL *SGAppleStreamFile(NSString *media, NSURL *base) {
 static NSString *sg_token;
 static NSMutableArray<void (^)(NSString *)> *sg_waiting;
 static NSMutableDictionary<NSString *, id> *sg_known;   // what each album gave this launch, NSNull for nothing
+static NSMutableDictionary<NSString *, NSMutableArray *> *sg_asking;   // everyone waiting on each search in flight
 static CFAbsoluteTime sg_quietUntil;
 
 // Every request goes out the way the web player's would; the answer lands on the main queue.
@@ -190,9 +191,14 @@ static void readToken(void (^done)(NSString *token, NSString *note)) {
             return;
         }
         get([NSURL URLWithString:script relativeToURL:[NSURL URLWithString:kWebPlayer]], nil, ^(NSString *code, NSInteger scriptStatus) {
-            NSString *token = SGAppleTokenIn(code);
-            done(token, token ? [NSString stringWithFormat:@"read, good until %@", SGAppleTokenExpiry(token)]
-                              : [NSString stringWithFormat:@"not in %@ (%ld)", script, (long)scriptStatus]);
+            // The script runs to megabytes, too long to search on the main queue.
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                NSString *token = SGAppleTokenIn(code);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    done(token, token ? [NSString stringWithFormat:@"read, good until %@", SGAppleTokenExpiry(token)]
+                                      : [NSString stringWithFormat:@"not in %@ (%ld)", script, (long)scriptStatus]);
+                });
+            });
         });
     });
 }
@@ -304,5 +310,19 @@ void SGAppleArtworkFind(NSString *artist, NSString *album, BOOL tall, void (^don
         done(nil, @"Apple Music asked for a pause");
         return;
     }
-    withToken(NO, ^(NSString *token) { search(token, artist, album, tall, known, YES, done); });
+    // The lock screen and the player ask for the same album on the same track: one search answers both.
+    if (!sg_asking) sg_asking = [NSMutableDictionary dictionary];
+    NSMutableArray *asking = sg_asking[known];
+    if (asking) {
+        [asking addObject:[done copy]];
+        return;
+    }
+    sg_asking[known] = [NSMutableArray arrayWithObject:[done copy]];
+    withToken(NO, ^(NSString *token) {
+        search(token, artist, album, tall, known, YES, ^(SGCanvas *canvas, NSString *note) {
+            NSArray *waiting = sg_asking[known];
+            [sg_asking removeObjectForKey:known];
+            for (void (^waiter)(SGCanvas *, NSString *) in waiting) waiter(canvas, note);
+        });
+    });
 }

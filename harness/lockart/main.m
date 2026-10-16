@@ -6,6 +6,7 @@
 #import <AppKit/AppKit.h>
 #import <MediaPlayer/MediaPlayer.h>
 #import "Shared/LockScreenArtwork/LockScreenArtwork.h"
+#import "Shared/LockScreenArtwork/SGAppleArtwork.h"
 #import "Shared/LockScreenArtwork/SGArtworkFile.h"
 #import "Shared/LockScreenArtwork/SGCanvas.h"
 
@@ -17,6 +18,83 @@ static void check(BOOL ok, NSString *what) {
 }
 
 #define CHECK(cond, ...) check((cond), [NSString stringWithFormat:__VA_ARGS__])
+
+// lockart.test answers after a moment with the file it is handed, and amp-api with no albums, counting
+// what it is asked: the lock screen and the player asking for the same clip at once must cost one download.
+@interface SGLockartServer : NSURLProtocol
+@end
+
+static NSData *sg_served;
+static NSUInteger sg_downloads, sg_searches;
+
+@implementation SGLockartServer
++ (BOOL)canInitWithRequest:(NSURLRequest *)request {
+    return [request.URL.host isEqualToString:@"lockart.test"] || [request.URL.host isEqualToString:@"amp-api.music.apple.com"];
+}
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request {
+    return request;
+}
+- (void)startLoading {
+    BOOL search = [self.request.URL.host isEqualToString:@"amp-api.music.apple.com"];
+    @synchronized (SGLockartServer.class) {
+        if (search) sg_searches++;
+        else sg_downloads++;
+    }
+    NSData *body = search ? [@"{\"results\":{\"albums\":{\"data\":[]}}}" dataUsingEncoding:NSUTF8StringEncoding] : sg_served;
+    NSURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:200 HTTPVersion:@"HTTP/1.1"
+                                                        headerFields:@{@"Content-Length": @(body.length).stringValue}];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_global_queue(0, 0), ^{
+        [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+        [self.client URLProtocol:self didLoadData:body];
+        [self.client URLProtocolDidFinishLoading:self];
+    });
+}
+- (void)stopLoading {}
+@end
+
+static void spin(BOOL (^done)(void)) {
+    NSDate *until = [NSDate dateWithTimeIntervalSinceNow:10];
+    while (!done() && [until timeIntervalSinceNow] > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+}
+
+static NSString *base64url(NSString *json) {
+    NSString *text = [[json dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
+    text = [[text stringByReplacingOccurrencesOfString:@"+" withString:@"-"] stringByReplacingOccurrencesOfString:@"/" withString:@"_"];
+    return [text stringByReplacingOccurrencesOfString:@"=" withString:@""];
+}
+
+static void testSharing(NSURL *clip) {
+    [NSURLProtocol registerClass:SGLockartServer.class];
+    sg_served = [NSData dataWithContentsOfURL:clip];
+    __block NSURL *first = nil, *second = nil;
+    __block NSString *secondNote = nil;
+    NSURLSessionTask *task = SGArtworkFetchAside(@"shared", @"https://lockart.test/shared.mp4", ^(NSURL *file, NSString *note) { first = file; });
+    NSURLSessionTask *joined = SGArtworkFetchAside(@"shared", @"https://lockart.test/shared.mp4", ^(NSURL *file, NSString *note) {
+        second = file;
+        secondNote = note;
+    });
+    spin(^BOOL { return first && second; });
+    CHECK(task && !joined, @"the second asker for a clip coming joins the first one's download");
+    CHECK(first && [first isEqual:second] && sg_downloads == 1, @"one download answers both (%lu asked, %@)", (unsigned long)sg_downloads, secondNote);
+
+    // The Apple Music search, with a token the reader takes for the web player's, good for ten days.
+    NSString *token = [NSString stringWithFormat:@"%@.%@.sig", base64url(@"{\"alg\":\"ES256\"}"),
+                       base64url([NSString stringWithFormat:@"{\"iss\":\"AMPWebPlay\",\"exp\":%.0f}", NSDate.date.timeIntervalSince1970 + 864000])];
+    [NSUserDefaults.standardUserDefaults setObject:token forKey:@"spotifyglass.lockscreen.appletoken"];
+    __block int answered = 0;
+    for (int i = 0; i < 2; i++) SGAppleArtworkFind(@"The Harness", @"Low Tide", YES, ^(SGCanvas *canvas, NSString *note) { answered++; });
+    spin(^BOOL { return answered == 2; });
+    CHECK(answered == 2 && sg_searches == 1, @"two lookups of one album at once make one search (%lu)", (unsigned long)sg_searches);
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"spotifyglass.lockscreen.appletoken"];
+
+    SGArtworkSetOrderFor(@"lockart.player", @[SGArtworkSourceApple]);
+    SGArtworkSetOrderFor(@"lockart.lock", @[SGArtworkSourceSpotify, SGArtworkSourceApple]);
+    CHECK([SGArtworkOrderFor(@"lockart.player") isEqualToArray:@[SGArtworkSourceApple]] &&
+          [SGArtworkOrderFor(@"lockart.lock") isEqualToArray:(@[SGArtworkSourceSpotify, SGArtworkSourceApple])] &&
+          [SGArtworkOrderFor(@"lockart.unset") isEqualToArray:(@[SGArtworkSourceSpotify, SGArtworkSourceApple])],
+          @"each order is its own, Spotify then Apple Music until set");
+    for (NSString *key in @[@"lockart.player", @"lockart.lock"]) [NSUserDefaults.standardUserDefaults removeObjectForKey:key];
+}
 
 static NSURL *cacheDirectory(void) {
     NSString *caches = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
@@ -174,6 +252,9 @@ int main(void) {
         });
         dispatch_semaphore_wait(got, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
         CHECK(fetched != nil && [fetchNote isEqualToString:@"cached"], @"a canvas already in the cache is handed straight back (%@)", fetchNote);
+
+        printf("\nsharing\n");
+        testSharing(clip);
 
         printf("\nthe crop\n");
         __block NSURL *cropped = nil;

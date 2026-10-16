@@ -8,7 +8,7 @@ body:
     attributes:
       label: Before you file
       options:
-        - label: I searched the [open and closed issues](https://github.com/skopevoj/spoti.pw/issues?q=is%3Aissue) and this isn't requested yet.
+        - label: I searched the [open and closed issues](https://github.com/rodrigoniebla-cyber/rokis.pw/issues?q=is%3Aissue) and this isn't requested yet.
           required: true
   - type: dropdown
     id: look

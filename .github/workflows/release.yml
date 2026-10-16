@@ -1,11 +1,13 @@
 # Every push to main updates one release PR (version.txt and CHANGELOG.md from the feat:/fix:
 # commits since the last release). Merging it tags vX.Y.Z and makes the GitHub Release, and the
 # second job builds the tweak's .deb and attaches it. No IPA is built or published here.
+# beta does the same from release-please-config.beta.json, as vX.Y.Z-beta.N pre-releases. After a
+# release on main, an empty commit on beta with the body "Release-As: 0.24.0-beta.1" starts the next.
 name: Release
 
 on:
   push:
-    branches: [main]
+    branches: [main, beta]
 
 permissions:
   contents: write
@@ -20,6 +22,10 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
+        with:
+          target-branch: ${{ github.ref_name }}
+          config-file: ${{ github.ref_name == 'beta' && 'release-please-config.beta.json' || 'release-please-config.json' }}
+          manifest-file: ${{ github.ref_name == 'beta' && '.release-please-manifest.beta.json' || '.release-please-manifest.json' }}
 
   deb:
     needs: release-please

@@ -4,14 +4,29 @@ on:
   workflow_dispatch:
     inputs:
       ipa_url:
-        description: "Direct link to a decrypted Spotify IPA"
-        required: true
+        description: "Direct link to a decrypted Spotify IPA. Leave empty to use the .ipa attached to a draft release instead"
+        required: false
+        default: ""
+        type: string
+      ipa_release:
+        description: "Without a link: the release (tag or title) whose .ipa to use. Empty takes the newest .ipa attached to any release"
+        required: false
+        default: ""
+        type: string
+      disable:
+        description: "Parts of the mod to leave out, comma separated (Core/SGPrefs.h): liveactivity, lockscreen, syshaptics, stats, gemini, visualizer, sing, headgestures, glow, plist, extpatch, intents. For finding which part a problem comes from"
+        required: false
+        default: ""
         type: string
       upload_method:
         description: "Where to put the result"
         default: artifacts
         type: choice
         options: [artifacts, filebin, both]
+
+# contents: write lets the job see to see draft releases, which is where an uploaded IPA stays private.
+permissions:
+  contents: write
 
 env:
   THEOS: ${{ github.workspace }}/theos
@@ -40,24 +55,44 @@ jobs:
           python3 -m pip install --break-system-packages git+https://github.com/asdfzxcvbn/pyzule-rw.git
 
       - name: Download IPA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IPA_URL: ${{ inputs.ipa_url }}
+          IPA_RELEASE: ${{ inputs.ipa_release }}
         run: |
           mkdir -p ipa
-          curl -fsSL "${{ inputs.ipa_url }}" -o ipa/spotify.ipa
+          if [ -n "$IPA_URL" ]; then
+            curl -fsSL "$IPA_URL" -o ipa/spotify.ipa
+          else
+            # The newest .ipa attached to a release (drafts included), or to the one named.
+            ASSET=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '
+              [.[] | select(env.IPA_RELEASE == "" or .tag_name == env.IPA_RELEASE or .name == env.IPA_RELEASE)
+                   | .assets[] | select(.name | ascii_downcase | endswith(".ipa"))]
+              | sort_by(.updated_at) | last | .url // empty')
+            if [ -z "$ASSET" ]; then
+              echo "::error::No link given and no release has an .ipa attached. Attach one to a draft release (Releases > Draft a new release) or pass ipa_url."
+              exit 1
+            fi
+            echo "Using release asset $ASSET"
+            gh api -H "Accept: application/octet-stream" "$ASSET" > ipa/spotify.ipa
+          fi
           case "$(file --mime-type -b ipa/spotify.ipa)" in application/zip|application/x-ios-app) ;; *) echo "::error::Not an IPA"; exit 1 ;; esac
 
       - run: make release
+        env:
+          SG_DISABLE: ${{ inputs.disable }}
 
       - uses: actions/upload-artifact@v5
         if: inputs.upload_method != 'filebin'
         with:
-          name: spoti.ipa
+          name: rokis.ipa
           path: out/*.ipa
           if-no-files-found: error
 
       - name: Upload to filebin.net
         if: inputs.upload_method != 'artifacts'
         run: |
-          BIN="spotifyglass-${{ github.run_id }}"
+          BIN="rokispw-${{ github.run_id }}"
           echo "### filebin.net download" >> "$GITHUB_STEP_SUMMARY"
           for f in out/*.ipa; do
             curl -fsS -X POST -H "Content-Type: application/octet-stream" --data-binary "@$f" "https://filebin.net/$BIN/$(basename "$f")" >/dev/null

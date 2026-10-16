@@ -277,6 +277,10 @@ static NSString *bareText(NSString *text) {
     return bare;
 }
 
+BOOL SGLyricsReadsSame(NSString *text, NSString *other) {
+    return [bareText(text ?: @"") isEqualToString:bareText(other ?: @"")];
+}
+
 // The translation the Lyrics page asks for: the one in that language, whichever the region ("en"
 // takes "en-US"), and none in any other; with no language asked for, the first the document has.
 static NSString *translationLanguage(NSArray<NSString *> *languages) {

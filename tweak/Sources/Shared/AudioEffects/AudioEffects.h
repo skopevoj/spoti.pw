@@ -111,7 +111,7 @@ typedef NS_ENUM(NSInteger, SGDSPFileKind) {
     SGDSPFileLiveprog,          // Liveprog's .eel
 };
 
-// Documents/spoti.pw/Audio effects/<Convolver|DDC|Liveprog>, made on first use, empty until files are imported.
+// Documents/rokis.pw/Audio effects/<Convolver|DDC|Liveprog>, made on first use, empty until files are imported.
 NSString *SGDSPLibraryDirectory(SGDSPFileKind kind);
 NSArray<NSString *> *SGDSPLibraryFiles(SGDSPFileKind kind);   // names, sorted
 NSArray<NSString *> *SGDSPFileExtensions(SGDSPFileKind kind); // lowercase, without the dot
