@@ -111,5 +111,9 @@ id SGKaraokePlayer(void);                // SPTEsperantoPlayer, nil before the a
 // A track the player has reported, by its base62 id; nil for one it has not played this session.
 @class SPTPlayerTrack;
 SPTPlayerTrack *SGKaraokeTrackFor(NSString *trackID);
+// Spotify track IDs use their base62 ID; local tracks use their complete spotify:local: URI so
+// lyrics fetched by title and artist can be cached without pretending the file has a Spotify ID.
+NSString *SGKaraokeTrackKeyFromURI(id URI);
+BOOL SGKaraokeTrackKeyIsLocal(NSString *trackKey);
 // Keeps a track seen elsewhere, so a source can name it before the player has reported it.
 void SGKaraokeRememberTrack(SPTPlayerTrack *track);
