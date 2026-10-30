@@ -232,5 +232,14 @@
     "signed_at": "2026-10-13T22:14:36.456Z",
     "pull_request": 234,
     "evidence": "https://github.com/skopevoj/spoti.pw/pull/234"
+  },
+  {
+    "login": "Kinkaliyov",
+    "id": 192990566,
+    "cla": "1.0",
+    "via": "checkbox",
+    "signed_at": "2026-10-30T16:17:26.864Z",
+    "pull_request": 240,
+    "evidence": "https://github.com/skopevoj/spoti.pw/pull/240"
   }
 ]
