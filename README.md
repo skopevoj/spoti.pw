@@ -2,20 +2,20 @@
   <img src="docs/icon.png" width="96" alt="">
 </p>
 
-<h1 align="center">spoti.pw</h1>
+<h1 align="center">chroma.pw</h1>
 
-<p align="center">Spotify, in glass.</p>
+<p align="center">Refresh the look of your music.</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/iOS-000000?style=for-the-badge&logo=ios&logoColor=white" alt="iOS">
-  <img src="https://img.shields.io/badge/Spotify-9.1.78-1ED760?style=for-the-badge&logo=spotify&logoColor=white" alt="Spotify 9.1.78">
+  <img src="https://img.shields.io/badge/Target-9.1.78-1ED760?style=for-the-badge" alt="Target 9.1.78">
   <img src="https://img.shields.io/badge/Objective--C-3A95E3?style=for-the-badge&logo=apple&logoColor=white" alt="Objective-C">
   <img src="https://img.shields.io/badge/GitHub_Actions-2671E5?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions">
   <img src="https://img.shields.io/badge/License-PolyForm_Strict_1.0.0-blue?style=for-the-badge" alt="PolyForm Strict 1.0.0">
 </p>
 
 <p align="center">
-  <a href="https://spoti.pw">spoti.pw</a> ·
+  <a href="https://chroma.pw">chroma.pw</a> ·
   <a href="#build-it">Build it</a> ·
   <a href="docs/tweaks.md">Hack on it</a> ·
   <a href="https://ko-fi.com/darkksh">Support</a>
@@ -30,10 +30,10 @@
   <img src="docs/screenshots/home.webp" width="16%" alt="Home">
 </p>
 
-A no-jailbreak Theos tweak that rebuilds Spotify for iOS in Liquid Glass, injected into your own
+A no-jailbreak Theos tweak that rebuilds the music app for iOS in Liquid Glass, injected into your own
 decrypted IPA and signed with your own certificate.
 
-Built and tested on **Spotify 9.1.78** — use that version's IPA. The mod hooks Spotify's own classes,
+Built and tested on **target build 9.1.78** — use that version's IPA. The mod hooks the app's own classes,
 which change between releases, so another version may build and then break.
 
 | | |
@@ -43,18 +43,18 @@ which change between releases, so another version may build and then break.
 | Live Activity | iOS 17+ |
 
 The redesign is `UIGlassEffect`, which only exists from iOS 26. Below that the Redesigned UI switch
-is greyed out and the mod runs Spotify's own screens with everything else it adds on top. Both live
+is greyed out and the mod runs the app's own screens with everything else it adds on top. Both live
 in Settings → Mod Settings.
 
 ## Build it
 
-No IPA is distributed. Bring a decrypted **Spotify 9.1.78** IPA; you get an unsigned
-`spoti.pw-<mod version>.ipa` to sign with SideStore, Feather or any certificate signer. Each
-[release](https://github.com/skopevoj/spoti.pw/releases) also carries the tweak's `.deb`.
+No IPA is distributed. Bring a decrypted **9.1.78** IPA; you get an unsigned
+`chroma.pw-<mod version>.ipa` to sign with SideStore, Feather or any certificate signer. Each
+[release](https://github.com/skopevoj/chroma.pw/releases) also carries the tweak's `.deb`.
 
 ### Build with GitHub Actions
 
-Fork the repo, enable Actions, run **Build IPA from your own Spotify IPA**. It takes a direct link to
+Fork the repo, enable Actions, run **Build IPA from your own music app IPA**. It takes a direct link to
 your decrypted `.ipa` and hands the built IPA back as a workflow artifact. No Mac needed; the link is
 masked in the log and the result stays in your fork.
 
@@ -68,13 +68,13 @@ alone builds too, but without the Live Activity. Then:
 
 Put the decrypted `.ipa` in `ipa/`, then:
 
-    make release    # out/spoti.pw-<version>.ipa, ready to sign
+    make release    # out/chroma.pw-<version>.ipa, ready to sign
     make install    # the same, signed with your certificate and pushed over USB
 
 `make install` reads `SIGN_P12`, `SIGN_PROFILE` and `SIGN_P12_PASSWORD` from `.signing.env`; copy
 `.signing.env.example` and fill it in.
 
-The first build spends a minute reading Spotify's flags out of your IPA. `make flags` regenerates it.
+The first build spends a minute reading the app's flags out of your IPA. `make flags` regenerates it.
 
 ### Signing
 
@@ -83,7 +83,7 @@ but tapping the player on the lock screen won't open it — and it tells you on 
 to use. In Feather, copy the App ID into **Identifier** and leave **PPQ protection** off; AltStore,
 SideStore and Sideloadly get this right on their own.
 
-The app keeps Spotify's bundle id, so it installs over the real Spotify.
+The app keeps the original bundle id, so it installs over the existing app.
 
 ## Support
 
@@ -101,10 +101,10 @@ contribution; it is ticked once, before the first pull request is merged.
 
 ## Star history
 
-<a href="https://star-history.com/#skopevoj/spoti.pw&Date">
+<a href="https://star-history.com/#skopevoj/chroma.pw&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=skopevoj/spoti.pw&type=Date&theme=dark">
-    <img src="https://api.star-history.com/svg?repos=skopevoj/spoti.pw&type=Date" alt="Star history chart">
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=skopevoj/chroma.pw&type=Date&theme=dark">
+    <img src="https://api.star-history.com/svg?repos=skopevoj/chroma.pw&type=Date" alt="Star history chart">
   </picture>
 </a>
 
@@ -121,4 +121,4 @@ the mod yourself, but not change it, reuse it in other projects or redistribute 
 v0.21.1 were published under GPL-3.0 and stay under it. Files in `vendor/` and `.agents/` keep their
 own licences.
 
-Not affiliated with Spotify.
+Not affiliated with the original app.
