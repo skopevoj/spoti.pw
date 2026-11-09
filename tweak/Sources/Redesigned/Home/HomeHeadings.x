@@ -93,7 +93,8 @@ static void restyle(UIView *button) {
     UIFont *font = SGRFont(UIFontTextStyleTitle2, UIFontWeightBold, UIContentSizeCategoryLarge);
     if (![mine.font isEqual:font]) mine.font = font;
     if (![mine.text isEqualToString:theirs.text]) mine.text = theirs.text;
-    if (![mine.textColor isEqual:theirs.textColor]) mine.textColor = theirs.textColor;
+    UIColor *headingColor = SGAppearanceColor([UIColor colorWithWhite:0.08 alpha:1], theirs.textColor ?: UIColor.whiteColor);
+    if (![mine.textColor isEqual:headingColor]) mine.textColor = headingColor;
     if (theirs.alpha != 0) theirs.alpha = 0;
 
     // The leading edge and the baseline are Spotify's label's; the title ends before "Show all", or before the

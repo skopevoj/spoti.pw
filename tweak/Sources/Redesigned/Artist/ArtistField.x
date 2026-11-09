@@ -68,7 +68,8 @@ static SGRArtworkField *fieldIn(UIView *page) {
     if (![page.accessibilityIdentifier isEqualToString:kPageIdentifier] || page.bounds.size.height < 200) return;
     // The page the repaint hook keeps clear is the one laying out, which is the one on screen.
     sgr_artistRoot = page;
-    if (page.overrideUserInterfaceStyle != SGRedesignAppearanceStyle()) page.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+    SGRApplyNativeLightSurface(page, NO);
+    SGRegisterAppearanceView(page);
     SGRArtworkField *field = fieldIn(page);
     if (field.superview != page) [page insertSubview:field atIndex:0];
     else if (page.subviews.firstObject != field) [page sendSubviewToBack:field];

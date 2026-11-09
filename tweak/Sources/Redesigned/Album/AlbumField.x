@@ -99,7 +99,8 @@ static SGRArtworkField *fieldIn(UIView *page) {
     // The page the repaint hook keeps clear is the one laying out, which is the one on screen; an album
     // pushed over this one sets itself from its own pass, and this one sets itself again coming back.
     sgr_albumRoot = page;
-    if (page.overrideUserInterfaceStyle != SGRedesignAppearanceStyle()) page.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+    SGRApplyNativeLightSurface(page, NO);
+    SGRegisterAppearanceView(page);
     SGRArtworkField *field = fieldIn(page);
     if (field.superview != page) [page insertSubview:field atIndex:0];
     else if (page.subviews.firstObject != field) [page sendSubviewToBack:field];

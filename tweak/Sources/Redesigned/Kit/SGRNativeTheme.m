@@ -35,7 +35,7 @@ BOOL SGRNativeThemeMatches(BOOL light) {
 }
 
 BOOL SGRSetNativeTheme(BOOL light, BOOL (^finish)(void)) {
-    // A theme transition is a launch transaction, never a concurrent live UI repaint.
+    // Store transitions are main-thread transactions; rendered surfaces refresh only after success.
     if (!NSThread.isMainThread || !resolve()) return NO;
     void *previous = mainTheme();
     void *desired = (light ? lightTheme : darkTheme)();

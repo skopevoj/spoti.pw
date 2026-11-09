@@ -17,9 +17,14 @@ static BOOL sg_pagesConform;
 // Inset grouped cards on Spotify's dark grey, a hairline between the rows of a card.
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.overrideUserInterfaceStyle = SGRedesignedUI() ? SGRedesignAppearanceStyle() : UIUserInterfaceStyleDark;
+    if (SGRedesignedUI()) {
+        SGRegisterAppearanceController(self);
+        // Settings tiles are rendered bitmaps; rebuild their cells, not the page/controller.
+        SGRegisterAppearanceRefresh(self, ^(id owner) { [((SGPage *)owner).tableView reloadData]; });
+    }
+    else self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     self.tableView.backgroundColor = SGPageBackground();
-    self.tableView.separatorColor = [UIColor colorWithWhite:SGRedesignedUI() && SGRedesignLightAppearance() ? 0 : 1 alpha:0.1];
+    self.tableView.separatorColor = SGRedesignedUI() ? SGAppearanceColor([UIColor colorWithWhite:0 alpha:0.1], [UIColor colorWithWhite:1 alpha:0.1]) : [UIColor colorWithWhite:1 alpha:0.1];
     self.tableView.sectionHeaderTopPadding = 0;
 }
 

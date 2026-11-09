@@ -4,7 +4,7 @@ SRC=${SRC:-$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)}
 OUT=${OUT:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/AppearanceHarness.app"
 
-for f in Redesigned/Kit/SGRAppearance.x Redesigned/Kit/SGRAmoled.x; do
+for f in Redesigned/Kit/SGRAppearance.x Redesigned/Kit/SGRAmoled.x Redesigned/Kit/SGRNativeSurface.x Redesigned/Kit/SGRNativeGlyph.x Redesigned/Kit/SGRSheetAppearance.x Redesigned/Kit/SGRStatusBarAppearance.x; do
     name=$(basename "$f" .x)
     "$THEOS/bin/logos.pl" -c generator=internal "$SRC/$f" > "$OUT/gen/$name.m"
 done

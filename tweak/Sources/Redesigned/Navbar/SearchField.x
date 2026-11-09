@@ -109,7 +109,7 @@ static void styleSearchField(UIView *button) {
     UIVisualEffectView *glass = SGGlassAt(button, 0);
     // Dark like every glass of the redesign's, rather than by grace of the navigation stack Spotify hosts
     // the page in (TabBar.x).
-    if (glass.overrideUserInterfaceStyle != SGRedesignAppearanceStyle()) glass.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+    SGRegisterAppearanceView(glass);
     glass.frame = button.bounds;
     SGShapeGlass(glass, size.height / 2, YES);
 

@@ -13,6 +13,7 @@
 //   progress line 370x2 at the bottom. The glass pane goes on the container's view.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRRepaint.h"
+#import "Redesigned/Kit/SGRNativeSurface.h"
 #import "NowPlayingBar.h"
 #import "Redesigned/Kit/SGRBarGeometry.h"
 
@@ -138,6 +139,7 @@ static void styleNowPlayingBar(UIViewController *container) {
     UIViewController *barVC = container.childViewControllers.firstObject;
     UIView *bar = barVC.viewIfLoaded ?: container.view;
     sgr_nowPlayingRoot = bar;
+    SGRApplyNativeLightSurface(bar, NO);
 
     UIView *card = sgr_nowPlayingCard;
     if (!card || !SGIsInside(card, bar)) card = sgr_nowPlayingCard = detectColoredCard(bar);
@@ -159,7 +161,7 @@ static void styleNowPlayingBar(UIViewController *container) {
     UIVisualEffectView *glass = SGGlassFor(container.view, &kGlassKey);
     // Dark whatever the system is set to: the bar is outside the navigation stacks Spotify makes dark, and
     // took the system's light glass on a phone in light mode (TabBar.x).
-    if (glass.overrideUserInterfaceStyle != SGRedesignAppearanceStyle()) glass.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+    SGRegisterAppearanceView(glass);
     sg_cardGlass = glass;
     static CGRect lastVerticalFrame = {{-1, -1}, {0, 0}};
     if (!CGRectIsNull(SGRVerticalBarFrameIn(container.view, 76)) && !CGRectEqualToRect(lastVerticalFrame, frame)) {

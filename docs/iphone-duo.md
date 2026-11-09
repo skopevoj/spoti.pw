@@ -113,7 +113,7 @@ The repository's CLA is a separate author decision. This patch does not express 
 
 ## Appearance and source sharing
 
-See [appearance.md](appearance.md) for the launch-applied theme bridge and its verification limits.
+See [appearance.md](appearance.md) for the live theme bridge and its verification limits.
 The earlier four-tab screenshot results above describe the pre-appearance baseline, not the new
 Duo-specific label policy. Use `harness/tabbar/run-preferences.sh PHONE_SIMULATOR_UDID DUO_SIMULATOR_UDID`
 for the policy, saved-composition and light/dark selection regressions. Native icon integration is

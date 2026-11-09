@@ -3,9 +3,9 @@
 
 static UIFont *sg_titleFont, *sg_subtitleFont;
 static BOOL settingsLight(void) { return SGRedesignedUI() && SGRedesignLightAppearance(); }
-static UIColor *settingsInk(void) { return settingsLight() ? UIColor.labelColor : UIColor.whiteColor; }
+static UIColor *settingsInk(void) { return SGRedesignedUI() ? SGAppearanceColor(UIColor.labelColor, UIColor.whiteColor) : UIColor.whiteColor; }
 
-UIColor *SGGrey(void) { return settingsLight() ? UIColor.secondaryLabelColor : [UIColor colorWithWhite:0xB3 / 255.0 alpha:1]; }
+UIColor *SGGrey(void) { UIColor *dark = [UIColor colorWithWhite:0xB3 / 255.0 alpha:1]; return SGRedesignedUI() ? SGAppearanceColor(UIColor.secondaryLabelColor, dark) : dark; }
 UIFont *SGTitleFont(void) { return sg_titleFont ?: [UIFont systemFontOfSize:13 weight:UIFontWeightBold]; }
 UIFont *SGSubtitleFont(void) { return sg_subtitleFont ?: [UIFont systemFontOfSize:11]; }
 
@@ -89,9 +89,9 @@ static BOOL lookBlack(void) {
 UIColor *SGGreen(void) { return lookAccent() ?: [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1]; }
 UIColor *SGRed(void) { return [UIColor colorWithRed:0xF1 / 255.0 green:0x5E / 255.0 blue:0x6B / 255.0 alpha:1]; }
 UIColor *SGDiscordColor(void) { return [UIColor colorWithRed:0x58 / 255.0 green:0x65 / 255.0 blue:0xF2 / 255.0 alpha:1]; }
-UIColor *SGPageBackground(void) { if (settingsLight()) return UIColor.systemGroupedBackgroundColor; return lookBlack() ? UIColor.blackColor : [UIColor colorWithWhite:0x12 / 255.0 alpha:1]; }
+UIColor *SGPageBackground(void) { UIColor *dark = lookBlack() ? UIColor.blackColor : [UIColor colorWithWhite:0x12 / 255.0 alpha:1]; return SGRedesignedUI() ? SGAppearanceColor(UIColor.systemGroupedBackgroundColor, dark) : dark; }
 // Spotify's own elevated grey on its dark grey; iOS's own card grey on the AMOLED black.
-UIColor *SGCardBackground(void) { if (settingsLight()) return UIColor.secondarySystemGroupedBackgroundColor; return [UIColor colorWithWhite:(lookBlack() ? 0x1C : 0x2A) / 255.0 alpha:1]; }
+UIColor *SGCardBackground(void) { UIColor *dark = [UIColor colorWithWhite:(lookBlack() ? 0x1C : 0x2A) / 255.0 alpha:1]; return SGRedesignedUI() ? SGAppearanceColor(UIColor.secondarySystemGroupedBackgroundColor, dark) : dark; }
 
 UIImage *SGTileImage(NSString *symbol) {
     UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:14 weight:UIImageSymbolWeightMedium];

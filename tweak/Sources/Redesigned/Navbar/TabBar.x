@@ -351,7 +351,7 @@ static CGFloat railBranchOpacity(UIView *stock, UIView *host) {
 - (void)dealloc { [_visibilityLink invalidate]; }
 - (instancetype)initWithFrame:(CGRect)frame {
     if ((self = [super initWithFrame:frame])) {
-        self.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+        SGRegisterAppearanceView(self);
         self.accessibilityIdentifier = @"spoti.vertical-navigation";
         self.scroll = [UIScrollView new];
         self.scroll.showsVerticalScrollIndicator = NO;
@@ -363,7 +363,7 @@ static CGFloat railBranchOpacity(UIView *stock, UIView *host) {
         self.selection = [UIView new];
         self.selection.userInteractionEnabled = NO;
         self.selection.accessibilityElementsHidden = YES;
-        self.selection.backgroundColor = [UIColor colorWithWhite:SGRedesignLightAppearance() ? 1 : 0 alpha:0.55];
+        self.selection.backgroundColor = SGAppearanceColor([UIColor colorWithWhite:1 alpha:0.55], [UIColor colorWithWhite:0 alpha:0.55]);
         self.selection.layer.cornerRadius = 24;
         self.selection.layer.cornerCurve = kCACornerCurveContinuous;
         [self.scroll addSubview:self.selection];
@@ -609,7 +609,7 @@ static void syncBar(UIView *stockBar) {
         // stacks Spotify makes dark itself (-[SPNavigationController viewDidLoad] while +[SPTLiquidGlass
         // isEnabled]), so a phone in light mode had it light over Spotify's black. Spotify is dark whatever
         // the system is, and so is the bar.
-        bar.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+        SGRegisterAppearanceView(bar);
         bar.delegate = bar;
         bar.stockBar = stockBar;
         UILongPressGestureRecognizer *hold = [[UILongPressGestureRecognizer alloc] initWithTarget:bar action:@selector(held:)];

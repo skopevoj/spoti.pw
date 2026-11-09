@@ -7,6 +7,9 @@ typedef NS_ENUM(NSInteger, SGRAppearanceMode) {
     SGRAppearanceSystem = 2,
 };
 BOOL SGRAppearanceBridgeAvailable(void);
-
-BOOL SGRAppearanceNeedsRestart(void);
+BOOL SGRAppearanceNeedsRestart(void); // compatibility: indicates an unapplied selection
 NSString *SGRAppearanceStatus(void);
+// Main-thread transaction used by the picker and system observer. Stores verify before any
+// rendered appearance changes. The request form coalesces rapid preference/scene changes.
+BOOL SGRAppearanceApplyMode(NSInteger mode, BOOL animated);
+void SGRAppearanceApplyPreference(void);

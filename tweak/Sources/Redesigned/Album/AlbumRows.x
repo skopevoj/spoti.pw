@@ -32,6 +32,12 @@ static void applyHairline(UIView *row) {
     CALayer *line = objc_getAssociatedObject(row, &kLineKey);
     if (!line) {
         line = [CALayer layer];
+        SGRegisterAppearanceRefresh(line, ^(id owner) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            ((CALayer *)owner).backgroundColor = SGRHairline().CGColor;
+            [CATransaction commit];
+        });
         line.zPosition = 1;
         objc_setAssociatedObject(row, &kLineKey, line, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }

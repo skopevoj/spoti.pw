@@ -250,7 +250,7 @@ last row of Spotify's Settings, sorts every
 setting by the part of Spotify it changes, so a part's glass, its hide switches and its flags sit on
 one page, the mod's own rows first and Spotify's flags below them or on a sub page named after what
 they change. It opens on the Appearance card: Redesigned UI, then the stored look's accent colour, and in the native
-look AMOLED; the redesign offers Dark, Light and System (at launch), as described in `appearance.md`; Spotify's green is offered from the colour row once a colour
+look AMOLED; the redesign offers Dark, Light and live System, as described in `appearance.md`; Spotify's green is offered from the colour row once a colour
 is set. Redesigned UI is the one switch between the two looks (see Layers): it glows
 (Settings/SGGlowSwitch), its ⓘ says what it changes, and flipping it offers to restart Spotify.
 The pages show only what the stored look has: a page opened after flipping the switch already shows

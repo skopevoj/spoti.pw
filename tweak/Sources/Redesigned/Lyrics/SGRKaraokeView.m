@@ -842,6 +842,12 @@ static const NSUInteger kLinesPerFrame = 4;
     [path moveToPoint:CGPointMake(from, rowY)];
     [path addLineToPoint:CGPointMake(to, rowY)];
     _underline = [CAShapeLayer layer];
+    SGRegisterAppearanceRefresh(_underline, ^(id owner) {
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        ((CAShapeLayer *)owner).strokeColor = [SGRPrimary() colorWithAlphaComponent:kUnderlineAlpha].CGColor;
+        [CATransaction commit];
+    });
     _underline.path = path.CGPath;
     _underline.strokeColor = [SGRPrimary() colorWithAlphaComponent:kUnderlineAlpha].CGColor;
     _underline.lineWidth = kUnderlineWidth;
@@ -908,6 +914,12 @@ static double smoothstep(double p) {
     NSMutableArray<CALayer *> *dots = [NSMutableArray array];
     for (NSUInteger i = 0; i < 3; i++) {
         CALayer *dot = [CALayer layer];
+        SGRegisterAppearanceRefresh(dot, ^(id owner) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            ((CALayer *)owner).backgroundColor = SGRPrimary().CGColor;
+            [CATransaction commit];
+        });
         dot.frame = CGRectMake(i * (_side + _gap), 0, _side, _side);
         dot.cornerRadius = _side / 2;
         dot.backgroundColor = SGRPrimary().CGColor;
@@ -1419,7 +1431,7 @@ typedef struct {
         config.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
         config.baseForegroundColor = SGRPrimary();
         _extras = [UIButton buttonWithConfiguration:config primaryAction:nil];
-        _extras.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+        SGRegisterAppearanceView(_extras);
         _extras.showsMenuAsPrimaryAction = YES;
         _extras.preferredMenuElementOrder = UIContextMenuConfigurationElementOrderFixed;
         _extras.accessibilityLabel = @"Pronunciation and translation";

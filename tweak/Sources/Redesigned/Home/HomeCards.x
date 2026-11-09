@@ -36,6 +36,7 @@ static void roundCover(UIView *card) {
 // The transcript's own labels are plain UILabels the Kit keeps transparent; the Swift views around them
 // take their alpha again on every pass.
 static void calmDJ(UIView *card) {
+    SGRPreserveNativeSurface(card);
     for (UIView *sub in card.subviews) {
         NSString *name = NSStringFromClass(sub.class);
         if (![name containsString:@"TranscriptView"] && ![name containsString:@"BetaBadge"]) continue;

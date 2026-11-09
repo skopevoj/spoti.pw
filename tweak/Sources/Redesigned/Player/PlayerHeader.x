@@ -252,7 +252,7 @@ static void placeSidebarMore(UIView *host) {
         sidebar = [[SGRPlayerSidebarMore alloc] initWithFrame:CGRectMake(0, 0, 48, 48)];
         sidebar.accessibilityIdentifier = @"spotifyglass.player.sidebar-more";
         sidebar.ownerHost = host;
-        sidebar.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+        SGRegisterAppearanceView(sidebar);
         [sidebar takeSource:source];
         objc_setAssociatedObject(host, &kSidebarMoreKey, sidebar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
@@ -311,8 +311,8 @@ static void glassInside(UIViewController *unit, NSArray<NSString *> *identifiers
 %hook _TtC19NowPlaying_ViewImpl24NowPlayingViewController
 - (void)viewDidLayoutSubviews {
     UIViewController *appearanceOwner = (UIViewController *)self;
-    if (appearanceOwner.overrideUserInterfaceStyle != SGRedesignAppearanceStyle())
-        appearanceOwner.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+    SGRApplyNativeLightSurface(appearanceOwner.viewIfLoaded, NO);
+    SGRegisterAppearanceController(appearanceOwner);
     %orig;
     placeSidebarMore(((UIViewController *)self).viewIfLoaded);
 }

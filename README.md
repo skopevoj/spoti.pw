@@ -48,7 +48,7 @@ in Settings → Mod Settings.
 
 ## spoti.duo experimental branch
 
-This fork adds Duo-aware navigation and **Dark, Light, and System (at launch)** appearance to the redesigned UI. Choose the appearance in Mod Settings, then close and reopen Spotify. The native theme bridge was audited against Spotify **9.1.94**, with simulator fixtures and an isolated real-provider probe; a complete signed-in app walkthrough is still pending. [Appearance details and limitations](docs/appearance.md).
+This fork adds Duo-aware navigation and **Dark, Light, and live System** appearance to the redesigned UI. Choose the appearance in Mod Settings; changes apply without closing Spotify. The native theme bridge was audited against Spotify **9.1.94**, with simulator fixtures and an isolated real-provider probe; comprehensive signed-in app acceptance is still pending. [Appearance details and limitations](docs/appearance.md).
 
 The exact `com.kyle.spotipw.duo` bundle hides tab labels except when fully open in portrait, where it follows your saved **Hide labels** setting. Other bundle IDs always follow that setting. Create, custom tabs, hidden tabs and saved order use the existing Navbar editor. `DUO=1` alone does not change the bundle ID; choose an identifier that matches your signing profile. [Duo build notes](docs/iphone-duo.md).
 

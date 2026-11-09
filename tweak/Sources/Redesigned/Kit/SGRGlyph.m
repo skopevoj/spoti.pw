@@ -13,6 +13,7 @@ static const CGFloat kMinTouch = 44, kPressAlpha = 0.5, kPressScale = 0.9, kDisa
     _symbol = [symbol copy];
     self.preferredSymbolConfiguration = [UIImageSymbolConfiguration configurationWithPointSize:size weight:weight];
     self.image = symbol ? [UIImage systemImageNamed:symbol] : nil;
+    SGRegisterAppearanceView(self);
     self.tintColor = SGRPrimary();
     self.contentMode = UIViewContentModeCenter;
     self.userInteractionEnabled = NO;

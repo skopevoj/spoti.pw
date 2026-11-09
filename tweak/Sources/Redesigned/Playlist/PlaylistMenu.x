@@ -202,7 +202,7 @@ void SGRPlaylistTakeCuration(UIView *cell) {
 }
 
 - (void)sgr_down {
-    self.backgroundColor = [UIColor colorWithWhite:SGRedesignLightAppearance() ? 0 : 1 alpha:0.10];
+    self.backgroundColor = SGAppearanceColor([UIColor colorWithWhite:0 alpha:0.10], [UIColor colorWithWhite:1 alpha:0.10]);
 }
 
 - (void)sgr_up {

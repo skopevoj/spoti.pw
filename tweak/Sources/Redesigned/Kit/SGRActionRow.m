@@ -54,6 +54,7 @@ static NSString *wordIn(UIView *button) {
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
+    SGRegisterAppearanceView(self);
     _glyph = [UIImageView new];
     _glyph.contentMode = UIViewContentModeScaleAspectFit;
     _glyph.userInteractionEnabled = NO;
@@ -190,6 +191,7 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
+    SGRegisterAppearanceView(self);
     _glyph = [UIImageView new];
     _glyph.contentMode = UIViewContentModeScaleAspectFit;
     _glyph.userInteractionEnabled = NO;

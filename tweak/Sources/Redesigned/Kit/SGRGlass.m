@@ -28,7 +28,7 @@ static UIView *newShape(SGRGlassMode mode) {
             shape.backgroundColor = SGRSolidGlassFill();
             break;
     }
-    shape.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+    SGRegisterAppearanceView(shape);
     shape.userInteractionEnabled = NO;
     return shape;
 }
@@ -51,7 +51,7 @@ static void keepFilm(UIView *shape, BOOL prominent, SGRGlassMode mode) {
     UIView *content = [shape isKindOfClass:UIVisualEffectView.class] ? ((UIVisualEffectView *)shape).contentView : shape;
     if (!film) {
         film = [UIView new];
-        film.backgroundColor = [UIColor colorWithWhite:SGRedesignLightAppearance() ? 0 : 1 alpha:0.14];
+        film.backgroundColor = SGAppearanceColor([UIColor colorWithWhite:0 alpha:0.14], [UIColor colorWithWhite:1 alpha:0.14]);
         film.userInteractionEnabled = NO;
         film.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         objc_setAssociatedObject(shape, &kFilmKey, film, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -99,6 +99,9 @@ static UIView *glassInside(UIView *control, const void *key, CGSize size, BOOL c
         SGShapeGlass(shape, MIN(size.width, size.height) / 2, capsule);
     }
     keepFilm(shape, prominent, mode);
+    SGRegisterAppearanceRefresh(shape, ^(id ownedShape) {
+        keepFilm(ownedShape, prominent, mode);
+    });
     CGPoint middle = CGPointMake(CGRectGetMidX(control.bounds), CGRectGetMidY(control.bounds));
     if (!CGPointEqualToPoint(shape.center, middle)) shape.center = middle;
     return shape;

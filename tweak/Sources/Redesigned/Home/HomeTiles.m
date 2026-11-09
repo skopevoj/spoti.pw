@@ -142,6 +142,7 @@ static void refresh(UIView *tile) {
 }
 
 void SGRHomeStyleTile(UIView *tile) {
+    SGRApplyNativeLightSurface(tile, NO);
     CFTimeInterval began = SGRHomeProbeBegin();
     UIImageView *cover = partsOf(tile).cover;
     if (!cover) return;

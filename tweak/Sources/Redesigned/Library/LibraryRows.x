@@ -48,6 +48,12 @@ static void hairline(UIView *cell, UIView *thumb) {
     }
     if (!line) {
         line = [CALayer layer];
+        SGRegisterAppearanceRefresh(line, ^(id owner) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            ((CALayer *)owner).backgroundColor = SGRHairline().CGColor;
+            [CATransaction commit];
+        });
         line.backgroundColor = SGRHairline().CGColor;
         objc_setAssociatedObject(cell, &kLineKey, line, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }

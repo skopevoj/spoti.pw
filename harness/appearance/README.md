@@ -1,14 +1,14 @@
 # Appearance regression fixture
 
-This simulator-only app compiles the production appearance bridge, native Swift adapter, settings picker, AMOLED hook, tokens, glass and artwork field. An independent Objective-C wrapper mock and real pure-Swift class expose the two separate stores Spotify actually uses. This replaces the incomplete original wrapper-only mock.
+This simulator-only app compiles the production appearance bridge, native Swift adapter, settings picker, native surface/glyph/sheet/status adapters, AMOLED hook, tokens, glass and artwork field. Independent Objective-C and pure-Swift providers expose the separate stores used by the bridge. It does not load Spotify.
 
     THEOS=$HOME/theos sh harness/appearance/build.sh
     sh harness/appearance/run.sh <SIMULATOR_UDID>
 
-The runner checks Dark, Light, System in both simulator appearances, unset preference in both appearances, invalid preference, nil wrapper, rejected wrapper/native writes, and the production selector in both modes. It verifies transaction rollback, later native and wrapper drift detection, 1,000 repeated native-reference ownership transfers per valid mode, persistence, restart-sheet presentation after navigation, stable glass, contrast, artwork preservation and 50 resizes. It restores the simulator's original appearance on exit. Logs and screenshots are written to build/.
+The 12 cases cover Dark, Light, System in both simulator appearances, an unset or invalid preference, nil/rejected providers, and the production selector. Checks include provider rollback, repeated live transitions, native reference ownership, source-color restoration in both directions, Light-created views, mutable attributed text, native UIKit image/slider state, AddTo glyph geometry, native gradient refresh timing, sheet materials and reuse, share-preview preservation, scoped status ink, and ambient hue/contrast without changing cover art. The runner restores the simulator's original appearance on exit. Logs and fixture screenshots are written to build/.
 
-The fixture does not load Spotify and is not proof that every signed-in screen uses its main theme. That still needs the scoped device test after implementation.
+The fixture cannot prove that every real signed-in Spotify screen uses these paths. Physical fullscreen player, context/share sheets and same-screen System round trips remain acceptance work. See [appearance details](../../docs/appearance.md) and [verification limits](../../docs/appearance-restoration-verification.md).
 
-Never pass or use a physical device for this harness. No device tooling is called.
+The separate album, artist, Library, player, playlist and tabbar harnesses test geometry using `harness/native-surface-stubs.m` at the native semantic surface boundary. The complete adapter is exercised here instead. Those geometry tests must not be described as full native appearance coverage.
 
-The integrated branch passed all 12 appearance scenarios on the iOS 26.5 simulator, plus all six tab preference scenarios across iOS 26.5 and iOS 27.1. The final Theos package build and 24 Python tests passed. These are fixture results, not signed-in app verification.
+Never pass a physical device to this harness. It calls simulator tools only.

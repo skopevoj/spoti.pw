@@ -57,8 +57,8 @@ static SGRArtworkField *fieldIn(UIView *page) {
 %hook _TtC35ListUXPlatform_FreeTierPlaylistImpl17FTPViewController
 - (void)viewDidLayoutSubviews {
     UIViewController *appearanceOwner = (UIViewController *)self;
-    if (appearanceOwner.overrideUserInterfaceStyle != SGRedesignAppearanceStyle())
-        appearanceOwner.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+    SGRApplyNativeLightSurface(appearanceOwner.viewIfLoaded, NO);
+    SGRegisterAppearanceController(appearanceOwner);
     %orig;
     UIView *page = ((UIViewController *)self).viewIfLoaded;
     if (!page || page.bounds.size.height < 200) return;

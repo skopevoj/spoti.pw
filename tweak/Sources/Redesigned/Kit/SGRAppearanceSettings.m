@@ -22,37 +22,18 @@ static void chooseAccent(void) {
     [top presentViewController:sheet animated:YES completion:nil];
 }
 
-// The choice page pops itself after its callback, so wait for that navigation transition before
-// presenting. Presenting on the outgoing page can silently lose the restart sheet.
-static void offerAppearanceRestart(void) {
-    UINavigationController *nav = SGTopController().navigationController;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        void (^show)(void) = ^{
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Apply appearance"
-                message:@"Spotify needs to close to apply the complete theme. Open it again after closing. Your music and settings are kept."
-                preferredStyle:UIAlertControllerStyleAlert];
-            alert.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
-            [alert addAction:[UIAlertAction actionWithTitle:@"Later" style:UIAlertActionStyleCancel handler:nil]];
-            [alert addAction:[UIAlertAction actionWithTitle:@"Close Spotify" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { SGRestartSpotify(); }]];
-            [SGTopController() presentViewController:alert animated:YES completion:nil];
-        };
-        id<UIViewControllerTransitionCoordinator> transition = nav.transitionCoordinator;
-        if (!transition || ![transition animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context) { show(); }]) show();
-    });
-}
-
-// Change both native stores at launch, before cached colors or redesigned panes are constructed.
+// The picker persists the key before this callback. One main-queue transaction applies it.
 NSArray<SGModRow *> *SGRAppearanceRows(void) {
-    SGModRow *appearance = SGChoiceRow(@"Color appearance", @"Choose a theme, then close and reopen Spotify", SGRKeyAppearance,
-        @[@"Dark", @"Light", @"System (at launch)"], SGRAppearanceSystem);
-    appearance.choiceNotes = @[@"Deep black backgrounds and light text.", @"Light backgrounds and dark text.", @"Use the phone's appearance when Spotify starts. System changes take effect next launch."];
-    appearance.choiceFooter = @"The app offers to close after a change so Spotify's native screens and the redesign apply the same complete theme. System is the default when no choice has been saved.";
-    appearance.chosen = ^(NSInteger index) { if (SGRAppearanceNeedsRestart()) offerAppearanceRestart(); };
+    SGModRow *appearance = SGChoiceRow(@"Color appearance", @"Change the app appearance immediately", SGRKeyAppearance,
+        @[@"Dark", @"Light", @"System"], SGRAppearanceSystem);
+    appearance.choiceNotes = @[@"Deep black backgrounds and light text.", @"Light backgrounds and dark text.", @"Follow the phone's appearance, including changes while Spotify is open."];
+    appearance.choiceFooter = @"Changes apply without restarting or interrupting playback. System follows the phone and is the default when no choice has been saved.";
+    appearance.chosen = ^(NSInteger index) { SGRAppearanceApplyPreference(); };
     SGModRow *active = SGStatRow(@"Active appearance", ^NSString *{
         NSString *status = SGRAppearanceStatus();
         return SGRAppearanceNeedsRestart() ? [status stringByAppendingString:@" · pending"] : status;
     });
-    active.subtitle = @"New choices apply after reopening";
+    active.subtitle = @"Current applied theme";
     return @[
         SGWithSymbol(appearance, @"circle.lefthalf.filled"),
         SGWithSymbol(active, @"checkmark.circle"),

@@ -143,8 +143,8 @@ static void layoutHeader(UIViewController *page) {
 %hook _TtC19Home_FunkisPageImpl20FunkisViewController
 - (void)viewDidLayoutSubviews {
     UIViewController *appearanceOwner = (UIViewController *)self;
-    if (appearanceOwner.overrideUserInterfaceStyle != SGRedesignAppearanceStyle())
-        appearanceOwner.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+    SGRApplyNativeLightSurface(appearanceOwner.viewIfLoaded, YES);
+    SGRegisterAppearanceController(appearanceOwner);
     %orig;
     CFTimeInterval began = SGRHomeProbeBegin();
     layoutHeader((UIViewController *)self);

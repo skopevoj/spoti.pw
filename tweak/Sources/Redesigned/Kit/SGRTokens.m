@@ -36,13 +36,12 @@ UIColor *SGRTertiary(void) {
 // Read per call: the accent is stored as it is picked, and the colour row reads it the same way.
 UIColor *SGRAccent(void) {
     UIColor *color = SGRAccentColor() ?: [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1];
-    if (!SGRedesignLightAppearance()) return color;
     // Text and glyph accents on a pale field need a darker shade of the selected hue.
     CGFloat r, g, b, a;
     if (![color getRed:&r green:&g blue:&b alpha:&a]) return color;
     CGFloat maximum = MAX(r, MAX(g, b));
     CGFloat scale = maximum > 0.40 ? 0.40 / maximum : 1;
-    return [UIColor colorWithRed:r * scale green:g * scale blue:b * scale alpha:a];
+    return SGAppearanceColor([UIColor colorWithRed:r * scale green:g * scale blue:b * scale alpha:a], color);
 }
 
 UIColor *SGRNeutralField(void) {
@@ -54,16 +53,17 @@ UIColor *SGRSolidGlassFill(void) {
 }
 
 UIColor *SGRHairline(void) {
-    return [UIColor colorWithWhite:SGRedesignLightAppearance() ? 0 : 1 alpha:SGRIncreaseContrast() ? 0.20 : 0.12];
+    CGFloat alpha = SGRIncreaseContrast() ? 0.20 : 0.12;
+    return SGAppearanceColor([UIColor colorWithWhite:0 alpha:alpha], [UIColor colorWithWhite:1 alpha:alpha]);
 }
 
 UIColor *SGRElevated(UIColor *field) {
-    if (SGRedesignLightAppearance()) return [UIColor colorWithWhite:0.92 alpha:1];
     CGFloat r = 0, g = 0, b = 0, a = 1;
-    if (![field getRed:&r green:&g blue:&b alpha:&a]) return [UIColor colorWithWhite:1 alpha:0.08];
+    if (![field getRed:&r green:&g blue:&b alpha:&a]) return SGAppearanceColor([UIColor colorWithWhite:0.92 alpha:1], [UIColor colorWithWhite:1 alpha:0.08]);
     // 12% towards white keeps a card on a black field clear of the greys SGRAmoled.x turns black.
     CGFloat lift = 0.12;
-    return [UIColor colorWithRed:r + (1 - r) * lift green:g + (1 - g) * lift blue:b + (1 - b) * lift alpha:1];
+    return SGAppearanceColor([UIColor colorWithWhite:0.92 alpha:1],
+        [UIColor colorWithRed:r + (1 - r) * lift green:g + (1 - g) * lift blue:b + (1 - b) * lift alpha:1]);
 }
 
 UIFont *SGRFont(UIFontTextStyle style, UIFontWeight weight, UIContentSizeCategory largest) {
