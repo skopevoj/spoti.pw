@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the spotifyglass tweak and injects it (plus FLEX) into a decrypted Spotify IPA.
 #
-#   scripts/pipeline.sh <decrypted.ipa> [-o out.ipa] [--no-flex] [--install] [--name N] [--icon P.png]   (or: make build / make install)
+#   scripts/pipeline.sh <decrypted.ipa> [-o out.ipa] [--no-flex] [--duo] [--install] [--name N] [--icon P.png]   (or: make build / make install)
 #
 # --install hands the result to install.sh (sign with your certificate, push to the plugged-in iPhone).
 #
@@ -24,7 +24,7 @@ FLEX_DEB="$ROOT/vendor/com.hopeless.autoflex_0.0.1_iphoneos-arm.deb"
 BUNDLE_ID="${BUNDLE_ID:-}"
 mkdir -p "$ROOT/out"
 
-IN="" OUT="" WITH_FLEX=1 INSTALL=0 NAME="" ICON=""
+IN="" OUT="" WITH_FLEX=1 INSTALL=0 DUO=0 NAME="" ICON=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) OUT="$2"; shift 2 ;;
@@ -32,6 +32,7 @@ while [ $# -gt 0 ]; do
     --icon) ICON="$2"; shift 2 ;;
     --no-flex) WITH_FLEX=0; shift ;;
     --install) INSTALL=1; shift ;;
+    --duo) DUO=1; shift ;;
     -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
     *) IN="$1"; shift ;;
   esac
@@ -40,6 +41,11 @@ done
 [ -f "$IN" ] || { echo "no such file: $IN" >&2; exit 1; }
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "missing $1 -> $2" >&2; exit 1; }; }
+need python3 "install Python 3"
+python3 "$ROOT/scripts/validate-ipa.py" "$IN" --expected-version "${EXPECTED_SPOTIFY_VERSION:-9.1.78}"
+if [ "$DUO" = 1 ]; then
+  python3 "$ROOT/scripts/retarget-duo.py" --check-sdk
+fi
 need gmake "brew install make"
 need ldid "brew install ldid"
 need dpkg-deb "brew install dpkg"
@@ -66,10 +72,20 @@ MOD_VERSION="$(cat "$ROOT/version.txt" 2>/dev/null || true)"
 OUT="${OUT:-$ROOT/out/spoti.pw-$MOD_VERSION.ipa}"
 echo "==> spoti.pw $MOD_VERSION on Spotify $SPOTIFY_VERSION -> $OUT"
 
-# The flag table is generated rather than committed, so it always matches the IPA being built.
-if [ ! -f "$ROOT/tweak/Sources/Shared/Flags/SGFlagList.m" ]; then
-  echo "==> extracting the flag table (once, about 40 s)"
+# Cache both the source and generated table. `make flags IPA=other.ipa` can rewrite
+# the table outside this pipeline, and an extractor update must invalidate it too.
+FLAGS_SOURCE="$ROOT/out/.flags-source"
+FLAGS_TABLE="$ROOT/tweak/Sources/Shared/Flags/SGFlagList.m"
+flags_fingerprint() {
+  for path in "$IN" "$ROOT/scripts/extract-flags.py" "$FLAGS_TABLE"; do
+    shasum -a 256 "$path" | cut -d ' ' -f 1
+  done
+}
+if [ ! -f "$FLAGS_TABLE" ] || \
+   [ "$(cat "$FLAGS_SOURCE" 2>/dev/null || true)" != "$(flags_fingerprint)" ]; then
+  echo "==> extracting the flag table for this IPA (about 40 s)"
   "$ROOT/scripts/extract-flags.py" "$IN"
+  flags_fingerprint > "$FLAGS_SOURCE"
 fi
 
 echo "==> building tweak"
@@ -130,6 +146,11 @@ fi
 if [ -n "${EXT_DIR:-}" ]; then
   echo "==> adding the Live Activity intents to Spotify's App Intents metadata"
   "$ROOT/scripts/merge-appintents.py" "$OUT" "$APP_DIR" "$EXT_DIR/app/Metadata.appintents"
+fi
+
+if [ "$DUO" = 1 ]; then
+  echo "==> opting the main app into iPhone Duo edge-to-edge sizing"
+  python3 "$ROOT/scripts/retarget-duo.py" "$OUT"
 fi
 
 echo "==> done: $OUT"
