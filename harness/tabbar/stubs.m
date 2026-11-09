@@ -1,6 +1,7 @@
 // What the harness does not compile: the accent hook (SGRAccent.x), the repaint hook (SGRRepaint.x), the
-// tab bar's composition (Navbar.x) and Mod Settings. Spotify's order of tabs stays as the mock has it.
+// Mod Settings and Spotify URI dispatcher. The real navbar composition runs.
 #import <UIKit/UIKit.h>
+#import "Shared/Navigation/Links.h"
 
 UIColor *SGRAccentColor(void) { return nil; }
 __weak UIView *sgr_nowPlayingRoot = nil;
@@ -10,6 +11,8 @@ __weak UIView *sgr_playlistRoot = nil;
 __weak UIView *sgr_albumRoot = nil;
 __weak UIView *sgr_artistRoot = nil;
 
-void SGRComposeTabBar(UIView *tabBar) {}
-void SGRLogTabBarRow(UIView *tabBar) {}
+BOOL SGOpenSpotifyURI(NSURL *uri) { return YES; }
+id SGLinkDispatcher(void) { return nil; }
+SGLinkRoute SGSpotifyURIRoute(NSURL *uri, NSString **via) { return SGLinkRouteOpens; }
+NSURL *SGSpotifyURIFromText(NSString *text) { return [NSURL URLWithString:text]; }
 void SGOpenModSettings(UIView *source) {}

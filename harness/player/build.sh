@@ -5,7 +5,7 @@ SRC=${SRC:-$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)}
 OUT=${OUT:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/PlayerHarness.app"
 
-for f in Redesigned/Player/PlayerLyrics.x Redesigned/Player/PlayerArtwork.x Redesigned/Player/PlayerFooter.x \
+for f in Redesigned/Player/PlayerHeader.x Redesigned/Player/PlayerLyrics.x Redesigned/Player/PlayerArtwork.x Redesigned/Player/PlayerFooter.x \
          Redesigned/Player/PlayerScroll.x Redesigned/Player/PlayerField.x Redesigned/Kit/SGRBridges.x; do
     name=$(basename "$f" .x)
     "$THEOS/bin/logos.pl" -c generator=internal "$SRC/$f" > "$OUT/gen/$name.m"
@@ -39,6 +39,12 @@ cat > "$OUT/PlayerHarness.app/Info.plist" <<'PLIST'
 <key>UILaunchScreen</key><dict/>
 <key>UIApplicationSceneManifest</key><dict>
   <key>UIApplicationSupportsMultipleScenes</key><false/>
+  <key>UISceneConfigurations</key><dict>
+    <key>UIWindowSceneSessionRoleApplication</key><array><dict>
+      <key>UISceneConfigurationName</key><string>Default</string>
+      <key>UISceneDelegateClassName</key><string>SGRHarnessDelegate</string>
+    </dict></array>
+  </dict>
 </dict>
 </dict></plist>
 PLIST

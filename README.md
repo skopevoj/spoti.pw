@@ -74,7 +74,43 @@ Put the decrypted `.ipa` in `ipa/`, then:
 `make install` reads `SIGN_P12`, `SIGN_PROFILE` and `SIGN_P12_PASSWORD` from `.signing.env`; copy
 `.signing.env.example` and fill it in.
 
-The first build spends a minute reading Spotify's flags out of your IPA. `make flags` regenerates it.
+The first build, or a change of source IPA, reads Spotify's flags from that IPA. `make flags` regenerates the table.
+
+### iPhone Duo (experimental)
+
+Duo support applies to **Redesigned UI** and requires building with an **iPhoneOS 27.1+
+SDK**. The window's native `verticalBarEdge` trait and layout region select the side rail;
+other layouts retain the bottom tab bar. Tab order, custom links, Create, Home's hold action,
+and the existing **Hide labels** preference are preserved.
+
+The miniplayer and Library content clear the rail, the player's real menu control stays
+reachable, playlist headers center in the usable column, and open lyrics recover when a
+fold or window resize takes away their space. Native UI remains Spotify's responsibility.
+
+[Apple's preparation guide](https://developer.apple.com/iphone-duo/prepare/) explains why
+the SDK linked by the **main app**, not an injected tweak, controls Duo compatibility.
+For an audited input IPA, this explicit option retargets the main executable's SDK metadata:
+
+    make release DUO=1 IPA=/path/to/Spotify-9.1.78.ipa
+
+`DUO=1` / `--duo` uses the selected installed SDK, preserves the minimum OS, build-tool
+metadata and injected load commands, updates matching SDK plist metadata, and signs the
+changed executable ad hoc with its existing entitlements before normal certificate signing.
+It refuses an SDK downgrade. **This does not recompile Spotify or establish compatibility
+with every newer SDK behavior.** Without the option, the main executable is not retargeted.
+
+The input preflight checks the Spotify version and bundle, thin arm64 executable and
+decrypted state. The default remains **9.1.78**. A different version requires an explicit
+`EXPECTED_SPOTIFY_VERSION` override and its own hook audit; the override does not make it
+supported. Flag-table caching is keyed by the IPA, extractor and generated table.
+
+To select a paired device for installation, use `DEVICE_UDID=<device-udid> make install`.
+Add `WIFI=1` only for a device already paired for wireless sync.
+
+Run the build regressions with `python3 -m unittest discover -s tests -v`. The actual
+Mach-O retarget/sign test needs Xcode and `ldid`. UIKit regression harnesses and their
+commands are in [docs/iphone-duo.md](docs/iphone-duo.md). **Keep this experimental until
+those harnesses and the injected app are verified against the chosen Spotify version.**
 
 ### Signing
 

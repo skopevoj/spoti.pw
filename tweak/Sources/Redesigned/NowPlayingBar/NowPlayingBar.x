@@ -14,9 +14,10 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRRepaint.h"
 #import "NowPlayingBar.h"
+#import "Redesigned/Kit/SGRBarGeometry.h"
 
 static const CGFloat kCardRadius = 24;
-static char kGlassKey;
+static char kGlassKey, kRailConstraintKey;
 static __weak UIVisualEffectView *sg_cardGlass;
 static __weak UIView *sg_cardArtwork;
 
@@ -91,7 +92,49 @@ static void restyleCardContent(UIView *card) {
     });
 }
 
+// The miniplayer is separate chrome, not a child of the tab controller. Reserve the same
+// native rail region in its content constraints, preserving and restoring Spotify's margins.
+static void fitBesideRail(UIViewController *container) {
+    UIView *content = container.childViewControllers.firstObject.viewIfLoaded;
+    if (!content || content.superview != container.view) return;
+    UIEdgeInsets inset = SGRVerticalBarContentInsets(container.view, SGRVerticalBarExtent);
+    BOOL changed = NO;
+    for (NSLayoutConstraint *constraint in container.view.constraints) {
+        if (!constraint.active || constraint.relation != NSLayoutRelationEqual || constraint.multiplier != 1) continue;
+        BOOL forward = constraint.firstItem == content && constraint.secondItem == container.view;
+        BOOL reverse = constraint.secondItem == content && constraint.firstItem == container.view;
+        if (!forward && !reverse) continue;
+        NSLayoutAttribute attribute = forward ? constraint.firstAttribute : constraint.secondAttribute;
+        NSLayoutAttribute other = forward ? constraint.secondAttribute : constraint.firstAttribute;
+        if (attribute != other) continue;
+        BOOL rtl = container.view.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
+        BOOL left = attribute == NSLayoutAttributeLeft || attribute == (rtl ? NSLayoutAttributeTrailing : NSLayoutAttributeLeading);
+        BOOL right = attribute == NSLayoutAttributeRight || attribute == (rtl ? NSLayoutAttributeLeading : NSLayoutAttributeTrailing);
+        if (!left && !right) continue;
+        NSArray<NSNumber *> *record = objc_getAssociatedObject(constraint, &kRailConstraintKey);
+        CGFloat adjustment = (left ? inset.left : -inset.right) * (forward ? 1 : -1);
+        // No rail, no ownership: ordinary Spotify layouts must remain completely untouched.
+        if (!record && adjustment == 0) continue;
+        CGFloat current = constraint.constant;
+        BOOL stillOurs = record && fabs(current - record[1].doubleValue) < 0.01;
+        // A new constant written by Spotify becomes the new baseline, not something to undo.
+        CGFloat baseline = stillOurs ? record[0].doubleValue : current;
+        CGFloat value = baseline + adjustment;
+        if (adjustment == 0) {
+            objc_setAssociatedObject(constraint, &kRailConstraintKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        } else {
+            objc_setAssociatedObject(constraint, &kRailConstraintKey, @[@(baseline), @(value)], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        if (fabs(current - value) > 0.01) {
+            constraint.constant = value;
+            changed = YES;
+        }
+    }
+    if (changed) [container.view setNeedsLayout];
+}
+
 static void styleNowPlayingBar(UIViewController *container) {
+    fitBesideRail(container);
     UIViewController *barVC = container.childViewControllers.firstObject;
     UIView *bar = barVC.viewIfLoaded ?: container.view;
     sgr_nowPlayingRoot = bar;
@@ -118,6 +161,11 @@ static void styleNowPlayingBar(UIViewController *container) {
     // took the system's light glass on a phone in light mode (TabBar.x).
     if (glass.overrideUserInterfaceStyle != UIUserInterfaceStyleDark) glass.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     sg_cardGlass = glass;
+    static CGRect lastVerticalFrame = {{-1, -1}, {0, 0}};
+    if (!CGRectIsNull(SGRVerticalBarFrameIn(container.view, 76)) && !CGRectEqualToRect(lastVerticalFrame, frame)) {
+        lastVerticalFrame = frame;
+        SGLog(@"vertical navigation miniplayer: card %@ container %@", NSStringFromCGRect(frame), NSStringFromCGRect(container.view.bounds));
+    }
     glass.frame = frame;
     SGShapeGlass(glass, radius, NO);
 

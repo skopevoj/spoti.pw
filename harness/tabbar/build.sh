@@ -5,7 +5,7 @@ SRC=${SRC:-$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)}
 OUT=$(dirname "$0")/build
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/TabBarHarness.app"
 
-for f in Redesigned/Navbar/TabBar.x Redesigned/NowPlayingBar/NowPlayingBar.x; do
+for f in Redesigned/Navbar/Navbar.x Redesigned/Navbar/TabBar.x Redesigned/NowPlayingBar/NowPlayingBar.x; do
     name=$(basename "$f" .x)
     "$THEOS/bin/logos.pl" -c generator=internal "$SRC/$f" > "$OUT/gen/$name.m"
 done
@@ -18,7 +18,8 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-ar
     "$OUT"/gen/*.m \
     "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGViewTree.m "$SRC"/Core/SGGlass.m \
     "$SRC"/Core/SGBackdrop.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m \
-    "$SRC"/Redesigned/Kit/SGRTokens.m \
+    "$SRC"/Redesigned/Navbar/NavbarLayout.m \
+    "$SRC"/Redesigned/Kit/SGRTokens.m "$SRC"/Redesigned/Kit/SGRGlass.m \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework Foundation \
     -o "$OUT/TabBarHarness.app/TabBarHarness"
 

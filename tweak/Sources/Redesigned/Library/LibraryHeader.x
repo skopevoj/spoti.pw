@@ -45,6 +45,8 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Library.h"
+#import "Redesigned/Kit/SGRBarGeometry.h"
+#import "LibraryGeometry.h"
 
 NSString *const SGRLibraryListIdentifier = @"YourLibraryContent.collectionView";
 
@@ -53,7 +55,8 @@ NSString *const SGRLibraryListIdentifier = @"YourLibraryContent.collectionView";
 // margin Home gives the avatar.
 static const CGFloat kRowInset = 8;
 static char kTitleKey, kRowWatchedKey;
-static char kRecentsKey, kSearchKey, kPlusKey, kHeaderTitleKey;
+
+static char kRecentsKey, kSearchKey, kPlusKey, kHeaderTitleKey, kSideDrawerKey;
 static char kBackKey, kMenuKey, kFolderPlusKey, kPlayKey, kPauseKey, kFolderTitleKey;
 
 static void vanish(UIView *view) {
@@ -68,6 +71,28 @@ static UIView *childNamed(UIView *host, NSString *marker) {
         if ([NSStringFromClass(sub.class) containsString:marker]) return sub;
     }
     return nil;
+}
+
+// 9.1.94 added headerContainerView to YourLibraryView (binary ivar table). The
+// header is no longer necessarily an immediate child. Keep discovery bounded to
+// this page and match the verified class, not a guessed container selector.
+static UIView *descendantNamed(UIView *host, NSString *marker) {
+    UIView *direct = childNamed(host, marker);
+    if (direct) return direct;
+    for (UIView *sub in host.subviews) {
+        UIView *found = descendantNamed(sub, marker);
+        if (found) return found;
+    }
+    return nil;
+}
+
+static UIEdgeInsets headerRailInsets(UIView *header) {
+    UIEdgeInsets insets = SGRVerticalBarContentInsets(header, SGRVerticalBarExtent);
+    if (!CGRectIsNull(SGRVerticalBarFrameIn(header, SGRVerticalBarExtent))) {
+        insets.left = MAX(insets.left, header.safeAreaInsets.left);
+        insets.right = MAX(insets.right, header.safeAreaInsets.right);
+    }
+    return insets;
 }
 
 void SGRLibraryClearScrim(UIView *header) {
@@ -90,7 +115,7 @@ static NSMutableArray<UIView *> *controlsIn(UIView *header, NSArray<NSString *> 
 // Puts the controls at the header's trailing edge, the last of them flush against it and each keeping the width
 // it has, and answers where the leading edge of the first of them fell.
 static CGFloat placeTrailing(UIView *header, NSArray<UIView *> *controls) {
-    CGFloat right = header.bounds.size.width - kRowInset;
+    CGFloat right = header.bounds.size.width - headerRailInsets(header).right - kRowInset;
     for (UIView *control in controls.reverseObjectEnumerator) {
         CGFloat width = control.bounds.size.width;
         // The centre is where Auto Layout put the control, whatever transform is on it; its frame is not.
@@ -190,12 +215,17 @@ static NSArray<UIView *> *placeRoot(UIView *header) {
     SGForEachView(header, ^(UIView *view) {
         if (!face && isFace(view) && view.bounds.size.width > 1) face = view;
     });
-    if (face) [trailing addObject:face];
+    // 9.1.94's live Duo tree uses an EncoreButton for the entire side-drawer
+    // control, with the avatar and activity indicator nested inside it. Retain
+    // the legacy face-container path, otherwise move the verified control as a
+    // whole so its hit target and all its content follow the avatar.
+    if (!face) face = SGRFindByIdentifier(header, @"Components.UI.SideDrawerButton", &kSideDrawerKey);
+    if (face && !face.hidden && face.alpha > 0.01 && face.bounds.size.width > 1) [trailing addObject:face];
     if (!trailing.count) return trailing;
 
     CGFloat leading = placeTrailing(header, trailing);
     CGRect row = SGFrameIn(trailing.firstObject, header);
-    layoutTitle(header, spotifyTitle, SGRSideMargin, leading, CGRectGetMidY(row));
+    layoutTitle(header, spotifyTitle, SGRSideMargin + headerRailInsets(header).left, leading, CGRectGetMidY(row));
     for (UIView *control in trailing) watchRow(control.superview, header, placeRoot);
     return trailing;
 }
@@ -213,7 +243,7 @@ static NSArray<UIView *> *placeFolder(UIView *header) {
     ], keys);
     if (!placed.count && !back) return placed;
 
-    CGFloat trailingEdge = placed.count ? placeTrailing(header, placed) : header.bounds.size.width - kRowInset;
+    CGFloat trailingEdge = placed.count ? placeTrailing(header, placed) : header.bounds.size.width - headerRailInsets(header).right - kRowInset;
     if (back) [placed insertObject:back atIndex:0];
     CGRect rowFrame = SGFrameIn(placed.firstObject, header);
     CGFloat leading = back ? CGRectGetMaxX(rowFrame) + SGRGrid : SGRSideMargin;
@@ -223,7 +253,7 @@ static NSArray<UIView *> *placeFolder(UIView *header) {
 }
 
 static void layoutRoot(UIView *page) {
-    UIView *header = childNamed(page, @"YourLibraryHeaderView");
+    UIView *header = descendantNamed(page, @"YourLibraryHeaderView");
     if (!header) return;
     [header layoutIfNeeded];
     SGRLibraryClearScrim(header);
@@ -233,7 +263,8 @@ static void layoutRoot(UIView *page) {
 
     // The first pass that laid the header out, not the first pass at all: a page appearing lays out before
     // its controls have a size, and a line off that pass would say the header was left as Spotify's.
-    UIView *face = isFace(trailing.lastObject) ? trailing.lastObject : nil;
+    UIView *face = trailing.lastObject;
+    if (!isFace(face) && ![face.accessibilityIdentifier isEqualToString:@"Components.UI.SideDrawerButton"]) face = nil;
     static BOOL logged;
     if (!logged && header.window && face) {
         logged = YES;
@@ -244,7 +275,7 @@ static void layoutRoot(UIView *page) {
 }
 
 static void layoutFolder(UIView *page) {
-    UIView *header = childNamed(page, @"FolderHeaderView");
+    UIView *header = descendantNamed(page, @"FolderHeaderView");
     if (!header) return;
     [header layoutIfNeeded];
     SGRLibraryClearScrim(header);
@@ -263,10 +294,59 @@ static void layoutFolder(UIView *page) {
     }
 }
 
-%hook _TtC28YourLibrary_YourLibraryXImpl15YourLibraryView
+// Both selectors are present in Spotify 9.1.94's Objective-C symbol table.
+// A header can lay out after its page (or inside the new wrapper); styling at
+// its own layout boundary keeps late model changes from restoring the stock row.
+%hook _TtC28YourLibrary_YourLibraryXImpl21YourLibraryHeaderView
 - (void)layoutSubviews {
     %orig;
+    SGRLibraryClearScrim((UIView *)self);
+    placeRoot((UIView *)self);
+}
+%end
+
+%hook _TtC22YourLibrary_FolderImpl16FolderHeaderView
+- (void)layoutSubviews {
+    %orig;
+    SGRLibraryClearScrim((UIView *)self);
+    placeFolder((UIView *)self);
+}
+%end
+
+%hook _TtC28YourLibrary_YourLibraryXImpl15YourLibraryView
+- (void)layoutSubviews {
+    SGRLibraryExtendPage((UIView *)self);
+    %orig;
     layoutRoot((UIView *)self);
+    SGRLibraryPrepareList((UIView *)self);
+}
+%end
+
+// Both APIs must agree. Copy attributes rather than mutate Spotify/UIKit caches.
+// The elements selector is present in the 9.1.94 binary; the per-item selector is
+// UICollectionViewLayout's inherited public API on this exact subclass.
+%hook _TtC28YourLibrary_YourLibraryXImpl30YourLibraryCompositionalLayout
+- (NSArray<UICollectionViewLayoutAttributes *> *)layoutAttributesForElementsInRect:(CGRect)rect {
+    NSArray<UICollectionViewLayoutAttributes *> *original = %orig;
+    NSMutableArray<UICollectionViewLayoutAttributes *> *result = [NSMutableArray arrayWithCapacity:original.count];
+    for (UICollectionViewLayoutAttributes *attributes in original)
+        [result addObject:SGRLibraryFullWidthAttribute((UICollectionViewLayout *)self, attributes)];
+    return original ? result : nil;
+}
+- (UICollectionViewLayoutAttributes *)layoutAttributesForItemAtIndexPath:(NSIndexPath *)indexPath {
+    return SGRLibraryFullWidthAttribute((UICollectionViewLayout *)self, %orig);
+}
+%end
+
+// UICollectionView rejects the Kit's dynamic layout observer. Hook its public
+// inherited layout boundary on the binary-verified Library subclass instead.
+%hook _TtC21YourLibrary_CommonKit25YourLibraryCollectionView
+- (void)layoutSubviews {
+    %orig;
+    if (objc_getAssociatedObject(self, &sgrLibraryPreparedListKey)) {
+        SGRLibraryAdaptBottomEdge((UIScrollView *)self);
+        SGRLibraryScheduleLayoutCheck((UIScrollView *)self);
+    }
 }
 %end
 
@@ -282,6 +362,10 @@ static void layoutFolder(UIView *page) {
     %init;
     SGRequireClasses(@[
         @"_TtC28YourLibrary_YourLibraryXImpl15YourLibraryView",
+        @"_TtC21YourLibrary_CommonKit25YourLibraryCollectionView",
+        @"_TtC28YourLibrary_YourLibraryXImpl30YourLibraryCompositionalLayout",
+        @"_TtC28YourLibrary_YourLibraryXImpl21YourLibraryHeaderView",
+        @"_TtC22YourLibrary_FolderImpl16FolderHeaderView",
         @"_TtC22YourLibrary_FolderImpl10FolderView",
         @"_TtC21YourLibrary_CommonKit35YourLibraryHeaderContentFiltersView",
         @"_TtC29ListeningActivity_ElementsKit21AdaptiveFaceContainer",

@@ -15,6 +15,8 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Library.h"
+#import "Redesigned/Kit/SGRBarGeometry.h"
+#import "LibraryRowGeometry.h"
 
 // What a row leaves between its artwork and its text (03.txt:36 and :39: the artwork ends at 64, the text
 // starts at 76), and where the hairline starts with it.
@@ -64,6 +66,7 @@ static void hairline(UIView *cell, UIView *thumb) {
 }
 
 static void style(UIView *cell) {
+    SGRLibraryInsetRowContent(cell);
     UIView *thumb = SGRFindByIdentifier(cell, @"Artwork.Row.Library", &kThumbKey);
     if (thumb) roundCorners(thumb, SGRRadiusThumb);
     else roundCorners(SGRFindByIdentifier(cell, @"Components.UI.CardLibrary.Artwork", &kCoverKey), SGRRadiusCover);

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
-SRC=$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)
-OUT=$(dirname "$0")/build
+SRC=${SRC:-$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)}
+OUT=${OUT:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/PlaylistHarness.app"
 
 for f in Redesigned/Playlist/PlaylistField.x Redesigned/Playlist/PlaylistHeader.x Redesigned/Playlist/PlaylistRows.x Redesigned/Playlist/PlaylistMenu.x; do

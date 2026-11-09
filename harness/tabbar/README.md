@@ -13,8 +13,8 @@ Offline and Private Session show) under the tab bar. It plays issue #33.
 
 `build.sh` runs `logos.pl -c generator=internal` over `TabBar.x` and `NowPlayingBar.x` from the
 checkout it sits in and links them with the real `Core/` and `SGRTokens.m`; `SRC=<other tweak/Sources>
-./build.sh` builds an older tree instead, to compare. `stubs.m` stands in for the accent and repaint
-hooks, the tab bar's composition and Mod Settings. iOS 27 ends an app with no scene delegate at
+./build.sh` builds an older tree instead, to compare. `Navbar.x` and `NavbarLayout.m` run the real saved composition. `stubs.m` stands in for
+the accent/repaint hooks, Spotify URI dispatcher and Mod Settings. iOS 27 ends an app with no scene delegate at
 launch, so the harness has one.
 
 The layout is the one 9.1.78 makes in a compact width, with the addresses it was read from:
@@ -22,7 +22,8 @@ The layout is the one 9.1.78 makes in a compact width, with the addresses it was
 - `TabBarContainerImpl`'s view has a guide from 49 pt above its safe area's bottom to its bottom
   (`viewDidLoad`, 0x1008409a8); the stack holding the tab bar is as tall as the guide and stands on
   the view's bottom, and the tab bar is as tall as the stack (0x106fabb7c).
-- The page on the tab's stack gets 49 pt of safe area on top of the container's (0x10707bde4). The now
+- The direct `SPNavigationController` wrapper gets 49 pt of safe area on top of the container's
+  (0x10707bde4, confirmed separately from the page in the live 9.1.94 hierarchy). The now
   playing bar's share of the pages' inset comes another way in Spotify; here it is a stand-in of 64 pt
   on the page, so the list's end marks where Spotify thinks the bars begin.
 - The chrome puts the tab bar container above the message bar, and the now playing bar's page (64 pt,
@@ -45,3 +46,21 @@ and the glass bar stood the difference above it, over the now playing bar.
 What it does not cover: Spotify's own chrome, which is Swift with no symbols (the constraints above
 are read from its code, not run), the real now playing bar's content and its page's inset, the tab
 bar hidden by a page, the player's open and close over the bars, and a regular width.
+
+## Native vertical-bar regression
+
+With an iOS 27.1+ SDK and a Duo simulator, the harness follows the window's real
+`verticalBarEdge` and layout region. `cycle` checks native rail geometry, accessible hit
+targets, miniplayer separation, message-bar changes, and ownership of the navigation
+wrapper's exact 49pt bottom inset. Ordinary phones retain the system bottom bar.
+
+All four default tabs remain visible, including Create. The rail follows **Hide labels**;
+run the same scenario with `SIMCTL_CHILD_HARNESS_HIDE_LABELS=1` to check icon-only controls.
+The fixture checks Home's hold gesture, custom tabs, hidden Search, saved ordering, a caller
+replacing the bottom inset with 61pt, and moving navigation outside and back into the tab
+container. Page/miniplayer insets stay unchanged.
+
+The prior icon-only three-tab prototype passed a complete message-bar cycle on a 466×678
+Duo simulator and a 402×874 iOS 26.5 phone. The upstream variant restores default tab and
+label preferences, so rerun both modes before merge. This fixture does not reproduce a
+physical fold or Spotify's full chrome/presentation graph. See ../../docs/iphone-duo.md.
