@@ -241,5 +241,14 @@
     "signed_at": "2026-10-30T16:17:26.864Z",
     "pull_request": 240,
     "evidence": "https://github.com/skopevoj/spoti.pw/pull/240"
+  },
+  {
+    "login": "kylewhirl",
+    "id": 65330257,
+    "cla": "1.0",
+    "via": "checkbox",
+    "signed_at": "2026-11-09T06:46:47.000Z",
+    "pull_request": 243,
+    "evidence": "https://github.com/skopevoj/spoti.pw/pull/243"
   }
 ]
