@@ -51,11 +51,24 @@ edge-to-edge sizing, navigation, menu presentation folded/expanded, and playlist
 folded/expanded. The final Library full-width correction was harness-tested, not physically
 re-measured. These observations do not verify the supported 9.1.78 IPA or every screen.
 
-For this upstream draft, packaging tests and all four harness builds were rerun on Xcode
-27.2. Simulator execution was blocked by CoreSimulatorService/simdiskimaged availability.
-The upstream variant preserves Create and honors labels instead of the prototype's custom
-icon-only defaults; it also adds defensive constraint/visibility ownership fixes. These
-changes still need runtime verification, not just a successful compile.
+For this upstream draft, all 24 packaging tests, the architecture-layer check, and all four
+harness builds passed with Xcode 27.2. The playlist harness emits an existing
+`performSelector`/ARC warning. Final simulator runs passed on an iPhone Duo (iOS 27.1) and
+an ordinary iPhone (iOS 26.5):
+
+- Duo player: five resize sizes (320×667, 402×874, 466×678, 669×951 and 951×669), artwork
+  and scrolling scenarios.
+- Both devices: player-menu plain and stack parents, four playlist variants with 36 cases
+  each (288 total), seven Library fixtures, and the tabbar cycle with labels shown/hidden.
+- Four tabbar screenshots were captured and inspected. The Duo shows four right-rail
+  controls with labels by default, Create retained and the miniplayer separate. The phone
+  retains four bottom tabs. The long Library title truncates in the narrow rail; its full
+  accessibility name remains available.
+
+The fixture reads the detached bar directly in vertical mode. The resize/centering runners
+use PID-scoped unified logs because this host did not populate `simctl --stderr` output.
+These tests exercise real hook sources over mocked Spotify views, not a physical fold or
+the full Spotify hierarchy. They do not replace the physical verification below.
 
 ## Before merge
 

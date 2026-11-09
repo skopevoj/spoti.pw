@@ -99,5 +99,6 @@ evidence of an open/rotated Duo; those states need separate device checks.
 The real Spotify menu was exercised on a physical iPhone Duo with Spotify 9.1.94,
 folded and expanded. That is separate from the mocked harness and is not a compatibility
 claim for other versions. The upstream patch adds defensive restoration for detached
-constraint endpoints and hidden/presented players; rerun the menu fixtures against the
-final code. Full presentation and cancelled-transition coverage remains required.
+constraint endpoints and hidden/presented players. Both plain and stack-parent menu
+fixtures passed again against the final upstream source on Duo and ordinary-phone
+simulators. Full presentation and cancelled-transition coverage remains required.

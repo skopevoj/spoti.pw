@@ -415,7 +415,9 @@ static void report(SGHarnessChrome *chrome, NSString *moment) {
         NSCAssert(fabs(CGRectGetMaxY(group.frame) - CGRectGetHeight(railView.bounds)) < 0.5, @"Group must align to the region bottom");
         BOOL hideLabels = SGHidden(SGRKeyNavbarHideLabels);
         CGFloat rowHeight = hideLabels ? 48 : MAX(64, ceil([UIFont preferredFontForTextStyle:UIFontTextStyleCaption2].lineHeight) + 40);
-        CGFloat groupHeight = MIN(rail.size.height, system.items.count * (rowHeight + 2) + 2);
+        UITabBar *railBar = [railView valueForKey:@"bar"];
+        NSCAssert(railBar.items.count == 4, @"The rail must retain all four default tabs");
+        CGFloat groupHeight = MIN(rail.size.height, railBar.items.count * (rowHeight + 2) + 2);
         NSCAssert(fabs(CGRectGetHeight(group.frame) - groupHeight) < 0.5, @"The group must fit the composed tabs");
         UIScrollView *scroll = nil;
         for (UIView *child in group.subviews) if ([child isKindOfClass:UIScrollView.class]) scroll = (UIScrollView *)child;

@@ -8,11 +8,14 @@ mkdir -p "$LOGS"
 xcrun simctl install "$DEVICE" "$HERE/build/PlaylistHarness.app"
 for variant in liked own other mix; do
     log="$LOGS/$variant.log"
-    : > "$log"
-    xcrun simctl launch --terminate-running-process --stderr="$log" \
-        "$DEVICE" com.vojta.playlistharness "$variant" centering
+    launch=$(xcrun simctl launch --terminate-running-process \
+        "$DEVICE" com.vojta.playlistharness "$variant" centering)
+    pid=${launch##*: }
     count=0
-    until grep -q 'centering checks:' "$log"; do
+    while :; do
+        xcrun simctl spawn "$DEVICE" log show --last 1m --style compact \
+            --predicate "processIdentifier == $pid AND eventMessage CONTAINS 'centering checks:'" > "$log" 2>/dev/null
+        if grep -q 'centering checks:' "$log"; then break; fi
         count=$((count + 1))
         if [ "$count" -ge 30 ]; then
             echo "Timed out waiting for $variant" >&2

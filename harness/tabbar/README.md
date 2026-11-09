@@ -60,7 +60,9 @@ The fixture checks Home's hold gesture, custom tabs, hidden Search, saved orderi
 replacing the bottom inset with 61pt, and moving navigation outside and back into the tab
 container. Page/miniplayer insets stay unchanged.
 
-The prior icon-only three-tab prototype passed a complete message-bar cycle on a 466×678
-Duo simulator and a 402×874 iOS 26.5 phone. The upstream variant restores default tab and
-label preferences, so rerun both modes before merge. This fixture does not reproduce a
-physical fold or Spotify's full chrome/presentation graph. See ../../docs/iphone-duo.md.
+The upstream four-tab variant passed a complete message-bar cycle with labels shown and
+hidden on an iOS 27.1 Duo simulator and an iOS 26.5 phone. Screenshots of all four runs were
+inspected: the rail preserves Create and the phone retains its bottom bar. The long Library
+label truncates in the 52pt rail, while its full accessibility name remains available. This
+fixture does not reproduce a physical fold or Spotify's full chrome/presentation graph.
+See ../../docs/iphone-duo.md.
