@@ -164,12 +164,12 @@ void SGRPlaylistTakeCuration(UIView *cell) {
     if (!(self = [super initWithFrame:frame])) return nil;
     _glyph = [UIImageView new];
     _glyph.contentMode = UIViewContentModeScaleAspectFit;
-    _glyph.tintColor = UIColor.whiteColor;
+    _glyph.tintColor = SGRPrimary();
     _glyph.userInteractionEnabled = NO;
     [self addSubview:_glyph];
 
     _word = [UILabel new];
-    _word.textColor = UIColor.whiteColor;
+    _word.textColor = SGRPrimary();
     _word.font = [UIFont systemFontOfSize:[UIFont preferredFontForTextStyle:UIFontTextStyleBody].pointSize
                                    weight:UIFontWeightRegular];
     _word.userInteractionEnabled = NO;
@@ -202,7 +202,7 @@ void SGRPlaylistTakeCuration(UIView *cell) {
 }
 
 - (void)sgr_down {
-    self.backgroundColor = [UIColor colorWithWhite:1 alpha:0.10];
+    self.backgroundColor = [UIColor colorWithWhite:SGRedesignLightAppearance() ? 0 : 1 alpha:0.10];
 }
 
 - (void)sgr_up {

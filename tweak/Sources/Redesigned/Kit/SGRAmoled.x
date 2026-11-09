@@ -1,4 +1,4 @@
-// The redesign's AMOLED background, always on: its copy of Native/Appearance/Amoled.x without the switch.
+// The redesign's AMOLED background in dark appearance; light appearance leaves native semantic surfaces alone.
 // AMOLED background: Spotify paints its base surface #121212; with the switch on, that grey and
 // the gradients fading into it go pure black. Lighter greys stay (#1F1F1F placeholders, #292929
 // cards), so elevated surfaces still read against the black.
@@ -24,7 +24,7 @@ static CGColorRef copyBlack(CGColorRef color) {
 
 %hook CALayer
 - (void)setBackgroundColor:(CGColorRef)color {
-    if (!isBaseGrey(color)) {
+    if (SGRedesignLightAppearance() || !isBaseGrey(color)) {
         %orig;
         return;
     }
@@ -36,10 +36,11 @@ static CGColorRef copyBlack(CGColorRef color) {
 
 %hook CAGradientLayer
 - (void)setColors:(NSArray *)colors {
+    if (SGRedesignLightAppearance()) { %orig; return; }
     NSMutableArray *mapped = [[NSMutableArray alloc] initWithCapacity:colors.count];
     for (id entry in colors) {
         CGColorRef color = (__bridge CGColorRef)entry;
-        if (!isBaseGrey(color)) {
+        if (SGRedesignLightAppearance() || !isBaseGrey(color)) {
             [mapped addObject:entry];
             continue;
         }
@@ -55,9 +56,12 @@ static CGColorRef copyBlack(CGColorRef color) {
 // the base grey the hooks above turn black. The list is the top surface, so it takes the black.
 %hook _TtC21Settings_PlatformImpl26SettingsListViewController
 - (void)viewDidLayoutSubviews {
+    UIViewController *appearanceOwner = (UIViewController *)self;
+    if (appearanceOwner.overrideUserInterfaceStyle != SGRedesignAppearanceStyle())
+        appearanceOwner.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
     %orig;
     for (UIView *sub in ((UIViewController *)self).view.subviews) {
-        if ([sub isKindOfClass:UICollectionView.class]) sub.backgroundColor = UIColor.blackColor;
+        if ([sub isKindOfClass:UICollectionView.class]) sub.backgroundColor = SGAppearanceColor(UIColor.whiteColor, UIColor.blackColor);
     }
 }
 %end

@@ -12,8 +12,8 @@ A Theos tweak (Objective-C + Logos) injected into the decrypted Spotify iOS app.
 - **Redesigned**: the mod's own Liquid Glass look, from a clean sheet. It includes the glass tab bar,
   search field and now playing bar, the redesigned player and lyrics page with Apple Music style lyrics
   always on, a decluttered Home, Search's categories on tinted glass, a Library with one large title, the
-  playlist, album and artist pages the way the Music app lays them out with one pinned ⋯ over each, black
-  throughout, and its own accent colour. No native tweak runs.
+  playlist, album and artist pages the way the Music app lays them out with one pinned ⋯ over each,
+  launch-selected Dark, Light or System appearance, and its own accent colour. No native tweak runs.
 
 Anything that doesn't draw on Spotify's screens works the same under both: privacy, lyrics
 sources, gestures, blocked artists, flags, Vibrations, Speed and pitch, and the Live Activity. Those
@@ -66,5 +66,6 @@ Rules:
   (`Settings/SGPage.m`). Setting `hidden` on views inside Spotify's `OverflowStackView` or its Encore
   stacks crashes, so use alpha. A `CADisplayLink` capped at 60 Hz drags the player's 120 Hz
   transitions down with it. Glass takes the appearance it inherits, and outside Spotify's navigation
-  stacks (the tab bar, the now playing bar, the player) that is the system's: set every pane of the
-  mod's to `overrideUserInterfaceStyle = UIUserInterfaceStyleDark`, or it goes light in light mode.
+  stacks (the tab bar, the now playing bar, the player) that is the system's: set redesigned panes to
+  `overrideUserInterfaceStyle = SGRedesignAppearanceStyle()` so they match the verified launch theme.
+  Native UI retains its existing dark policy.

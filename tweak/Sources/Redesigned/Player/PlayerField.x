@@ -70,6 +70,9 @@ static SGRArtworkField *fieldIn(UIView *plane) {
 
 %hook _TtC21NowPlaying_ScrollImpl27NPVBackgroundViewController
 - (void)viewDidLayoutSubviews {
+    UIViewController *appearanceOwner = (UIViewController *)self;
+    if (appearanceOwner.overrideUserInterfaceStyle != SGRedesignAppearanceStyle())
+        appearanceOwner.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
     %orig;
     UIView *plane = ((UIViewController *)self).viewIfLoaded;
     if (!plane || plane.bounds.size.height < 200) return;

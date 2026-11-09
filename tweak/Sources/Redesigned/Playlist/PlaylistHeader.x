@@ -477,7 +477,7 @@ static UIView *applyBackground(UIView *layout) {
             return;
         }
         CGColorRef color = v.layer.backgroundColor;
-        if (color && SGIsBaseSurface(color)) v.backgroundColor = UIColor.clearColor;
+        if (color && SGRIsBaseSurface(color)) v.backgroundColor = UIColor.clearColor;
     });
     return plane;
 }

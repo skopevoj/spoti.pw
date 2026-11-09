@@ -8,3 +8,5 @@
 #import "SGBackdrop.h"
 #import "SGUIMode.h"
 #import "SGFlagForce.h"
+
+#import "SGAppearance.h"

@@ -1,7 +1,7 @@
 // The redesign's design tokens: every redesigned screen takes its colours, type, spacing, radii and
 // motion from here, so the screens read as one app and nothing is tuned per screen by hand.
 //
-// Colours are white over the artwork field (SGRField.h), whose colour is kept dark enough that
+// Dark colors are white over the artwork field (SGRField.h), whose raw palette is kept dark enough that
 // SGRPrimary and SGRSecondary both pass WCAG AA on it. Type is the system font (SF Pro) sized by the
 // text style and capped, since Spotify's pages lay out for a fixed header height. Motion is springs,
 // critically damped for layout and a little bounce for press feedback; under Reduce Motion both
@@ -23,11 +23,11 @@ extern const CGFloat SGRActionSpacing;   // 12, between the buttons of an action
 extern const CGFloat SGRGlassSpacing;    // 16, how near two glass shapes merge in one container
 extern const NSTimeInterval SGRCrossfade;   // 0.35, a new image or field colour fading in
 
-UIColor *SGRPrimary(void);      // white
-UIColor *SGRSecondary(void);    // white 65%, 80% with Increase Contrast
-UIColor *SGRTertiary(void);     // white 40%, 60% with Increase Contrast
+UIColor *SGRPrimary(void);      // dark ink in light appearance, white in dark
+UIColor *SGRSecondary(void);    // adaptive secondary ink; increased contrast supported
+UIColor *SGRTertiary(void);     // adaptive tertiary ink; increased contrast supported
 UIColor *SGRAccent(void);       // the accent colour of Appearance, else Spotify's green
-UIColor *SGRNeutralField(void); // #121212, the field before a colour arrives; SGRAmoled.x turns it black
+UIColor *SGRNeutralField(void); // neutral appearance-matched field before artwork arrives
 // Where glass cannot be (Reduce Transparency), the shape it would have had: white 16% over the field.
 UIColor *SGRSolidGlassFill(void);
 // A content surface on the field (a card), a step lighter than the field it sits on.
@@ -54,3 +54,6 @@ typedef NS_ENUM(NSInteger, SGRMotion) {
 // Runs `animations` with the motion's timing, or at once under Reduce Motion (except a fade), and
 // always calls `completion`. Only transform, alpha and colour belong in it while a page scrolls.
 void SGRAnimate(SGRMotion motion, void (^animations)(void), void (^completion)(BOOL finished));
+
+// Exact neutral light surfaces are also stripped from the known page roots in light appearance.
+BOOL SGRIsBaseSurface(CGColorRef color);

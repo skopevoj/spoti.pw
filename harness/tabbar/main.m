@@ -4,9 +4,27 @@
 #import <UIKit/UIKit.h>
 #import "Redesigned/Kit/SGRBarGeometry.h"
 #import "Redesigned/Navbar/Navbar.h"
+#import "Redesigned/Navbar/SGRTabPolicy.h"
+#import "Redesigned/Kit/SGRTokens.h"
 #import "Core/SGCore.h"
 
 #pragma mark - Spotify's classes, by the names the hooks look for
+
+// Exposes the same authoritative selection getter as Spotify's icon view.
+@interface SGHarnessIconView : UIImageView
+@property (nonatomic, getter=isActive) BOOL active;
+@property (nonatomic) BOOL exposesActive;
+@end
+@implementation SGHarnessIconView
+- (instancetype)initWithImage:(UIImage *)image {
+    if ((self = [super initWithImage:image])) _exposesActive = YES;
+    return self;
+}
+- (BOOL)respondsToSelector:(SEL)selector {
+    if (selector == @selector(isActive) && !self.exposesActive) return NO;
+    return [super respondsToSelector:selector];
+}
+@end
 
 @interface _TtC23NavigationUI_TabBarImpl10TabBarView : UIView
 @end
@@ -155,7 +173,8 @@
 
 static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
     UIView *item = [cls new];
-    UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:symbol]];
+    SGHarnessIconView *icon = [[SGHarnessIconView alloc] initWithImage:[UIImage systemImageNamed:symbol]];
+    icon.active = active;
     icon.tintColor = UIColor.whiteColor;
     icon.contentMode = UIViewContentModeScaleAspectFit;
     icon.frame = CGRectMake(0, 5.67, 24, 24);
@@ -163,7 +182,7 @@ static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
     UILabel *label = [UILabel new];
     label.text = title;
     label.font = [UIFont systemFontOfSize:10];
-    label.textColor = active ? UIColor.whiteColor : [UIColor colorWithWhite:0xB3 / 255.0 alpha:1];
+    label.textColor = active ? SGRPrimary() : SGRSecondary();
     label.textAlignment = NSTextAlignmentCenter;
     label.frame = CGRectMake(0, 35, 100, 14);
     label.autoresizingMask = UIViewAutoresizingFlexibleWidth;
@@ -413,9 +432,9 @@ static void report(SGHarnessChrome *chrome, NSString *moment) {
         UIView *group = railView.subviews.firstObject;
         NSCAssert([group.accessibilityIdentifier isEqualToString:@"spoti.vertical-navigation.group"], @"One compact group must own the glass");
         NSCAssert(fabs(CGRectGetMaxY(group.frame) - CGRectGetHeight(railView.bounds)) < 0.5, @"Group must align to the region bottom");
-        BOOL hideLabels = SGHidden(SGRKeyNavbarHideLabels);
-        CGFloat rowHeight = SGRVerticalBarNavigationRowHeight(hideLabels);
         UITabBar *railBar = [railView valueForKey:@"bar"];
+        BOOL hideLabels = railBar.items.firstObject.title.length == 0;
+        CGFloat rowHeight = SGRVerticalBarNavigationRowHeight(hideLabels);
         NSCAssert(railBar.items.count == 4, @"The rail must retain all four default tabs");
         CGFloat groupHeight = MIN(rail.size.height - SGRVerticalBarTopReservation(rail.size.height), railBar.items.count * (rowHeight + 2) + 2);
         NSCAssert(fabs(CGRectGetHeight(group.frame) - groupHeight) < 0.5, @"The group must fit the composed tabs");
@@ -468,7 +487,7 @@ static void reservationChecks(SGHarnessChrome *chrome) {
     UIView *rail = identifiedView(chrome.tabs.view, @"spoti.vertical-navigation");
     UITabBar *system = nil;
     CGRect original = rail.frame;
-    CGFloat rowHeight = SGRVerticalBarNavigationRowHeight(SGHidden(SGRKeyNavbarHideLabels));
+    CGFloat rowHeight = SGRVerticalBarNavigationRowHeight(((UITabBar *)[rail valueForKey:@"bar"]).items.firstObject.title.length == 0);
     NSArray *saved = SGRNavbarLayout();
     NSMutableArray *many = [NSMutableArray array];
     for (NSUInteger i = 0; i < 12; i++)
@@ -525,14 +544,155 @@ static void reservationChecks(SGHarnessChrome *chrome) {
     NSLog(@"[harness] PASS reservation restored default geometry and scroll offset");
 }
 
+static BOOL observedFullyOpen, observedHingeUpdate;
+static void observeHarnessHinge(UIView *stockBar) {
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270100
+    if (@available(iOS 27.1, *)) {
+        if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.kyle.spotipw.duo"]) return;
+        // Independent public-API observer verifies the production observer's live result.
+        [stockBar addInteraction:[[UIHingeInteraction alloc] initWithUpdateHandler:^(UIHingeInteraction *interaction, UIHingeInteractionUpdate *update) {
+            observedFullyOpen = update.hinge && update.hinge.status == UIHingeStatusFullyOpen;
+            observedHingeUpdate = YES;
+        }]];
+    }
+#endif
+}
+
+// Pure production-policy matrix. This is not a physical folding simulation.
+static void policyChecks(void) {
+    NSUInteger checks = 0;
+    for (NSString *bundle in @[@"com.kyle.spotipw.duo", @"com.kyle.spotipw", @"com.kyle.spotipw.duo.extra", @"com.vojta.tabbarharness"]) {
+        for (NSInteger status = 0; status < 4; status++) {
+            BOOL fullyOpen = status == 3; // unknown, closed, partial, fully open
+            for (NSNumber *value in @[@0, @1, @2, @3, @4]) {
+                UIInterfaceOrientation orientation = value.integerValue;
+                for (NSNumber *saved in @[@NO, @YES]) {
+                    BOOL expected = saved.boolValue || ([bundle isEqualToString:@"com.kyle.spotipw.duo"] &&
+                        !(fullyOpen && UIInterfaceOrientationIsPortrait(orientation)));
+                    NSCAssert(SGRNavbarHidesLabels(bundle, fullyOpen, orientation, saved.boolValue) == expected,
+                              @"Duo label policy must follow exact bundle, posture, orientation and preference");
+                    checks++;
+                }
+            }
+        }
+    }
+    for (NSNumber *light in @[@NO, @YES]) {
+        UITraitCollection *traits = [UITraitCollection traitCollectionWithUserInterfaceStyle:light.boolValue ? UIUserInterfaceStyleLight : UIUserInterfaceStyleDark];
+        UIColor *primary = light.boolValue ? [UIColor colorWithWhite:0.08 alpha:1] : UIColor.whiteColor;
+        UIColor *secondary = light.boolValue ? [UIColor colorWithWhite:0.3 alpha:1] : [UIColor colorWithWhite:1 alpha:0.65];
+        NSCAssert(SGRNavbarLabelIsActive(primary, traits, light.boolValue), @"Semantic primary must select in both themes");
+        NSCAssert(SGRNavbarLabelIsActive(UIColor.labelColor, traits, light.boolValue), @"Dynamic primary must resolve against source traits");
+        NSCAssert(!SGRNavbarLabelIsActive(secondary, traits, light.boolValue), @"Semantic secondary must not select");
+        NSCAssert(!SGRNavbarLabelIsActive(nil, traits, light.boolValue), @"Missing label must not select");
+    }
+    NSLog(@"[harness] PASS %lu exact-bundle/posture/orientation/preference cases and light/dark label fallback", (unsigned long)checks);
+}
+
+static UITabBar *composedSystemBar(SGHarnessChrome *chrome) {
+    UITabBar *bar = systemBarIn(chrome.tabs.bar);
+    if (!bar) bar = [identifiedView(chrome.tabs.view, @"spoti.vertical-navigation") valueForKey:@"bar"];
+    return bar;
+}
+
+static void refreshComposition(SGHarnessChrome *chrome) {
+    SGRComposeTabBar(chrome.tabs.bar);
+    [chrome.tabs.bar setNeedsLayout];
+    [chrome.tabs.bar layoutIfNeeded];
+    [chrome.tabs.view setNeedsLayout];
+    [chrome.tabs.view layoutIfNeeded];
+}
+
+static void preferenceChecks(SGHarnessChrome *chrome) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSArray *keys = @[@"spotifyglass.redesign.navbar.layout", SGRKeyNavbar, SGRKeyNavbarHideLabels,
+                      @"spotifyglass.redesign.navbar.hideCreate"];
+    NSMutableDictionary *saved = [NSMutableDictionary dictionary];
+    for (NSString *key in keys) if ([defaults objectForKey:key]) saved[key] = [defaults objectForKey:key];
+    for (NSNumber *hiddenCreate in @[@NO, @YES]) {
+        NSArray *custom = @[@{SGRNavbarID: @"Search", SGRNavbarHidden: @YES},
+            @{SGRNavbarID: @"fixture", SGRNavbarTitle: @"Favorites", SGRNavbarURI: @"spotify:collection", SGRNavbarIcon: @"heart"},
+            @{SGRNavbarID: @"Create", SGRNavbarHidden: hiddenCreate},
+            @{SGRNavbarID: @"Your Library"}, @{SGRNavbarID: @"Home"}];
+        SGRSetNavbarLayout(custom);
+        // Obsolete values must be retained but cannot override the existing editor.
+        [defaults setBool:!hiddenCreate.boolValue forKey:@"spotifyglass.redesign.navbar.hideCreate"];
+        for (NSNumber *hideLabels in @[@NO, @YES]) {
+            SGSetEnabled(SGRKeyNavbarHideLabels, hideLabels.boolValue);
+            NSDictionary *before = defaults.dictionaryRepresentation;
+            refreshComposition(chrome);
+            UITabBar *bar = composedSystemBar(chrome);
+            NSArray *expected = hiddenCreate.boolValue ? @[@"Favorites", @"Your Library", @"Home"]
+                                                       : @[@"Favorites", @"Create", @"Your Library", @"Home"];
+            NSCAssert([[bar.items valueForKey:@"accessibilityLabel"] isEqualToArray:expected], @"Visible order and Create must follow the existing tab editor");
+            for (UIView *source in SGRowIn(chrome.tabs.bar).arrangedSubviews) {
+                __block NSString *title;
+                SGForEachView(source, ^(UIView *view) { if ([view isKindOfClass:UILabel.class]) title = ((UILabel *)view).text; });
+                if ([title isEqualToString:@"Create"])
+                    NSCAssert(source.hidden == hiddenCreate.boolValue && source.userInteractionEnabled != hiddenCreate.boolValue && source.accessibilityElementsHidden == hiddenCreate.boolValue, @"Create visibility, interaction and accessibility must match the saved tab");
+                if ([title isEqualToString:@"Search"]) NSCAssert(source.hidden, @"Saved hidden Search remains hidden");
+            }
+            BOOL expectedHide = SGRNavbarHidesLabels(NSBundle.mainBundle.bundleIdentifier, observedFullyOpen,
+                chrome.view.window.windowScene.effectiveGeometry.interfaceOrientation, hideLabels.boolValue);
+            for (UITabBarItem *item in bar.items) NSCAssert((item.title.length == 0) == expectedHide, @"Mirrored titles must match the user preference and independently observed live posture");
+            for (NSString *key in keys) NSCAssert([[defaults objectForKey:key] isEqual:before[key]], @"Rendering must not mutate saved navbar settings");
+        }
+    }
+    SGSetEnabled(SGRKeyNavbar, NO);
+    refreshComposition(chrome);
+    NSCAssert(([[composedSystemBar(chrome).items valueForKey:@"accessibilityLabel"] isEqualToArray:@[@"Home", @"Search", @"Your Library", @"Create"]]), @"Disabling custom navbar restores stock order including Create");
+    for (NSString *key in keys) {
+        if (saved[key]) [defaults setObject:saved[key] forKey:key];
+        else [defaults removeObjectForKey:key];
+    }
+    refreshComposition(chrome);
+    if ([NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.kyle.spotipw.duo"])
+        NSLog(@"[harness] PASS live hinge label result, observed update %d, fully open %d", observedHingeUpdate, observedFullyOpen);
+    NSLog(@"[harness] PASS saved tab order, custom tabs, Create show/hide, hidden Search, disabled navbar, label toggle and unchanged stored values");
+}
+
+static void selectionChecks(SGHarnessChrome *chrome) {
+    NSArray<UIView *> *sources = SGRowIn(chrome.tabs.bar).arrangedSubviews;
+    for (NSUInteger selected = 0; selected < sources.count; selected++) {
+        for (NSUInteger index = 0; index < sources.count; index++) {
+            SGForEachView(sources[index], ^(UIView *view) {
+                if ([view isKindOfClass:SGHarnessIconView.class]) ((SGHarnessIconView *)view).active = index == selected;
+                // Deliberately contradict the icon. Selection must trust isActive.
+                if ([view isKindOfClass:UILabel.class]) ((UILabel *)view).textColor = index == selected ? SGRSecondary() : SGRPrimary();
+            });
+        }
+        refreshComposition(chrome);
+        UITabBar *bar = composedSystemBar(chrome);
+        NSCAssert(bar.selectedItem == bar.items[selected], @"Source icon state must drive selection even with stale opposite label colors");
+    }
+    for (NSUInteger selected = 0; selected < sources.count; selected++) {
+        for (NSUInteger index = 0; index < sources.count; index++) {
+            SGForEachView(sources[index], ^(UIView *view) {
+                if ([view isKindOfClass:SGHarnessIconView.class]) ((SGHarnessIconView *)view).exposesActive = NO;
+                if ([view isKindOfClass:UILabel.class]) ((UILabel *)view).textColor = index == selected ? SGRPrimary() : SGRSecondary();
+            });
+        }
+        refreshComposition(chrome);
+        UITabBar *bar = composedSystemBar(chrome);
+        NSCAssert(bar.selectedItem == bar.items[selected], @"Semantic label fallback must synchronize every tab in the selected theme");
+    }
+    for (UIView *source in sources) SGForEachView(source, ^(UIView *view) {
+        if ([view isKindOfClass:SGHarnessIconView.class]) ((SGHarnessIconView *)view).exposesActive = YES;
+    });
+    SGForEachView(sources.firstObject, ^(UIView *view) {
+        if ([view isKindOfClass:SGHarnessIconView.class]) ((SGHarnessIconView *)view).active = YES;
+    });
+    SGForEachView(sources.lastObject, ^(UIView *view) {
+        if ([view isKindOfClass:SGHarnessIconView.class]) ((SGHarnessIconView *)view).active = NO;
+    });
+    refreshComposition(chrome);
+    NSLog(@"[harness] PASS %@ source-icon and semantic-label selection synchronization across all four tabs", SGRedesignLightAppearance() ? @"Light" : @"Dark");
+}
+
 #pragma mark - the app
 
 // Before every %ctor, so the redesign's gate reads on.
 __attribute__((constructor(101))) static void sgr_harnessDefaults(void) {
     [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"spotifyglass.redesign"];
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:SGRKeyNavbar];
-    const char *labels = getenv("HARNESS_HIDE_LABELS");
-    [NSUserDefaults.standardUserDefaults setBool:labels && labels[0] == '1' forKey:SGRKeyNavbarHideLabels];
 }
 
 @interface SGHarnessApp : UIResponder <UIApplicationDelegate>
@@ -552,11 +712,19 @@ static void after(double seconds, dispatch_block_t block) {
 
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
-    self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    BOOL light = [NSProcessInfo.processInfo.arguments containsObject:@"light"];
+    SGConfigureRedesignAppearance(light ? UIUserInterfaceStyleLight : UIUserInterfaceStyleDark);
+    self.window.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+    SGRSetNavbarLayout(@[]);
+    SGSetEnabled(SGRKeyNavbar, YES);
+    const char *labels = getenv("HARNESS_HIDE_LABELS");
+    SGSetEnabled(SGRKeyNavbarHideLabels, labels && labels[0] == '1');
+    policyChecks();
     if ([NSProcessInfo.processInfo.arguments containsObject:@"reservation"]) SGRSetNavbarLayout(@[]);
     SGHarnessChrome *chrome = [SGHarnessChrome new];
     self.window.rootViewController = chrome;
     [self.window makeKeyAndVisible];
+    observeHarnessHinge(chrome.tabs.bar);
 
     // What happens, from the launch argument: `none` no message bar, `shown` one sliding in at 1.5 s,
     // `away` one there from the start sliding away at 1.5 s, `cycle` in at 1.5 s and out at 4.5 s.
@@ -589,25 +757,9 @@ static void after(double seconds, dispatch_block_t block) {
         [chrome.tabs.view layoutIfNeeded];
         report(chrome, @"navigation-restored");
         NSLog(@"[harness] PASS caller inset replacement and navigation ownership restoration");
-        NSArray *saved = SGRNavbarLayout();
-        NSArray *custom = @[@{SGRNavbarID: @"Search", SGRNavbarHidden: @YES},
-            @{SGRNavbarID: @"fixture", SGRNavbarTitle: @"Favorites", SGRNavbarURI: @"spotify:collection", SGRNavbarIcon: @"heart"},
-            @{SGRNavbarID: @"Create", SGRNavbarHidden: @NO}];
-        SGRSetNavbarLayout(custom);
-        SGRComposeTabBar(chrome.tabs.bar);
-        BOOL foundCustom = NO;
-        for (UIView *source in SGRowIn(chrome.tabs.bar).arrangedSubviews) {
-            __block NSString *title = nil;
-            SGForEachView(source, ^(UIView *view) { if ([view isKindOfClass:UILabel.class]) title = ((UILabel *)view).text; });
-            if ([title isEqualToString:@"Create"]) NSCAssert(!source.hidden, @"The visible Create preference must survive");
-            if ([title isEqualToString:@"Search"]) NSCAssert(source.hidden, @"Existing hidden-tab preference must survive");
-            if ([title isEqualToString:@"Favorites"]) foundCustom = !source.hidden;
-        }
-        NSCAssert(foundCustom && [SGRNavbarLayout() isEqualToArray:custom], @"Custom tab and saved composition must survive untouched");
-        SGRSetNavbarLayout(saved);
-        [chrome.tabs.bar setNeedsLayout];
-        [chrome.tabs.bar layoutIfNeeded];
-        NSLog(@"[harness] PASS visible Create action, custom tabs and hidden preferences preserved");
+        preferenceChecks(chrome);
+        selectionChecks(chrome);
+
     });
     if ([mode isEqualToString:@"reservation"]) after(8.5, ^{ reservationChecks(chrome); });
     // Half way through the slide, what the screen shows (the presentation layers).

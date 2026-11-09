@@ -94,7 +94,7 @@ static CGFloat screenRadius(void) {
 
     _sheet = [[UIView alloc] initWithFrame:card];
     _sheet.userInteractionEnabled = NO;
-    _sheet.backgroundColor = SGRPlayerField().fieldColor ?: UIColor.blackColor;
+    _sheet.backgroundColor = SGRPlayerField().fieldColor ?: SGRNeutralField();
     _sheet.layer.cornerCurve = kCACornerCurveContinuous;
     _sheet.clipsToBounds = YES;
     [container insertSubview:_sheet belowSubview:overlay];

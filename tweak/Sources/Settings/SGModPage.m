@@ -332,7 +332,7 @@ static const CGFloat kSliderTop = 12, kSliderLine = 18, kSliderSubtitle = 14, kS
     if (!(self = [super initWithStyle:style reuseIdentifier:identifier])) return nil;
     self.selectionStyle = UITableViewCellSelectionStyleNone;
     _title = [UILabel new];
-    _title.textColor = UIColor.whiteColor;
+    _title.textColor = SGRedesignedUI() && SGRedesignLightAppearance() ? UIColor.labelColor : UIColor.whiteColor;
     _title.isAccessibilityElement = NO;
     _subtitle = [UILabel new];
     _subtitle.textColor = SGGrey();
@@ -342,7 +342,7 @@ static const CGFloat kSliderTop = 12, kSliderLine = 18, kSliderSubtitle = 14, kS
     _value.textAlignment = NSTextAlignmentRight;
     _value.isAccessibilityElement = NO;
     _slider = [SGModSlider new];
-    _slider.maximumTrackTintColor = [UIColor colorWithWhite:1 alpha:0.16];
+    _slider.maximumTrackTintColor = [UIColor colorWithWhite:SGRedesignedUI() && SGRedesignLightAppearance() ? 0 : 1 alpha:0.16];
     [_slider addTarget:self action:@selector(moved) forControlEvents:UIControlEventValueChanged];
     [_slider addTarget:self action:@selector(released) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel];
     for (UIView *view in @[_title, _subtitle, _value, _slider]) [self.contentView addSubview:view];

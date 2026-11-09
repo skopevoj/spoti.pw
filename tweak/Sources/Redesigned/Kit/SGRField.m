@@ -12,6 +12,17 @@ static const CGFloat kFallbackHeight = 874;   // a window-less field sizes for a
 // Where the colour starts fading to black and where it is black, as shares of the window's height:
 // the redesign is AMOLED throughout (SGRAmoled.x).
 static const CGFloat kBlackFrom = 0.55, kBlackTo = 1;
+// The artwork remains untouched. An owned translucent white surface makes every animated/backdrop
+// sample pale enough for dark text, including while a new palette is still loading.
+static const CGFloat kLightWashAlpha = 0.96;
+static UIColor *visibleFieldColor(UIColor *color) {
+    if (!SGRedesignLightAppearance()) return color;
+    CGFloat r = 0, g = 0, b = 0, a = 1;
+    [color getRed:&r green:&g blue:&b alpha:&a];
+    CGFloat remaining = 1 - kLightWashAlpha;
+    return [UIColor colorWithRed:kLightWashAlpha + r * remaining green:kLightWashAlpha + g * remaining
+                           blue:kLightWashAlpha + b * remaining alpha:1];
+}
 
 static CGFloat windowHeight(UIView *view) {
     CGFloat height = view.window.bounds.size.height;
@@ -34,6 +45,8 @@ static NSDictionary *noActions(void) {
     CALayer *_solid;
     CAGradientLayer *_black;
     CALayer *_backdrop;
+    CALayer *_lightWash;
+    CAGradientLayer *_lightFloor;
     SGRFlowLayer *_flow;
     BOOL _watching;
     UIColor *_color;
@@ -49,11 +62,12 @@ static NSDictionary *noActions(void) {
     self.userInteractionEnabled = NO;
     self.clipsToBounds = NO;
     self.accessibilityElementsHidden = YES;
-    _color = SGRNeutralField();
+    UIColor *neutral = [UIColor colorWithWhite:0x12 / 255.0 alpha:1];
+    _color = visibleFieldColor(neutral);
 
     _solid = [CALayer layer];
     _solid.actions = noActions();
-    _solid.backgroundColor = _color.CGColor;
+    _solid.backgroundColor = neutral.CGColor;
     [self.layer addSublayer:_solid];
 
     _black = [CAGradientLayer layer];
@@ -66,6 +80,16 @@ static NSDictionary *noActions(void) {
     _backdrop.contentsGravity = kCAGravityResize;
     _backdrop.hidden = YES;
     [self.layer addSublayer:_backdrop];
+    if (SGRedesignLightAppearance()) {
+        _lightWash = [CALayer layer];
+        _lightWash.actions = noActions();
+        _lightWash.backgroundColor = [UIColor colorWithWhite:1 alpha:kLightWashAlpha].CGColor;
+        [self.layer addSublayer:_lightWash];
+        _lightFloor = [CAGradientLayer layer];
+        _lightFloor.actions = noActions();
+        _lightFloor.colors = @[(id)[UIColor colorWithWhite:1 alpha:0].CGColor, (id)UIColor.whiteColor.CGColor];
+        [self.layer addSublayer:_lightFloor];
+    }
     return self;
 }
 
@@ -100,6 +124,9 @@ static NSDictionary *noActions(void) {
     CGFloat to = MAX(from + 1, height * kBlackTo + bleed.top);
     _black.frame = painted;
     _black.locations = @[@(MIN(1, from / total)), @(MIN(1, to / total))];
+    _lightWash.frame = painted;
+    _lightFloor.frame = painted;
+    _lightFloor.locations = _black.locations;
     _backdrop.frame = CGRectMake(0, 0, bounds.size.width, [self backdropHeightNow]);
     _flow.frame = CGRectMake(0, 0, bounds.size.width, [self backdropHeightNow]);
     [CATransaction commit];
@@ -117,6 +144,7 @@ static NSDictionary *noActions(void) {
     }
     // The moving field is the whole picture: no still backdrop over it, no fade to black under it.
     _black.hidden = flows;
+    _lightFloor.hidden = flows;
     if (flows) _backdrop.hidden = YES;
     else _flow.hidden = YES;
     [self watch];
@@ -168,10 +196,12 @@ static NSDictionary *noActions(void) {
 }
 
 - (void)applyColor:(UIColor *)color animated:(BOOL)animated {
-    if (!color || CGColorEqualToColor(color.CGColor, _color.CGColor)) return;
+    if (!color) return;
+    UIColor *visible = visibleFieldColor(color);
+    if (CGColorEqualToColor(visible.CGColor, _color.CGColor)) return;
     CALayer *shown = _solid.presentationLayer ?: _solid;
     id from = (__bridge id)shown.backgroundColor;
-    _color = color;
+    _color = visible;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _solid.backgroundColor = color.CGColor;
@@ -185,7 +215,7 @@ static NSDictionary *noActions(void) {
         fade.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
         [_solid addAnimation:fade forKey:@"backgroundColor"];
     }
-    [NSNotificationCenter.defaultCenter postNotificationName:SGRFieldColorDidChangeNotification object:self userInfo:@{@"color": color}];
+    [NSNotificationCenter.defaultCenter postNotificationName:SGRFieldColorDidChangeNotification object:self userInfo:@{@"color": visible}];
 }
 
 - (void)setProvisionalColor:(UIColor *)color {

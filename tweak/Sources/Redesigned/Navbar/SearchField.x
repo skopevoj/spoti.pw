@@ -12,6 +12,7 @@
 // layout pass that styled it: both are then invisible on the glass until the next pass, a second or
 // so later. So the two setters are refused for as long as the field is a capsule.
 #import "Core/SGCore.h"
+#import "Redesigned/Kit/SGRTokens.h"
 #import "Diagnostics/Diagnostics.h"
 
 // Spotify's glyph view, resolved at runtime; declared on UIView so the call and the hook below
@@ -30,10 +31,10 @@ static BOOL isSearchField(UIView *button) {
 
 static void whiten(UIView *view) {
     if ([view isKindOfClass:UILabel.class]) {
-        ((UILabel *)view).textColor = UIColor.whiteColor;
+        ((UILabel *)view).textColor = SGRPrimary();
     } else if ([NSStringFromClass(view.class) containsString:@"IconView"]) {
-        if ([view respondsToSelector:@selector(setForegroundColor:)]) [view setForegroundColor:UIColor.whiteColor];
-        else view.tintColor = UIColor.whiteColor;
+        if ([view respondsToSelector:@selector(setForegroundColor:)]) [view setForegroundColor:SGRPrimary()];
+        else view.tintColor = SGRPrimary();
     }
 }
 
@@ -108,7 +109,7 @@ static void styleSearchField(UIView *button) {
     UIVisualEffectView *glass = SGGlassAt(button, 0);
     // Dark like every glass of the redesign's, rather than by grace of the navigation stack Spotify hosts
     // the page in (TabBar.x).
-    if (glass.overrideUserInterfaceStyle != UIUserInterfaceStyleDark) glass.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    if (glass.overrideUserInterfaceStyle != SGRedesignAppearanceStyle()) glass.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
     glass.frame = button.bounds;
     SGShapeGlass(glass, size.height / 2, YES);
 
@@ -140,13 +141,13 @@ static void styleSearchField(UIView *button) {
 
 %hook UILabel
 - (void)setTextColor:(UIColor *)color {
-    %orig(SGIsInside((UIView *)self, sg_searchField) ? UIColor.whiteColor : color);
+    %orig(SGIsInside((UIView *)self, sg_searchField) ? SGRPrimary() : color);
 }
 %end
 
 %hook SPTEncoreIconView
 - (void)setForegroundColor:(UIColor *)color {
-    %orig(SGIsInside((UIView *)self, sg_searchField) ? UIColor.whiteColor : color);
+    %orig(SGIsInside((UIView *)self, sg_searchField) ? SGRPrimary() : color);
 }
 %end
 

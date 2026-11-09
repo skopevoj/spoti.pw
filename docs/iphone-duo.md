@@ -13,7 +13,10 @@ changed. Retargeting is not recompilation, so every input version needs its own 
 audit. The default input version remains 9.1.78. A version override only permits the build,
 not a claim of support. See the README and `scripts/retarget-duo.py` for preservation checks.
 
-- Tabs retain their order, actions, custom links, Create and the Hide labels setting.
+- Tabs retain their order, actions, custom links and Create through the existing Navbar editor.
+  Only the exact `com.kyle.spotipw.duo` bundle forces icon-only labels outside fully-open
+  portrait; in that pose, and for all other bundle IDs, the saved Hide labels setting applies.
+  The policy does not write back to any saved preference.
 - The rail uses a scrollable bottom-aligned group; controls retain accessible labels.
 - Entity menus sit under native Back in the rail, stay owned by their page and refresh on
   container changes without needing a header callback. Navigation reserves enough space for
@@ -107,3 +110,11 @@ native UI too. In particular, menu interception repair within Spotify's presenta
 and chrome slide-out behavior need testing against the real hierarchy, not only mocks.
 
 The repository's CLA is a separate author decision. This patch does not express acceptance.
+
+## Appearance and source sharing
+
+See [appearance.md](appearance.md) for the launch-applied theme bridge and its verification limits.
+The earlier four-tab screenshot results above describe the pre-appearance baseline, not the new
+Duo-specific label policy. Use `harness/tabbar/run-preferences.sh PHONE_SIMULATOR_UDID DUO_SIMULATOR_UDID`
+for the policy, saved-composition and light/dark selection regressions. Native icon integration is
+not automated; see [native-icon.md](native-icon.md).

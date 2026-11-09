@@ -20,35 +20,45 @@ static const NSTimeInterval kLayoutDuration = 0.45, kPressDuration = 0.32;
 static const CGFloat kPressDamping = 0.62;
 
 UIColor *SGRPrimary(void) {
-    return UIColor.whiteColor;
+    return SGAppearanceColor([UIColor colorWithWhite:0.08 alpha:1], UIColor.whiteColor);
 }
 
 UIColor *SGRSecondary(void) {
-    return [UIColor colorWithWhite:1 alpha:SGRIncreaseContrast() ? 0.80 : 0.65];
+    return SGAppearanceColor([UIColor colorWithWhite:SGRIncreaseContrast() ? 0.22 : 0.30 alpha:1],
+        [UIColor colorWithWhite:1 alpha:SGRIncreaseContrast() ? 0.80 : 0.65]);
 }
 
 UIColor *SGRTertiary(void) {
-    return [UIColor colorWithWhite:1 alpha:SGRIncreaseContrast() ? 0.60 : 0.40];
+    return SGAppearanceColor([UIColor colorWithWhite:SGRIncreaseContrast() ? 0.30 : 0.40 alpha:1],
+        [UIColor colorWithWhite:1 alpha:SGRIncreaseContrast() ? 0.60 : 0.40]);
 }
 
 // Read per call: the accent is stored as it is picked, and the colour row reads it the same way.
 UIColor *SGRAccent(void) {
-    return SGRAccentColor() ?: [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1];
+    UIColor *color = SGRAccentColor() ?: [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1];
+    if (!SGRedesignLightAppearance()) return color;
+    // Text and glyph accents on a pale field need a darker shade of the selected hue.
+    CGFloat r, g, b, a;
+    if (![color getRed:&r green:&g blue:&b alpha:&a]) return color;
+    CGFloat maximum = MAX(r, MAX(g, b));
+    CGFloat scale = maximum > 0.40 ? 0.40 / maximum : 1;
+    return [UIColor colorWithRed:r * scale green:g * scale blue:b * scale alpha:a];
 }
 
 UIColor *SGRNeutralField(void) {
-    return [UIColor colorWithRed:0x12 / 255.0 green:0x12 / 255.0 blue:0x12 / 255.0 alpha:1];
+    return SGAppearanceColor([UIColor colorWithWhite:0.97 alpha:1], [UIColor colorWithWhite:0x12 / 255.0 alpha:1]);
 }
 
 UIColor *SGRSolidGlassFill(void) {
-    return [UIColor colorWithWhite:1 alpha:0.16];
+    return SGAppearanceColor([UIColor colorWithWhite:0.92 alpha:1], [UIColor colorWithWhite:1 alpha:0.16]);
 }
 
 UIColor *SGRHairline(void) {
-    return [UIColor colorWithWhite:1 alpha:SGRIncreaseContrast() ? 0.20 : 0.12];
+    return [UIColor colorWithWhite:SGRedesignLightAppearance() ? 0 : 1 alpha:SGRIncreaseContrast() ? 0.20 : 0.12];
 }
 
 UIColor *SGRElevated(UIColor *field) {
+    if (SGRedesignLightAppearance()) return [UIColor colorWithWhite:0.92 alpha:1];
     CGFloat r = 0, g = 0, b = 0, a = 1;
     if (![field getRed:&r green:&g blue:&b alpha:&a]) return [UIColor colorWithWhite:1 alpha:0.08];
     // 12% towards white keeps a card on a black field clear of the greys SGRAmoled.x turns black.
@@ -102,4 +112,12 @@ void SGRAnimate(SGRMotion motion, void (^animations)(void), void (^completion)(B
             [UIView animateWithDuration:SGRCrossfade delay:0 options:options | UIViewAnimationOptionCurveEaseInOut animations:animations completion:completion];
             break;
     }
+}
+
+BOOL SGRIsBaseSurface(CGColorRef color) {
+    if (SGIsBaseSurface(color)) return YES;
+    if (!SGRedesignLightAppearance() || !color || CGColorGetAlpha(color) < 0.99) return NO;
+    UIColor *value = [UIColor colorWithCGColor:color];
+    CGFloat r, g, b, a;
+    return [value getRed:&r green:&g blue:&b alpha:&a] && r >= 0.95 && fabs(r-g) < 0.01 && fabs(g-b) < 0.01;
 }

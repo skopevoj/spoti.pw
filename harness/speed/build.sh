@@ -10,7 +10,7 @@ SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -g -O1 \
     -I"$SRC" -I"$SRC/Shared/Player" -isysroot "$SDK" -Wno-deprecated-declarations \
     "$(dirname "$0")/main.m" "$OUT"/gen/*.m "$SRC"/Shared/Player/SGTimePitch.m "$SRC"/Core/SGRebind.m \
-    "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGUIMode.m "$SRC"/Core/SGFlagForce.m \
+    "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGUIMode.m "$SRC"/Core/SGAppearance.m "$SRC"/Core/SGFlagForce.m \
     -framework UIKit -framework QuartzCore -framework AudioToolbox -framework AVFoundation -framework Foundation \
     -o "$OUT/SpeedHarness.app/SpeedHarness"
 cat > "$OUT/SpeedHarness.app/Info.plist" <<'PLIST'

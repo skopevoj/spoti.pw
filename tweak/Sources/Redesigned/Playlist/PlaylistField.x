@@ -56,6 +56,9 @@ static SGRArtworkField *fieldIn(UIView *page) {
 
 %hook _TtC35ListUXPlatform_FreeTierPlaylistImpl17FTPViewController
 - (void)viewDidLayoutSubviews {
+    UIViewController *appearanceOwner = (UIViewController *)self;
+    if (appearanceOwner.overrideUserInterfaceStyle != SGRedesignAppearanceStyle())
+        appearanceOwner.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
     %orig;
     UIView *page = ((UIViewController *)self).viewIfLoaded;
     if (!page || page.bounds.size.height < 200) return;
@@ -81,7 +84,7 @@ static SGRArtworkField *fieldIn(UIView *page) {
 - (void)layoutSubviews {
     %orig;
     UIScrollView *list = (UIScrollView *)self;
-    if (list.backgroundColor && SGIsBaseSurface(list.backgroundColor.CGColor)) list.backgroundColor = UIColor.clearColor;
+    if (list.backgroundColor && SGRIsBaseSurface(list.backgroundColor.CGColor)) list.backgroundColor = UIColor.clearColor;
 }
 %end
 

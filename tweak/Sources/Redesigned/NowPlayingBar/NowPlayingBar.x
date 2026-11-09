@@ -159,7 +159,7 @@ static void styleNowPlayingBar(UIViewController *container) {
     UIVisualEffectView *glass = SGGlassFor(container.view, &kGlassKey);
     // Dark whatever the system is set to: the bar is outside the navigation stacks Spotify makes dark, and
     // took the system's light glass on a phone in light mode (TabBar.x).
-    if (glass.overrideUserInterfaceStyle != UIUserInterfaceStyleDark) glass.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    if (glass.overrideUserInterfaceStyle != SGRedesignAppearanceStyle()) glass.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
     sg_cardGlass = glass;
     static CGRect lastVerticalFrame = {{-1, -1}, {0, 0}};
     if (!CGRectIsNull(SGRVerticalBarFrameIn(container.view, 76)) && !CGRectEqualToRect(lastVerticalFrame, frame)) {

@@ -123,7 +123,7 @@ static SGRSearchCardParts *partsIn(UIView *box, UIView *content) {
         UIVisualEffectView *glass = [UIVisualEffectView new];
         // Dark like every glass of the redesign's, rather than by grace of the navigation stack Spotify
         // hosts the page in (Navbar/TabBar.x).
-        glass.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        glass.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
         glass.userInteractionEnabled = NO;
         glass.accessibilityElementsHidden = YES;
         glass.layer.zPosition = -1;

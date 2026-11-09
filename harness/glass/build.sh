@@ -11,7 +11,7 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios26.0-simulator -fobjc-ar
     -I"$SRC" -isysroot "$SDK" -Wno-deprecated-declarations \
     "$(dirname "$0")/main.m" \
     "$SRC"/Redesigned/Kit/SGRGlass.m "$SRC"/Redesigned/Kit/SGRTokens.m \
-    "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGGlass.m "$SRC"/Core/SGUIMode.m \
+    "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGGlass.m "$SRC"/Core/SGUIMode.m "$SRC"/Core/SGAppearance.m \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreText -framework Foundation \
     -o "$OUT/GlassHarness.app/GlassHarness"
 

@@ -161,7 +161,7 @@ Native:
 Redesigned:
 
     Kit/          what the redesign builds on (SGRKit.h lists it), the flags it forces (SGRedesign.h, SGRGlassDesign.x for
-                  Spotify's own glass design), its repaint hook (SGRRepaint.x), soft top edge, AMOLED black (always on,
+                  Spotify's own glass design), its repaint hook (SGRRepaint.x), soft top edge, AMOLED black (dark appearance only,
                   SGRAmoled.x) and its own accent colour (SGRAccent.x, stored apart from the native look's)
     Navbar/       the glass tab bar (TabBar.x) over its own composition (Navbar.x, NavbarLayout.m) and editor, the glass search field.
                   Spotify is made to leave the glass bar its height where its own bar is shorter (a phone with a home button,
@@ -250,7 +250,7 @@ last row of Spotify's Settings, sorts every
 setting by the part of Spotify it changes, so a part's glass, its hide switches and its flags sit on
 one page, the mod's own rows first and Spotify's flags below them or on a sub page named after what
 they change. It opens on the Appearance card: Redesigned UI, then the stored look's accent colour, and in the native
-look AMOLED (the redesign is always black); Spotify's green is offered from the colour row once a colour
+look AMOLED; the redesign offers Dark, Light and System (at launch), as described in `appearance.md`; Spotify's green is offered from the colour row once a colour
 is set. Redesigned UI is the one switch between the two looks (see Layers): it glows
 (Settings/SGGlowSwitch), its ⓘ says what it changes, and flipping it offers to restart Spotify.
 The pages show only what the stored look has: a page opened after flipping the switch already shows

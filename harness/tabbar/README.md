@@ -77,3 +77,13 @@ and group geometry. These checks passed in both modes. The top reservation leave
 space for a labeled navigation row even in icon-only mode, so the shared entity menu and
 navigation agree without coupling Kit to the navbar preference. The menu yields if its
 slot cannot fit. Extremely short regions cannot hold native Back and a full row together.
+
+## Appearance and Duo label policy
+
+`run-preferences.sh PHONE_SIMULATOR_UDID DUO_SIMULATOR_UDID` builds the ordinary fixture
+and the exact Duo-bundle fixture, then checks both themes. It covers 160 bundle/posture/
+orientation/preference cases, saved order and custom tabs, Create show/hide, hidden Search,
+disabled customization, unmodified stored values, authoritative icon selection and semantic
+label fallback. The live hinge observer confirms the current simulator state; the pure policy
+matrix is not a physical folding test. Ordinary bundles retain labeled rail geometry when
+the preference calls for it. Existing rail visibility and navigation reservations are preserved.

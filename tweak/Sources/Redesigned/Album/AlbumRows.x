@@ -25,7 +25,7 @@ static char kRowKey, kSubtitleKey, kLineKey;
 
 static void clearSurface(UIView *view) {
     UIColor *color = view.backgroundColor;
-    if (color && SGIsBaseSurface(color.CGColor)) view.backgroundColor = UIColor.clearColor;
+    if (color && SGRIsBaseSurface(color.CGColor)) view.backgroundColor = UIColor.clearColor;
 }
 
 static void applyHairline(UIView *row) {

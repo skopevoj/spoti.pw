@@ -12,6 +12,7 @@
 //   ElementContentView<TabBarItemElement>, each with an SPTEncoreIconView and an SPTEncoreLabel.
 #import "Core/SGCore.h"
 #import "Navbar.h"
+#import "SGRTabPolicy.h"
 #import "Redesigned/Kit/SGRTokens.h"
 #import "Redesigned/Kit/SGRBarGeometry.h"
 #import "Redesigned/Kit/SGRGlass.h"
@@ -20,6 +21,7 @@
 #import <objc/message.h>
 
 static char kBarKey, kHostKey, kRailKey, kRailInsetsKey, kBottomGuideKey;
+static char kHingeInteractionKey, kHingeFullyOpenKey;
 static __weak UIView *sg_stockBar;
 static CGFloat sg_room, sg_glassHeight;   // see "room for the glass bar"
 
@@ -67,12 +69,42 @@ static UIView *iconIn(UIView *item) {
     return icon;
 }
 
-// Spotify paints the selected tab's label white and the rest #B3B3B3.
+// Prefer the actual source selection state, independent of the selected theme.
 static BOOL isActive(UIView *item) {
-    UIColor *color = labelIn(item).textColor;
-    CGFloat white = 0, alpha = 0, r, g, b;
-    if (![color getWhite:&white alpha:&alpha] && [color getRed:&r green:&g blue:&b alpha:&alpha]) white = MIN(r, MIN(g, b));
-    return white > 0.95;
+    UIView *icon = iconIn(item);
+    if ([icon respondsToSelector:@selector(isActive)]) return [(SPTEncoreIconView *)icon isActive];
+    UILabel *label = labelIn(item);
+    return SGRNavbarLabelIsActive(label.textColor, label.traitCollection, SGRedesignLightAppearance());
+}
+
+// Observe the stable source bar, not the mirrored bottom host that is detached in
+// vertical mode. UIKit supplies initial and later hinge state, including nil when
+// the view leaves a supported hierarchy. Unknown posture remains icon-only on Duo.
+static BOOL hideLabelsForBar(UIView *stockBar) {
+    NSString *bundle = NSBundle.mainBundle.bundleIdentifier;
+    BOOL userHidesLabels = SGHidden(SGRKeyNavbarHideLabels);
+    if (![bundle isEqualToString:@"com.kyle.spotipw.duo"]) return userHidesLabels;
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270100
+    if (@available(iOS 27.1, *)) {
+        if (!objc_getAssociatedObject(stockBar, &kHingeInteractionKey)) {
+            __weak UIView *weakBar = stockBar;
+            UIHingeInteraction *interaction = [[UIHingeInteraction alloc] initWithUpdateHandler:^(UIHingeInteraction *sender, UIHingeInteractionUpdate *update) {
+                UIView *bar = weakBar;
+                if (!bar) return;
+                BOOL fullyOpen = update.hinge && update.hinge.status == UIHingeStatusFullyOpen;
+                NSNumber *previous = objc_getAssociatedObject(bar, &kHingeFullyOpenKey);
+                if (previous && previous.boolValue == fullyOpen) return;
+                objc_setAssociatedObject(bar, &kHingeFullyOpenKey, @(fullyOpen), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                [bar setNeedsLayout];
+            }];
+            objc_setAssociatedObject(stockBar, &kHingeInteractionKey, interaction, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [stockBar addInteraction:interaction];
+        }
+    }
+#endif
+    BOOL fullyOpen = [objc_getAssociatedObject(stockBar, &kHingeFullyOpenKey) boolValue];
+    UIInterfaceOrientation orientation = stockBar.window.windowScene.effectiveGeometry.interfaceOrientation;
+    return SGRNavbarHidesLabels(bundle, fullyOpen, orientation, userHidesLabels);
 }
 
 static BOOL hasInk(UIImage *image) {
@@ -120,8 +152,8 @@ static UIImage *glyphOf(UIView *item, BOOL active) {
         if (cached) return cached;
         SPTEncoreIconView *view = [[viewClass alloc] initWithIcon:icon];
         view.frame = (CGRect){CGPointZero, size};
-        [view setForegroundColor:UIColor.whiteColor];
-        if ([view respondsToSelector:@selector(setActiveForegroundColor:)]) [view setActiveForegroundColor:UIColor.whiteColor];
+        [view setForegroundColor:SGRPrimary()];
+        if ([view respondsToSelector:@selector(setActiveForegroundColor:)]) [view setActiveForegroundColor:SGRPrimary()];
         if ([view respondsToSelector:@selector(setIsActive:)]) [view setIsActive:active];
         [view layoutIfNeeded];
         UIImage *image = renderLayer(view.layer, size);
@@ -319,7 +351,7 @@ static CGFloat railBranchOpacity(UIView *stock, UIView *host) {
 - (void)dealloc { [_visibilityLink invalidate]; }
 - (instancetype)initWithFrame:(CGRect)frame {
     if ((self = [super initWithFrame:frame])) {
-        self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        self.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
         self.accessibilityIdentifier = @"spoti.vertical-navigation";
         self.scroll = [UIScrollView new];
         self.scroll.showsVerticalScrollIndicator = NO;
@@ -331,7 +363,7 @@ static CGFloat railBranchOpacity(UIView *stock, UIView *host) {
         self.selection = [UIView new];
         self.selection.userInteractionEnabled = NO;
         self.selection.accessibilityElementsHidden = YES;
-        self.selection.backgroundColor = [UIColor colorWithWhite:0 alpha:0.55];
+        self.selection.backgroundColor = [UIColor colorWithWhite:SGRedesignLightAppearance() ? 1 : 0 alpha:0.55];
         self.selection.layer.cornerRadius = 24;
         self.selection.layer.cornerCurve = kCACornerCurveContinuous;
         [self.scroll addSubview:self.selection];
@@ -360,7 +392,7 @@ static CGFloat railBranchOpacity(UIView *stock, UIView *host) {
     }
     // One compact glass pill at the native region's bottom, like Music. The surrounding
     // rail stays clear; custom tabs expand the group and scroll when the region is full.
-    BOOL hideLabels = SGHidden(SGRKeyNavbarHideLabels);
+    BOOL hideLabels = hideLabelsForBar(self.bar.stockBar);
     UIFont *labelFont = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption2];
     CGFloat row = SGRVerticalBarNavigationRowHeight(hideLabels), gap = 2, padding = 2;
     CGFloat total = items.count * (row + gap) - (items.count ? gap : 0) + padding * 2;
@@ -392,7 +424,7 @@ static CGFloat railBranchOpacity(UIView *stock, UIView *host) {
             config.imagePadding = 2;
             config.titleLineBreakMode = NSLineBreakByTruncatingTail;
         }
-        config.baseForegroundColor = active ? SGRAccent() : UIColor.whiteColor;
+        config.baseForegroundColor = active ? SGRAccent() : SGRPrimary();
         button.configuration = config;
         button.accessibilityLabel = labelIn(self.bar.sources[i]).text;
         button.accessibilityTraits = UIAccessibilityTraitButton | (active ? UIAccessibilityTraitSelected : 0);
@@ -577,7 +609,7 @@ static void syncBar(UIView *stockBar) {
         // stacks Spotify makes dark itself (-[SPNavigationController viewDidLoad] while +[SPTLiquidGlass
         // isEnabled]), so a phone in light mode had it light over Spotify's black. Spotify is dark whatever
         // the system is, and so is the bar.
-        bar.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        bar.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
         bar.delegate = bar;
         bar.stockBar = stockBar;
         UILongPressGestureRecognizer *hold = [[UILongPressGestureRecognizer alloc] initWithTarget:bar action:@selector(held:)];
@@ -602,7 +634,7 @@ static void syncBar(UIView *stockBar) {
     NSArray<UIView *> *sources = tabItems(stockBar);
     if (!sources.count) return;
     // An item with no title is drawn by UIKit as its glyph alone, centred, on a bar of the same height.
-    BOOL hideLabels = SGHidden(SGRKeyNavbarHideLabels);
+    BOOL hideLabels = hideLabelsForBar(stockBar);
 
     if (![sources isEqualToArray:bar.sources]) {
         NSMutableArray<UITabBarItem *> *items = [NSMutableArray array];
@@ -614,7 +646,7 @@ static void syncBar(UIView *stockBar) {
             UIView *live = iconIn(source);
             id icon = live ? encoreIconOf(live) : nil;
             id variant = [icon respondsToSelector:NSSelectorFromString(@"active")] ? ((id (*)(id, SEL))objc_msgSend)(icon, NSSelectorFromString(@"active")) : nil;
-            [out appendFormat:@"\n  %@: %@ icon %@ active-variant %@ live-isActive %d label-white %d", labelIn(source).text, NSStringFromClass(live.class),
+            [out appendFormat:@"\n  %@: %@ icon %@ active-variant %@ live-isActive %d source-active %d", labelIn(source).text, NSStringFromClass(live.class),
                  [icon respondsToSelector:@selector(name)] ? [icon name] : icon, [variant respondsToSelector:@selector(name)] ? [variant name] : variant,
                  [live respondsToSelector:@selector(isActive)] ? [(SPTEncoreIconView *)live isActive] : -1, isActive(source)];
         }
@@ -628,7 +660,9 @@ static void syncBar(UIView *stockBar) {
         if (!item.image) item.image = glyphOf(sources[i], NO);
         if (!item.selectedImage || item.selectedImage == item.image) item.selectedImage = glyphOf(sources[i], YES);
         missing |= !item.image || !item.selectedImage;
-        NSString *title = hideLabels ? nil : labelIn(sources[i]).text;
+        NSString *sourceTitle = labelIn(sources[i]).text;
+        item.accessibilityLabel = sourceTitle;
+        NSString *title = hideLabels ? nil : sourceTitle;
         if (hideLabels ? item.title != nil : title.length && ![title isEqualToString:item.title]) item.title = title;
         if (!selected && isActive(sources[i])) selected = item;
     }

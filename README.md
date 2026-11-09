@@ -46,6 +46,16 @@ The redesign is `UIGlassEffect`, which only exists from iOS 26. Below that the R
 is greyed out and the mod runs Spotify's own screens with everything else it adds on top. Both live
 in Settings → Mod Settings.
 
+## spoti.duo experimental branch
+
+This fork adds Duo-aware navigation and **Dark, Light, and System (at launch)** appearance to the redesigned UI. Choose the appearance in Mod Settings, then close and reopen Spotify. The native theme bridge was audited against Spotify **9.1.94**, with simulator fixtures and an isolated real-provider probe; a complete signed-in app walkthrough is still pending. [Appearance details and limitations](docs/appearance.md).
+
+The exact `com.kyle.spotipw.duo` bundle hides tab labels except when fully open in portrait, where it follows your saved **Hide labels** setting. Other bundle IDs always follow that setting. Create, custom tabs, hidden tabs and saved order use the existing Navbar editor. `DUO=1` alone does not change the bundle ID; choose an identifier that matches your signing profile. [Duo build notes](docs/iphone-duo.md).
+
+The editable [cyan Liquid Glass icon source](assets/Spotify%20Liquid%20Glass.icon) is included. The standard build still uses its existing PNG icon option; native icon catalog integration is not automated. [Icon notes](docs/native-icon.md).
+
+No decrypted Spotify app, signed IPA, certificate, profile or proprietary test binary is included. The upstream build instructions below retain their original version default; explicitly selecting 9.1.94 requires `EXPECTED_SPOTIFY_VERSION=9.1.94`, a suitable IPA and your own signing setup. This is experimental source for review, not a prebuilt release.
+
 ## Build it
 
 No IPA is distributed. Bring a decrypted **Spotify 9.1.78** IPA; you get an unsigned
@@ -81,7 +91,8 @@ The first build, or a change of source IPA, reads Spotify's flags from that IPA.
 Duo support applies to **Redesigned UI** and requires building with an **iPhoneOS 27.1+
 SDK**. The window's native `verticalBarEdge` trait and layout region select the side rail;
 other layouts retain the bottom tab bar. Tab order, custom links, Create, Home's hold action,
-and the existing **Hide labels** preference are preserved.
+and the existing **Hide labels** preference are preserved. The exact spoti.duo bundle applies
+the posture-specific label policy above.
 
 The miniplayer and Library content clear the rail, the player's real menu control stays
 reachable, playlist headers center in the usable column, and open lyrics recover when a

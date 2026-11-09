@@ -141,6 +141,9 @@ static void layoutHeader(UIStackView *row) {
 
 %hook _TtC21Browse_BrowsePageImpl24BrowsePageViewController
 - (void)viewDidLayoutSubviews {
+    UIViewController *appearanceOwner = (UIViewController *)self;
+    if (appearanceOwner.overrideUserInterfaceStyle != SGRedesignAppearanceStyle())
+        appearanceOwner.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
     %orig;
     UIView *view = ((UIViewController *)self).viewIfLoaded;
     if (!view || !findParts(view)) return;

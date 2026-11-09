@@ -2,15 +2,17 @@
 #import "Core/SGCore.h"
 
 static UIFont *sg_titleFont, *sg_subtitleFont;
+static BOOL settingsLight(void) { return SGRedesignedUI() && SGRedesignLightAppearance(); }
+static UIColor *settingsInk(void) { return settingsLight() ? UIColor.labelColor : UIColor.whiteColor; }
 
-UIColor *SGGrey(void) { return [UIColor colorWithWhite:0xB3 / 255.0 alpha:1]; }
+UIColor *SGGrey(void) { return settingsLight() ? UIColor.secondaryLabelColor : [UIColor colorWithWhite:0xB3 / 255.0 alpha:1]; }
 UIFont *SGTitleFont(void) { return sg_titleFont ?: [UIFont systemFontOfSize:13 weight:UIFontWeightBold]; }
 UIFont *SGSubtitleFont(void) { return sg_subtitleFont ?: [UIFont systemFontOfSize:11]; }
 
 UIImageView *SGSymbolView(NSString *name, CGFloat size, UIImageSymbolWeight weight, CGFloat box) {
     UIImage *image = [UIImage systemImageNamed:name withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:size weight:weight]];
     UIImageView *view = [[UIImageView alloc] initWithImage:image];
-    view.tintColor = UIColor.whiteColor;
+    view.tintColor = settingsInk();
     view.contentMode = UIViewContentModeCenter;
     view.frame = CGRectMake(0, 0, box, box);
     return view;
@@ -87,16 +89,16 @@ static BOOL lookBlack(void) {
 UIColor *SGGreen(void) { return lookAccent() ?: [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1]; }
 UIColor *SGRed(void) { return [UIColor colorWithRed:0xF1 / 255.0 green:0x5E / 255.0 blue:0x6B / 255.0 alpha:1]; }
 UIColor *SGDiscordColor(void) { return [UIColor colorWithRed:0x58 / 255.0 green:0x65 / 255.0 blue:0xF2 / 255.0 alpha:1]; }
-UIColor *SGPageBackground(void) { return lookBlack() ? UIColor.blackColor : [UIColor colorWithWhite:0x12 / 255.0 alpha:1]; }
+UIColor *SGPageBackground(void) { if (settingsLight()) return UIColor.systemGroupedBackgroundColor; return lookBlack() ? UIColor.blackColor : [UIColor colorWithWhite:0x12 / 255.0 alpha:1]; }
 // Spotify's own elevated grey on its dark grey; iOS's own card grey on the AMOLED black.
-UIColor *SGCardBackground(void) { return [UIColor colorWithWhite:(lookBlack() ? 0x1C : 0x2A) / 255.0 alpha:1]; }
+UIColor *SGCardBackground(void) { if (settingsLight()) return UIColor.secondarySystemGroupedBackgroundColor; return [UIColor colorWithWhite:(lookBlack() ? 0x1C : 0x2A) / 255.0 alpha:1]; }
 
 UIImage *SGTileImage(NSString *symbol) {
     UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:14 weight:UIImageSymbolWeightMedium];
-    UIImage *glyph = [[UIImage systemImageNamed:symbol withConfiguration:config] imageWithTintColor:UIColor.whiteColor renderingMode:UIImageRenderingModeAlwaysOriginal];
+    UIImage *glyph = [[UIImage systemImageNamed:symbol withConfiguration:config] imageWithTintColor:settingsInk() renderingMode:UIImageRenderingModeAlwaysOriginal];
     CGRect box = CGRectMake(0, 0, 28, 28);
     UIImage *tile = [[[UIGraphicsImageRenderer alloc] initWithSize:box.size] imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
-        [[UIColor colorWithWhite:1 alpha:0.12] setFill];
+        [[UIColor colorWithWhite:settingsLight() ? 0 : 1 alpha:0.12] setFill];
         [[UIBezierPath bezierPathWithRoundedRect:box cornerRadius:7] fill];
         CGSize size = glyph.size;
         [glyph drawInRect:CGRectMake((box.size.width - size.width) / 2, (box.size.height - size.height) / 2, size.width, size.height)];
@@ -114,14 +116,14 @@ void SGFillCell(UITableViewCell *cell, NSString *title, NSString *subtitle, UICo
     content.text = title;
     content.secondaryText = subtitle;
     content.textProperties.font = SGTitleFont();
-    content.textProperties.color = color ?: UIColor.whiteColor;
+    content.textProperties.color = color ?: settingsInk();
     content.secondaryTextProperties.font = SGSubtitleFont();
     content.secondaryTextProperties.color = SGGrey();
     content.textToSecondaryTextVerticalPadding = 0;
     content.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(10, 16, 10, 16);
     if (symbolName) {
         content.image = [UIImage systemImageNamed:symbolName withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:15 weight:UIImageSymbolWeightRegular]];
-        content.imageProperties.tintColor = color ?: UIColor.whiteColor;
+        content.imageProperties.tintColor = color ?: settingsInk();
         content.imageToTextPadding = 14;
     }
     cell.contentConfiguration = content;

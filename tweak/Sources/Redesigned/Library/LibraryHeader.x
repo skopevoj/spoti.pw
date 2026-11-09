@@ -315,6 +315,9 @@ static void layoutFolder(UIView *page) {
 
 %hook _TtC28YourLibrary_YourLibraryXImpl15YourLibraryView
 - (void)layoutSubviews {
+    UIView *appearanceOwner = (UIView *)self;
+    if (appearanceOwner.overrideUserInterfaceStyle != SGRedesignAppearanceStyle())
+        appearanceOwner.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
     SGRLibraryExtendPage((UIView *)self);
     %orig;
     layoutRoot((UIView *)self);

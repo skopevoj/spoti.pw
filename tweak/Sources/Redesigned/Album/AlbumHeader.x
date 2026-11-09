@@ -389,7 +389,7 @@ static UIColor *washColorOf(UIView *gradient) {
             CGColorRef cg = (__bridge CGColorRef)value;
             if (CFGetTypeID(cg) != CGColorGetTypeID() || CGColorGetAlpha(cg) < 0.5) continue;
             // The page's base surface is what a wash is before Spotify has a colour for it, not a colour.
-            if (SGIsBaseSurface(cg)) return nil;
+            if (SGRIsBaseSurface(cg)) return nil;
             return [UIColor colorWithCGColor:cg];
         }
     }
