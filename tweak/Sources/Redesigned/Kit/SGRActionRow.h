@@ -62,7 +62,8 @@
 @end
 
 // The ⋯ every redesigned entity page pins to its top trailing corner, level with the back button: one
-// button, one size, one place on the playlist, the album and the artist. It is added to `page` -- the
+// button, one size, one place on the playlist, the album and the artist. With a system vertical bar,
+// it sits beneath native Back in that bar region instead. It is added to `page` -- the
 // page's own root view, outside anything that scrolls -- so it stays where it is however far the page is
 // scrolled, which is what Spotify's own does not (the navigation bar's slot is emptied on the way down,
 // trees/continuous/1.txt 2026-09-20, issue #57) and what a button in a scrolling header cannot.

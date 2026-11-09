@@ -11,6 +11,7 @@
 #import "SGRTokens.h"
 #import "SGRAccent.h"
 #import "SGRDownload.h"
+#import "SGRBarGeometry.h"
 
 // The capsule: the glyph is Spotify's own 48pt canvas with the triangle small in the middle of it, so the
 // lead is short and the gap to the word comes out of the canvas itself.
@@ -416,6 +417,76 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
 // the two read as one row on every page (issue #57).
 static const CGFloat kCornerSide = 16;
 
+// A page-sized, noninteractive layout observer keeps the sibling button current when UIKit changes
+// the bar region (folding, rotation or a container resize), even if Spotify does not lay its header out.
+// Both stay on the page: neither can float over another page or a presented sheet.
+@interface SGRPinnedMoreLayout : UIView
+@property (nonatomic, weak) SGRMirrorButton *button;
+@property (nonatomic) BOOL hasSource;
+@property (nonatomic) BOOL refreshPhone;
+@property (nonatomic) BOOL wasVertical;
+@end
+@implementation SGRPinnedMoreLayout
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    UIView *page = self.superview;
+    SGRMirrorButton *button = self.button;
+    if (!page || !button) return;
+    CGFloat side = SGRGlassCircleSize;
+    UIWindow *window = page.window;
+    CGRect rail = SGRVerticalBarFrameIn(window, SGRVerticalBarExtent);
+    BOOL vertical = !CGRectIsNull(rail);
+    // Leave ordinary-phone timing alone. Only a real rail-to-phone transition needs an extra pass.
+    if (!vertical && !self.wasVertical && !self.refreshPhone) return;
+    self.wasVertical = vertical;
+    self.refreshPhone = NO;
+    CGRect frame;
+    if (!CGRectIsNull(rail)) {
+        // UIKit puts native Back in the first rail slot (48pt in the 52pt region). Reserve that
+        // entire slot plus 8pt, rather than using the window's top inset beneath the status capsule.
+        CGRect inWindow = CGRectMake(CGRectGetMidX(rail) - side / 2,
+                                     CGRectGetMinY(rail) + SGRVerticalBarExtent + 8, side, side);
+        // A resized container can retain a horizontal title bar across the rail. Keep the entire
+        // hit target below that native bar too, instead of drawing beneath its transparent hit view.
+        for (UIResponder *r = page; r; r = r.nextResponder) {
+            if (![r isKindOfClass:UIViewController.class]) continue;
+            UINavigationBar *bar = ((UIViewController *)r).navigationController.navigationBar;
+            if (bar.window == window && !bar.hidden && bar.alpha > 0.01) {
+                CGRect nativeFrame = [bar convertRect:bar.bounds toView:window];
+                if (CGRectIntersectsRect(nativeFrame, inWindow))
+                    inWindow.origin.y = CGRectGetMaxY(nativeFrame) + 8;
+            }
+            break;
+        }
+        // Do not leave an offscreen / partly tappable control if the system provides no second slot.
+        CGFloat reserved = SGRVerticalBarTopReservation(CGRectGetHeight(rail));
+        if (!CGRectContainsRect(rail, inWindow) || reserved < 112
+            || CGRectGetMaxY(inWindow) + 8 > CGRectGetMinY(rail) + reserved) {
+            button.hidden = YES;
+            return;
+        }
+        frame = [page convertRect:inWindow fromView:window];
+    } else if (window) {
+        // Preserve the ordinary-phone path exactly, including its screen-space conversion.
+        CGRect inWindow = CGRectMake(window.bounds.size.width - kCornerSide - side,
+                                     window.safeAreaInsets.top, side, side);
+        frame = [page convertRect:inWindow fromView:nil];
+    } else {
+        frame = CGRectMake(page.bounds.size.width - kCornerSide - side,
+                           page.safeAreaInsets.top, side, side);
+    }
+    button.hidden = !self.hasSource;
+    if (!CGRectIsEmpty(frame) && !CGRectEqualToRect(button.frame, frame)) button.frame = frame;
+}
+- (void)didMoveToWindow { [super didMoveToWindow]; [self setNeedsLayout]; }
+- (void)safeAreaInsetsDidChange { [super safeAreaInsetsDidChange]; [self setNeedsLayout]; }
+- (void)traitCollectionDidChange:(UITraitCollection *)previous {
+    [super traitCollectionDidChange:previous];
+    [self setNeedsLayout];
+}
+@end
+static char kMoreLayoutKey;
+
 // The page whose pinned ⋯ was last tapped, and when: what tells the sheet that opens a moment later which
 // page's menu it is. The same trick Shared/Player/SpeedPitchMenu.x plays on the player's more button, but
 // from this side of it, since this button is the redesign's own and knows its own page.
@@ -462,18 +533,19 @@ SGRMirrorButton *SGRPinnedMore(UIView *page, const void *key, UIView *source) {
     if (source) [button feedFrom:source];
     if (button.hidden != (source == nil)) button.hidden = source == nil;
 
-    // Measured in the window and converted back, never from the page's own safe area: a page under a
-    // navigation bar counts the bar into its inset, so the playlist's read 116 where the window's reads 62
-    // and the button sat a bar's height below the back button (device, trees/continuous/1.txt 2026-09-20).
-    UIWindow *window = page.window;
-    CGFloat side = SGRGlassCircleSize;
-    CGRect frame;
-    if (window) {
-        CGRect inWindow = CGRectMake(window.bounds.size.width - kCornerSide - side, window.safeAreaInsets.top, side, side);
-        frame = [page convertRect:inWindow fromView:nil];
-    } else {
-        frame = CGRectMake(page.bounds.size.width - kCornerSide - side, page.safeAreaInsets.top, side, side);
+    SGRPinnedMoreLayout *layout = objc_getAssociatedObject(button, &kMoreLayoutKey);
+    if (!layout) {
+        layout = [[SGRPinnedMoreLayout alloc] initWithFrame:page.bounds];
+        layout.userInteractionEnabled = NO;
+        layout.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        layout.button = button;
+        objc_setAssociatedObject(button, &kMoreLayoutKey, layout, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [page insertSubview:layout belowSubview:button];
     }
-    if (!CGRectIsEmpty(frame) && !CGRectEqualToRect(button.frame, frame)) button.frame = frame;
+    layout.hasSource = source != nil;
+    layout.refreshPhone = YES;
+    layout.frame = page.bounds;
+    [layout setNeedsLayout];
+    [layout layoutIfNeeded];
     return button;
 }

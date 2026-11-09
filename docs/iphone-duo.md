@@ -15,6 +15,9 @@ not a claim of support. See the README and `scripts/retarget-duo.py` for preserv
 
 - Tabs retain their order, actions, custom links, Create and the Hide labels setting.
 - The rail uses a scrollable bottom-aligned group; controls retain accessible labels.
+- Entity menus sit under native Back in the rail, stay owned by their page and refresh on
+  container changes without needing a header callback. Navigation reserves enough space for
+  a complete labeled row in either label mode; the optional menu yields in very short rails.
 - Only the tab row's known 49pt inset is removed in vertical mode and restored afterwards.
 - Miniplayer and Library content reserve the rail's region without replacing unrelated
   margins. Library list-row attributes are copied, leaving cached attributes and grids alone.
@@ -38,7 +41,8 @@ The real Mach-O/signing test additionally needs Xcode and `ldid`.
 Compile each UIKit harness from its directory with `THEOS=$HOME/theos ./build.sh`:
 
 - `harness/tabbar`: launch `cycle` on Duo and an ordinary phone; repeat with
-  `SIMCTL_CHILD_HARNESS_HIDE_LABELS=1`. Test both defaults and customized tab orders.
+  `SIMCTL_CHILD_HARNESS_HIDE_LABELS=1`. Also launch `reservation` in both modes on Duo
+  to exercise sixteen tabs and short rail regions.
 - `harness/player`: `run-resize.sh SIMULATOR_UDID`, then
   `run-menu.sh DUO_SIMULATOR_UDID PHONE_SIMULATOR_UDID`; repeat menu with
   `SIMCTL_CHILD_HARNESS_MENU_STACK=1`.
@@ -47,6 +51,8 @@ Compile each UIKit harness from its directory with `THEOS=$HOME/theos ./build.sh
 - `harness/playlist`: `run-centering.sh SIMULATOR_UDID` on Duo and an ordinary phone.
 - `harness/album` and `harness/artist`: build both, then run
   `harness/entity-header/run-centering.sh SIMULATOR_UDID` on both devices.
+- `harness/entity-menu`: build, then `run.sh DUO_SIMULATOR_UDID`. For phone baseline
+  comparison, follow its README; the generic phone fixture has known legacy failures.
 
 The original prototype's simulator runs covered native Duo rail/message-bar/miniplayer
 geometry, player menu target/responder restoration, resize interruption, Library list/grid
@@ -56,21 +62,32 @@ folded/expanded. The final Library full-width correction was harness-tested, not
 re-measured. These observations do not verify the supported 9.1.78 IPA or every screen.
 
 For this upstream draft, all 24 packaging tests, the architecture-layer check, and all four
-initial harness builds passed with Xcode 27.2. Album and artist builds also passed after
-the shared-header addition. The album harness emits an existing recursive-block warning;
-the playlist harness emits an existing
-`performSelector`/ARC warning. Final simulator runs passed on an iPhone Duo (iOS 27.1) and
-an ordinary iPhone (iOS 26.5):
+initial harness builds passed with Xcode 27.2. Album, artist and entity-menu builds also
+passed after the shared-header/menu additions. Existing warnings remain in album
+(recursive-block capture) and playlist (`performSelector`/ARC). The following simulator
+regressions passed on an iPhone Duo (iOS 27.1) and an ordinary iPhone (iOS 26.5):
 
 - Duo player: five resize sizes (320×667, 402×874, 466×678, 669×951 and 951×669), artwork
   and scrolling scenarios.
 - Both devices: player-menu plain and stack parents, four playlist variants with 36 cases
   each plus album/artist with 37 cases each (436 header checks total), seven Library
   fixtures, and the tabbar cycle with labels shown/hidden.
+- Duo entity menu: 191 checks passed, including native Back/menu hit routing, source
+  forwarding once, page identity, sheets, navigation, resize without header callbacks and
+  safe short-region suppression/restoration.
+- Duo navigation: sixteen tabs stayed fully scrollable and hittable at rail heights
+  470, 220, 164, 112, 80 and 470pt, in both label modes. Selection, four default tabs and
+  the default scroll offset were restored. Phone tabbar cycles passed in both label modes.
 - Four tabbar screenshots were captured and inspected. The Duo shows four right-rail
   controls with labels by default, Create retained and the miniplayer separate. The phone
   retains four bottom tabs. The long Library title truncates in the narrow rail; its full
   accessibility name remains available.
+
+The separate entity-menu phone diagnostic reports 43 failures in 174 checks. All eleven
+geometry phases and every failure signature match the exact pre-edit main implementation.
+The plain navigation controller intercepts the legacy top-corner menu, and some positions
+remain stale without header callbacks. This is unchanged baseline behavior, not a phone
+menu hit-testing pass. Real Spotify phone presentation still needs verification.
 
 The tabbar fixture reads the detached bar directly in vertical mode. The resize/centering
 runners use PID-scoped unified logs because this host did not populate `simctl --stderr`

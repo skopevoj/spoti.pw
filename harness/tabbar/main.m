@@ -414,10 +414,10 @@ static void report(SGHarnessChrome *chrome, NSString *moment) {
         NSCAssert([group.accessibilityIdentifier isEqualToString:@"spoti.vertical-navigation.group"], @"One compact group must own the glass");
         NSCAssert(fabs(CGRectGetMaxY(group.frame) - CGRectGetHeight(railView.bounds)) < 0.5, @"Group must align to the region bottom");
         BOOL hideLabels = SGHidden(SGRKeyNavbarHideLabels);
-        CGFloat rowHeight = hideLabels ? 48 : MAX(64, ceil([UIFont preferredFontForTextStyle:UIFontTextStyleCaption2].lineHeight) + 40);
+        CGFloat rowHeight = SGRVerticalBarNavigationRowHeight(hideLabels);
         UITabBar *railBar = [railView valueForKey:@"bar"];
         NSCAssert(railBar.items.count == 4, @"The rail must retain all four default tabs");
-        CGFloat groupHeight = MIN(rail.size.height, railBar.items.count * (rowHeight + 2) + 2);
+        CGFloat groupHeight = MIN(rail.size.height - SGRVerticalBarTopReservation(rail.size.height), railBar.items.count * (rowHeight + 2) + 2);
         NSCAssert(fabs(CGRectGetHeight(group.frame) - groupHeight) < 0.5, @"The group must fit the composed tabs");
         UIScrollView *scroll = nil;
         for (UIView *child in group.subviews) if ([child isKindOfClass:UIScrollView.class]) scroll = (UIScrollView *)child;
@@ -458,6 +458,73 @@ static void report(SGHarnessChrome *chrome, NSString *moment) {
           listEnd, CGRectGetMinY(card));
 }
 
+// Focused reservation regression, using the production rail and actual composed custom tabs.
+@interface UIView (HarnessRailSync)
+- (void)sync;
+@end
+static void reservationChecks(SGHarnessChrome *chrome) {
+    UIWindow *window = chrome.view.window;
+    if (CGRectIsNull(SGRVerticalBarFrameIn(window, SGRVerticalBarExtent))) return;
+    UIView *rail = identifiedView(chrome.tabs.view, @"spoti.vertical-navigation");
+    UITabBar *system = nil;
+    CGRect original = rail.frame;
+    CGFloat rowHeight = SGRVerticalBarNavigationRowHeight(SGHidden(SGRKeyNavbarHideLabels));
+    NSArray *saved = SGRNavbarLayout();
+    NSMutableArray *many = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 12; i++)
+        [many addObject:@{SGRNavbarID: [NSString stringWithFormat:@"fixture%lu", (unsigned long)i],
+            SGRNavbarTitle: [NSString stringWithFormat:@"Custom %lu", (unsigned long)i],
+            SGRNavbarURI: @"spotify:collection", SGRNavbarIcon: @"heart"}];
+    SGRSetNavbarLayout(many);
+    SGRComposeTabBar(chrome.tabs.bar);
+    [chrome.tabs.bar setNeedsLayout];
+    [chrome.tabs.bar layoutIfNeeded];
+    system = [rail valueForKey:@"bar"];
+    NSCAssert(system.items.count == 16, @"Four default and twelve custom tabs must remain present");
+    system.selectedItem = system.items.lastObject;
+    for (NSNumber *height in @[@470, @220, @164, @112, @80, @470]) {
+        rail.frame = CGRectMake(original.origin.x, original.origin.y, original.size.width, height.doubleValue);
+        [rail sync];
+        UIView *group = [rail valueForKey:@"group"];
+        UIScrollView *scroll = [rail valueForKey:@"scroll"];
+        NSArray<UIButton *> *buttons = [rail valueForKey:@"buttons"];
+        CGFloat reserve = SGRVerticalBarTopReservation(height.doubleValue);
+        NSCAssert(group.frame.origin.y >= reserve && group.bounds.size.height >= rowHeight + 4,
+                  @"Short rail must keep a complete nav row below reserved top controls");
+        NSCAssert([rail pointInside:CGPointMake(26, reserve - 1) withEvent:nil] == NO,
+                  @"Rail must not intercept Back/menu reservation");
+        if (reserve >= 112) NSCAssert(group.frame.origin.y >= 104 + 8, @"Menu bottom must keep an 8pt gap from tabs");
+        for (UIButton *button in buttons) {
+            CGFloat offset = MIN(MAX(0, button.frame.origin.y - 2), MAX(0, scroll.contentSize.height - scroll.bounds.size.height));
+            scroll.contentOffset = CGPointMake(0, offset);
+            NSCAssert(CGRectContainsRect(scroll.bounds, button.frame), @"Every custom tab must scroll fully into view");
+            NSCAssert(button.bounds.size.width == 48 && button.bounds.size.height == rowHeight, @"Custom tab keeps its full labeled or icon-only target");
+            CGPoint samples[] = {{24, rowHeight / 2}, {4, 4}, {44, rowHeight - 4}};
+            for (NSUInteger i = 0; i < 3; i++) {
+                CGPoint point = [button convertPoint:samples[i] toView:window];
+                UIView *hit = [window hitTest:point withEvent:nil];
+                NSCAssert(hit == button || [hit isDescendantOfView:button], @"Every scrolled custom tab must receive window hits");
+            }
+        }
+        NSCAssert((buttons.lastObject.accessibilityTraits & UIAccessibilityTraitSelected) != 0,
+                  @"Selection must survive shrinking and expanding the rail");
+        NSLog(@"[harness] PASS reserved rail height %.0f, group %@, %lu tabs reachable, selected last", height.doubleValue,
+              NSStringFromCGRect(group.frame), (unsigned long)buttons.count);
+    }
+    SGRSetNavbarLayout(saved);
+    SGRComposeTabBar(chrome.tabs.bar);
+    [chrome.tabs.bar setNeedsLayout];
+    [chrome.tabs.bar layoutIfNeeded];
+    rail.frame = original;
+    [rail sync];
+    UIScrollView *scroll = [rail valueForKey:@"scroll"];
+    [scroll layoutIfNeeded];
+    NSCAssert(scroll.contentOffset.y == 0, @"Removing custom tabs must restore the default scroll offset");
+    UIView *group = [rail valueForKey:@"group"];
+    NSCAssert(fabs(group.frame.size.height - (4 * (rowHeight + 2) + 2)) < 0.5, @"Default four-tab geometry must return after expansion");
+    NSLog(@"[harness] PASS reservation restored default geometry and scroll offset");
+}
+
 #pragma mark - the app
 
 // Before every %ctor, so the redesign's gate reads on.
@@ -486,6 +553,7 @@ static void after(double seconds, dispatch_block_t block) {
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"reservation"]) SGRSetNavbarLayout(@[]);
     SGHarnessChrome *chrome = [SGHarnessChrome new];
     self.window.rootViewController = chrome;
     [self.window makeKeyAndVisible];
@@ -541,6 +609,7 @@ static void after(double seconds, dispatch_block_t block) {
         [chrome.tabs.bar layoutIfNeeded];
         NSLog(@"[harness] PASS visible Create action, custom tabs and hidden preferences preserved");
     });
+    if ([mode isEqualToString:@"reservation"]) after(8.5, ^{ reservationChecks(chrome); });
     // Half way through the slide, what the screen shows (the presentation layers).
     if (![mode isEqualToString:@"none"]) after(1.5 + 0.17, ^{
         CALayer *stock = chrome.tabs.bar.layer.presentationLayer, *npb = chrome.npb.layer.presentationLayer, *banner = chrome.banner.layer.presentationLayer;

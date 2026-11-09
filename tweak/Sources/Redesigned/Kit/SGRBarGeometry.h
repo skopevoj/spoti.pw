@@ -5,6 +5,20 @@
 // Compact Duo navigation, shared by the rail and content clearance.
 static const CGFloat SGRVerticalBarExtent = 52;
 
+static inline CGFloat SGRVerticalBarNavigationRowHeight(BOOL hideLabels) {
+    return hideLabels ? 48 : MAX(64, ceil([UIFont preferredFontForTextStyle:UIFontTextStyleCaption2].lineHeight) + 40);
+}
+
+// Native Back occupies the first 52pt. Keep a second 44pt menu with 8pt gaps only
+// when a complete navigation row still fits. Reserve for labeled rows in either
+// label mode so the menu and navigation agree without coupling Kit to a preference.
+// In very short regions, navigation retains one row and the optional menu yields.
+static inline CGFloat SGRVerticalBarTopReservation(CGFloat height) {
+    CGFloat minimumNavigation = SGRVerticalBarNavigationRowHeight(NO) + 4;
+    if (height >= 112 + minimumNavigation) return 112;
+    return MIN(60, MAX(0, height - minimumNavigation));
+}
+
 static inline CGRect SGRVerticalBarFrameIn(UIView *view, CGFloat extent) {
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270100
     if (@available(iOS 27.1, *)) {

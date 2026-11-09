@@ -362,9 +362,10 @@ static CGFloat railBranchOpacity(UIView *stock, UIView *host) {
     // rail stays clear; custom tabs expand the group and scroll when the region is full.
     BOOL hideLabels = SGHidden(SGRKeyNavbarHideLabels);
     UIFont *labelFont = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption2];
-    CGFloat row = hideLabels ? 48 : MAX(64, ceil(labelFont.lineHeight) + 40), gap = 2, padding = 2;
+    CGFloat row = SGRVerticalBarNavigationRowHeight(hideLabels), gap = 2, padding = 2;
     CGFloat total = items.count * (row + gap) - (items.count ? gap : 0) + padding * 2;
-    CGFloat height = MIN(self.bounds.size.height, total);
+    CGFloat available = MAX(0, self.bounds.size.height - SGRVerticalBarTopReservation(self.bounds.size.height));
+    CGFloat height = MIN(available, total);
     self.group.frame = CGRectMake(0, self.bounds.size.height - height, self.bounds.size.width, height);
     SGRGlassCapsuleInside(self.group, &kRailKey, self.group.bounds.size, NO);
     self.scroll.frame = self.group.bounds;

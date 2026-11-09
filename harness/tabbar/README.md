@@ -66,3 +66,14 @@ inspected: the rail preserves Create and the phone retains its bottom bar. The l
 label truncates in the 52pt rail, while its full accessibility name remains available. This
 fixture does not reproduce a physical fold or Spotify's full chrome/presentation graph.
 See ../../docs/iphone-duo.md.
+
+
+## Back and entity-menu reservation
+
+Launch `reservation` on Duo with labels shown and hidden. It composes twelve custom tabs
+plus all four defaults and checks full control hit targets at rail heights 470, 220, 164,
+112, 80 and 470pt. Selection survives resizing; restoring the defaults resets scroll offset
+and group geometry. These checks passed in both modes. The top reservation leaves enough
+space for a labeled navigation row even in icon-only mode, so the shared entity menu and
+navigation agree without coupling Kit to the navbar preference. The menu yields if its
+slot cannot fit. Extremely short regions cannot hold native Back and a full row together.
