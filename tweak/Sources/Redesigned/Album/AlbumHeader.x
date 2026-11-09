@@ -24,6 +24,7 @@
 // Play and shuffle are not in the header. The album page floats them over the page, pinned to the top
 // trailing corner outside the scroll (01.txt:1431, :1436): they are concealed where they are, and the row
 // draws them and fires them all the same.
+#import "Redesigned/Kit/SGRHeaderGeometry.h"
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Album.h"
@@ -306,7 +307,7 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page) {
     for (UIView *sub in header.subviews) {
         if (sub != info && sub != hero) blank(sub);
     }
-    setFrame(info, header.bounds);
+    setFrame(info, SGRHeaderInfoFrame(header, header));
 
     UIView *title = SGRFindByIdentifier(header, @"CreativeWorkPlatform.Components.UI.TitleRow", &kTitleKey);
     UIView *parent = SGRFindByIdentifier(header, @"CreativeWorkPlatform.Components.UI.ParentRow", &kParentKey);
@@ -433,7 +434,7 @@ static void applyHeader(UIView *header, UIView *page) {
     // rest is the tallest it has been, so the picture does not change size as the header loads or scrolls.
     CGFloat rest = MAX([objc_getAssociatedObject(header, &kHeaderHeightKey) doubleValue], header.bounds.size.height);
     objc_setAssociatedObject(header, &kHeaderHeightKey, @(rest), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    CGFloat bottom = rest - SGRHeaderInfoBottom - [info contentHeightForWidth:header.bounds.size.width] + SGRHeaderInfoTitleRise;
+    CGFloat bottom = rest - SGRHeaderInfoBottom - [info contentHeightForWidth:info.bounds.size.width] + SGRHeaderInfoTitleRise;
     UIView *cover = SGRFindByIdentifier(header, @"CreativeWorkPlatform.Components.UI.ArtWorkElement.WithCoverArt", &kCoverKey);
     if (cover) applyHero(header, cover, bottom);
 }

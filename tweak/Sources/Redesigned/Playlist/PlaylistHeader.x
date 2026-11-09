@@ -30,7 +30,7 @@
 // fire Spotify's own concealed controls, so every action, state and language stays Spotify's.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
-#import "Redesigned/Kit/SGRBarGeometry.h"
+#import "Redesigned/Kit/SGRHeaderGeometry.h"
 #import "Playlist.h"
 #import <objc/message.h>
 
@@ -392,15 +392,7 @@ static SGRHeaderInfo *applyInfo(UIView *block, UIView *headerRoot, UIViewControl
     // have no safe inset of their own. Resolve at the header, then convert into the block once.
     // MAX combines overlapping clearance rather than subtracting the rail a second time from
     // an already constrained header. The native region also follows the physical edge in RTL.
-    UIEdgeInsets inset = UIEdgeInsetsZero;
-    if (!CGRectIsNull(SGRVerticalBarFrameIn(headerRoot, SGRVerticalBarExtent))) {
-        inset = SGRVerticalBarContentInsets(headerRoot, SGRVerticalBarExtent);
-        inset.left = MAX(inset.left, headerRoot.safeAreaInsets.left);
-        inset.right = MAX(inset.right, headerRoot.safeAreaInsets.right);
-    }
-    CGRect content = UIEdgeInsetsInsetRect(headerRoot.bounds, inset);
-    CGFloat x = [block convertPoint:CGPointMake(CGRectGetMinX(content), 0) fromView:headerRoot].x;
-    CGRect frame = CGRectMake(round(x), 0, MAX(0, content.size.width), block.bounds.size.height);
+    CGRect frame = SGRHeaderInfoFrame(headerRoot, block);
     if (!CGRectEqualToRect(info.frame, frame)) info.frame = frame;
     showPlaylist(info, block, headerRoot, viewModelOf(headerVC));
 

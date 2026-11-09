@@ -20,8 +20,10 @@ not a claim of support. See the README and `scripts/retarget-duo.py` for preserv
   margins. Library list-row attributes are copied, leaving cached attributes and grids alone.
 - The player relocates the real Spotify menu control, preserving its action and responder
   chain. It restores the original constraints and placement on exit.
-- Playlist title/count/actions center in the usable content column. Lyrics recover from a
-  resize during an opening/closing animation and close if the new geometry cannot fit them.
+- Playlist, album and artist title/details/actions center in the usable content column.
+  Artwork stays full-bleed; hero text-height measurement uses the actual info width.
+- Lyrics recover from a resize during an opening/closing animation and close if the new
+  geometry cannot fit them.
 
 ## Verification
 
@@ -43,6 +45,8 @@ Compile each UIKit harness from its directory with `THEOS=$HOME/theos ./build.sh
 - `harness/library`: run its `wrapped encoreavatar compositional gridtransition` fixture,
   plus ordinary-phone and list/grid cases documented in its README.
 - `harness/playlist`: `run-centering.sh SIMULATOR_UDID` on Duo and an ordinary phone.
+- `harness/album` and `harness/artist`: build both, then run
+  `harness/entity-header/run-centering.sh SIMULATOR_UDID` on both devices.
 
 The original prototype's simulator runs covered native Duo rail/message-bar/miniplayer
 geometry, player menu target/responder restoration, resize interruption, Library list/grid
@@ -52,23 +56,28 @@ folded/expanded. The final Library full-width correction was harness-tested, not
 re-measured. These observations do not verify the supported 9.1.78 IPA or every screen.
 
 For this upstream draft, all 24 packaging tests, the architecture-layer check, and all four
-harness builds passed with Xcode 27.2. The playlist harness emits an existing
+initial harness builds passed with Xcode 27.2. Album and artist builds also passed after
+the shared-header addition. The album harness emits an existing recursive-block warning;
+the playlist harness emits an existing
 `performSelector`/ARC warning. Final simulator runs passed on an iPhone Duo (iOS 27.1) and
 an ordinary iPhone (iOS 26.5):
 
 - Duo player: five resize sizes (320×667, 402×874, 466×678, 669×951 and 951×669), artwork
   and scrolling scenarios.
 - Both devices: player-menu plain and stack parents, four playlist variants with 36 cases
-  each (288 total), seven Library fixtures, and the tabbar cycle with labels shown/hidden.
+  each plus album/artist with 37 cases each (436 header checks total), seven Library
+  fixtures, and the tabbar cycle with labels shown/hidden.
 - Four tabbar screenshots were captured and inspected. The Duo shows four right-rail
   controls with labels by default, Create retained and the miniplayer separate. The phone
   retains four bottom tabs. The long Library title truncates in the narrow rail; its full
   accessibility name remains available.
 
-The fixture reads the detached bar directly in vertical mode. The resize/centering runners
-use PID-scoped unified logs because this host did not populate `simctl --stderr` output.
-These tests exercise real hook sources over mocked Spotify views, not a physical fold or
-the full Spotify hierarchy. They do not replace the physical verification below.
+The tabbar fixture reads the detached bar directly in vertical mode. The resize/centering
+runners use PID-scoped unified logs because this host did not populate `simctl --stderr`
+output. Both centering shell runners passed end to end. Resize assertions passed using
+equivalent commands; its revised shell runner has only been syntax-checked. These tests
+exercise real hook sources over mocked Spotify views, not a physical fold or the full
+Spotify hierarchy. They do not replace the physical verification below.
 
 ## Before merge
 

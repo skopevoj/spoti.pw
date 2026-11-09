@@ -2,6 +2,7 @@
 // trees/clean/album/03.txt, so Redesigned/Album can be laid out and looked at on the Mac.
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import "../entity-header/centering.h"
 #import "../download-mock.h"
 
 #pragma mark - Spotify's classes, by name
@@ -193,7 +194,7 @@ static NSString *trailingLabel(UIView *root) {
 
 #pragma mark - the page
 
-@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate>
+@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate, UIWindowSceneDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @property (nonatomic, strong) SGRMetaSource *meta;
 @end
@@ -207,8 +208,15 @@ static NSString *trailingLabel(UIView *root) {
     CGFloat _tracksBottom;
 }
 
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
-    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options { return YES; }
+- (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    UISceneConfiguration *configuration = [[UISceneConfiguration alloc] initWithName:@"Entity" sessionRole:session.role];
+    configuration.delegateClass = self.class;
+    return configuration;
+}
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options { [self buildScene:(UIWindowScene *)scene]; }
+- (BOOL)buildScene:(UIWindowScene *)scene {
+    self.window = [[UIWindow alloc] initWithWindowScene:scene];
     CGFloat W = self.window.bounds.size.width, H = self.window.bounds.size.height;
 
     UIViewController *root = [UIViewController new];
@@ -430,7 +438,19 @@ static NSString *trailingLabel(UIView *root) {
     disc.clipsToBounds = YES;
     [condensed addSubview:disc];
 
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"centering"]) {
+        NSMutableArray *queue=[NSMutableArray arrayWithObject:header];
+        while (queue.count) {
+            UIView *view=queue.lastObject; [queue removeLastObject];
+            if ([view isKindOfClass:UILabel.class] &&
+                ([view.accessibilityIdentifier isEqualToString:@"CreativeWorkPlatform.Components.UI.TitleRow-internal"] ||
+                 [view.accessibilityIdentifier isEqualToString:@"Encore.AdaptiveTitle-internal"]))
+                ((UILabel *)view).text=@"A Beautiful Collection of Songs Live";
+            [queue addObjectsFromArray:view.subviews];
+        }
+    }
     [self.window makeKeyAndVisible];
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"centering"]) { entityHeaderChecks(page, header, header); return YES; }
     if (downloads) downloadScript();
 
     // `addto`: saved from elsewhere at 3 s (the ⋯ sheet, nothing laid out), then Play's right tapped at 7 s.
