@@ -2,6 +2,7 @@
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "SGRAccent.h"
+#import "SGRAppearance.h"
 
 // Going back to Spotify's green is offered only once a colour of the mod's is set, so a stray tap
 // cannot wipe it.
@@ -21,9 +22,21 @@ static void chooseAccent(void) {
     [top presentViewController:sheet animated:YES completion:nil];
 }
 
-// The redesign's rows of the Appearance card (App/Pages.m). AMOLED has no row: the redesign is always black.
+// The picker persists the key before this callback. One main-queue transaction applies it.
 NSArray<SGModRow *> *SGRAppearanceRows(void) {
+    SGModRow *appearance = SGChoiceRow(@"Color appearance", @"Change the app appearance immediately", SGRKeyAppearance,
+        @[@"Dark", @"Light", @"System"], SGRAppearanceSystem);
+    appearance.choiceNotes = @[@"Deep black backgrounds and light text.", @"Light backgrounds and dark text.", @"Follow the phone's appearance, including changes while Spotify is open."];
+    appearance.choiceFooter = @"Changes apply without restarting or interrupting playback. System follows the phone and is the default when no choice has been saved.";
+    appearance.chosen = ^(NSInteger index) { SGRAppearanceApplyPreference(); };
+    SGModRow *active = SGStatRow(@"Active appearance", ^NSString *{
+        NSString *status = SGRAppearanceStatus();
+        return SGRAppearanceNeedsRestart() ? [status stringByAppendingString:@" · pending"] : status;
+    });
+    active.subtitle = @"Current applied theme";
     return @[
+        SGWithSymbol(appearance, @"circle.lefthalf.filled"),
+        SGWithSymbol(active, @"checkmark.circle"),
         SGWithSymbol(SGStatActionRow(@"Accent colour", nil, ^NSString *{ return SGRAccentLabel(); }, ^{ chooseAccent(); }), @"paintpalette"),
     ];
 }

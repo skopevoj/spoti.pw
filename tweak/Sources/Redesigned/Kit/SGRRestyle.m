@@ -352,7 +352,7 @@ static void clearPaint(UIView *view, UIView *cell, CGFloat wide) {
         // Read off the layer, written through the view, so the two are left saying the same thing: the
         // clear colour lands on both, and reads back with an alpha the next pass does not take for paint.
         CGColorRef color = view.layer.backgroundColor;
-        if (color && SGIsBaseSurface(color)) view.backgroundColor = UIColor.clearColor;
+        if (color && SGRIsBaseSurface(color)) view.backgroundColor = UIColor.clearColor;
         if (!view.layer.mask && [NSStringFromClass(view.class) containsString:@"GradientView"]) view.layer.mask = [CALayer layer];
     }
     for (UIView *sub in view.subviews) clearPaint(sub, cell, wide);

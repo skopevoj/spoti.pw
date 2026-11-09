@@ -99,6 +99,8 @@ static SGRArtworkField *fieldIn(UIView *page) {
     // The page the repaint hook keeps clear is the one laying out, which is the one on screen; an album
     // pushed over this one sets itself from its own pass, and this one sets itself again coming back.
     sgr_albumRoot = page;
+    SGRApplyNativeLightSurface(page, NO);
+    SGRegisterAppearanceView(page);
     SGRArtworkField *field = fieldIn(page);
     if (field.superview != page) [page insertSubview:field atIndex:0];
     else if (page.subviews.firstObject != field) [page sendSubviewToBack:field];
@@ -114,9 +116,9 @@ static SGRArtworkField *fieldIn(UIView *page) {
     %orig;
     UIView *list = (UIView *)self;
     if (!SGRAlbumPageOf(list)) return;
-    if (list.backgroundColor && SGIsBaseSurface(list.backgroundColor.CGColor)) list.backgroundColor = UIColor.clearColor;
+    if (list.backgroundColor && SGRIsBaseSurface(list.backgroundColor.CGColor)) list.backgroundColor = UIColor.clearColor;
     for (UIView *sub in list.subviews) {
-        if (sub.backgroundColor && SGIsBaseSurface(sub.backgroundColor.CGColor)) sub.backgroundColor = UIColor.clearColor;
+        if (sub.backgroundColor && SGRIsBaseSurface(sub.backgroundColor.CGColor)) sub.backgroundColor = UIColor.clearColor;
     }
 }
 %end

@@ -12,12 +12,16 @@
 //   ElementContentView<TabBarItemElement>, each with an SPTEncoreIconView and an SPTEncoreLabel.
 #import "Core/SGCore.h"
 #import "Navbar.h"
+#import "SGRTabPolicy.h"
 #import "Redesigned/Kit/SGRTokens.h"
+#import "Redesigned/Kit/SGRBarGeometry.h"
+#import "Redesigned/Kit/SGRGlass.h"
 #import "Settings/SGPage.h"
 #import "Headers/SPTEncoreIconView.h"
 #import <objc/message.h>
 
-static char kBarKey, kHostKey;
+static char kBarKey, kHostKey, kRailKey, kRailInsetsKey, kBottomGuideKey;
+static char kHingeInteractionKey, kHingeFullyOpenKey;
 static __weak UIView *sg_stockBar;
 static CGFloat sg_room, sg_glassHeight;   // see "room for the glass bar"
 
@@ -65,12 +69,42 @@ static UIView *iconIn(UIView *item) {
     return icon;
 }
 
-// Spotify paints the selected tab's label white and the rest #B3B3B3.
+// Prefer the actual source selection state, independent of the selected theme.
 static BOOL isActive(UIView *item) {
-    UIColor *color = labelIn(item).textColor;
-    CGFloat white = 0, alpha = 0, r, g, b;
-    if (![color getWhite:&white alpha:&alpha] && [color getRed:&r green:&g blue:&b alpha:&alpha]) white = MIN(r, MIN(g, b));
-    return white > 0.95;
+    UIView *icon = iconIn(item);
+    if ([icon respondsToSelector:@selector(isActive)]) return [(SPTEncoreIconView *)icon isActive];
+    UILabel *label = labelIn(item);
+    return SGRNavbarLabelIsActive(label.textColor, label.traitCollection, SGRedesignLightAppearance());
+}
+
+// Observe the stable source bar, not the mirrored bottom host that is detached in
+// vertical mode. UIKit supplies initial and later hinge state, including nil when
+// the view leaves a supported hierarchy. Unknown posture remains icon-only on Duo.
+static BOOL hideLabelsForBar(UIView *stockBar) {
+    NSString *bundle = NSBundle.mainBundle.bundleIdentifier;
+    BOOL userHidesLabels = SGHidden(SGRKeyNavbarHideLabels);
+    if (![bundle isEqualToString:@"com.kyle.spotipw.duo"]) return userHidesLabels;
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270100
+    if (@available(iOS 27.1, *)) {
+        if (!objc_getAssociatedObject(stockBar, &kHingeInteractionKey)) {
+            __weak UIView *weakBar = stockBar;
+            UIHingeInteraction *interaction = [[UIHingeInteraction alloc] initWithUpdateHandler:^(UIHingeInteraction *sender, UIHingeInteractionUpdate *update) {
+                UIView *bar = weakBar;
+                if (!bar) return;
+                BOOL fullyOpen = update.hinge && update.hinge.status == UIHingeStatusFullyOpen;
+                NSNumber *previous = objc_getAssociatedObject(bar, &kHingeFullyOpenKey);
+                if (previous && previous.boolValue == fullyOpen) return;
+                objc_setAssociatedObject(bar, &kHingeFullyOpenKey, @(fullyOpen), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                [bar setNeedsLayout];
+            }];
+            objc_setAssociatedObject(stockBar, &kHingeInteractionKey, interaction, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [stockBar addInteraction:interaction];
+        }
+    }
+#endif
+    BOOL fullyOpen = [objc_getAssociatedObject(stockBar, &kHingeFullyOpenKey) boolValue];
+    UIInterfaceOrientation orientation = stockBar.window.windowScene.effectiveGeometry.interfaceOrientation;
+    return SGRNavbarHidesLabels(bundle, fullyOpen, orientation, userHidesLabels);
 }
 
 static BOOL hasInk(UIImage *image) {
@@ -118,8 +152,8 @@ static UIImage *glyphOf(UIView *item, BOOL active) {
         if (cached) return cached;
         SPTEncoreIconView *view = [[viewClass alloc] initWithIcon:icon];
         view.frame = (CGRect){CGPointZero, size};
-        [view setForegroundColor:UIColor.whiteColor];
-        if ([view respondsToSelector:@selector(setActiveForegroundColor:)]) [view setActiveForegroundColor:UIColor.whiteColor];
+        [view setForegroundColor:SGRPrimary()];
+        if ([view respondsToSelector:@selector(setActiveForegroundColor:)]) [view setActiveForegroundColor:SGRPrimary()];
         if ([view respondsToSelector:@selector(setIsActive:)]) [view setIsActive:active];
         [view layoutIfNeeded];
         UIImage *image = renderLayer(view.layer, size);
@@ -240,6 +274,182 @@ static void forwardTap(UIView *item) {
 
 @end
 
+// The rail is a sibling, so it no longer inherits the stock branch's visibility. Resolve
+// the branch up to their common host, including presentation-layer fades and slide-away motion.
+// Use a virtual row when the compact guide is collapsed to zero height in vertical mode.
+static CGFloat railBranchOpacity(UIView *stock, UIView *host) {
+    if (!stock.window || stock.window != host.window || ![stock isDescendantOfView:host]) return 0;
+    CGFloat opacity = 1;
+    for (UIView *view = stock; view && view != host; view = view.superview) {
+        if (view.hidden) return 0;
+        CALayer *layer = view.layer.presentationLayer ?: view.layer;
+        opacity *= layer.opacity;
+    }
+    CALayer *source = stock.layer.presentationLayer;
+    CALayer *target = host.layer.presentationLayer;
+    if (!source || !target) { source = stock.layer; target = host.layer; }
+    CGRect row = source.bounds;
+    CGFloat height = MAX(49, row.size.height);
+    row.origin.y = CGRectGetMaxY(row) - height;
+    row.size.height = height;
+    CGRect frame = [source convertRect:row toLayer:target];
+    CGRect visible = CGRectIntersection(frame, target.bounds);
+    if (CGRectIsNull(visible) || CGRectIsEmpty(visible) || CGRectIsEmpty(frame)) return 0;
+    opacity *= MIN(1, visible.size.height / frame.size.height);
+    return opacity;
+}
+
+@class SGRVerticalTabRail;
+@interface SGRRailVisibilityTick : NSObject
+@property (nonatomic, weak) SGRVerticalTabRail *rail;
+- (void)tick:(CADisplayLink *)link;
+@end
+
+// UITabBar alone does not adopt the controller's vertical placement. Mirror the same native
+// sources in a vertical glass control group, retaining Spotify's actions and saved tab order.
+@interface SGRVerticalTabRail : UIView
+@property (nonatomic, weak) SGRSystemTabBar *bar;
+@property (nonatomic, strong) UIView *group;
+@property (nonatomic, strong) UIView *selection;
+@property (nonatomic, strong) UIScrollView *scroll;
+@property (nonatomic, strong) NSMutableArray<UIButton *> *buttons;
+@property (nonatomic, strong) CADisplayLink *visibilityLink;
+- (void)sync;
+- (void)updateVisibility;
+@end
+
+@implementation SGRRailVisibilityTick
+- (void)tick:(CADisplayLink *)link {
+    SGRVerticalTabRail *rail = self.rail;
+    if (rail) [rail updateVisibility];
+    else [link invalidate];
+}
+@end
+
+@implementation SGRVerticalTabRail
+- (void)updateVisibility {
+    CGFloat opacity = railBranchOpacity(self.bar.stockBar, self.superview);
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    self.layer.opacity = opacity;
+    [CATransaction commit];
+    self.accessibilityElementsHidden = opacity < 0.01;
+}
+- (void)didMoveToWindow {
+    [super didMoveToWindow];
+    [self.visibilityLink invalidate];
+    self.visibilityLink = nil;
+    if (!self.window) return;
+    SGRRailVisibilityTick *tick = [SGRRailVisibilityTick new];
+    tick.rail = self;
+    self.visibilityLink = [CADisplayLink displayLinkWithTarget:tick selector:@selector(tick:)];
+    // Follow the window's refresh rate; never force a 120Hz transition down to 60Hz.
+    self.visibilityLink.preferredFramesPerSecond = self.window.screen.maximumFramesPerSecond;
+    [self.visibilityLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    [self updateVisibility];
+}
+- (void)dealloc { [_visibilityLink invalidate]; }
+- (instancetype)initWithFrame:(CGRect)frame {
+    if ((self = [super initWithFrame:frame])) {
+        SGRegisterAppearanceView(self);
+        self.accessibilityIdentifier = @"spoti.vertical-navigation";
+        self.scroll = [UIScrollView new];
+        self.scroll.showsVerticalScrollIndicator = NO;
+        self.scroll.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+        self.group = [UIView new];
+        self.group.accessibilityIdentifier = @"spoti.vertical-navigation.group";
+        [self addSubview:self.group];
+        [self.group addSubview:self.scroll];
+        self.selection = [UIView new];
+        self.selection.userInteractionEnabled = NO;
+        self.selection.accessibilityElementsHidden = YES;
+        self.selection.backgroundColor = SGAppearanceColor([UIColor colorWithWhite:1 alpha:0.55], [UIColor colorWithWhite:0 alpha:0.55]);
+        self.selection.layer.cornerRadius = 24;
+        self.selection.layer.cornerCurve = kCACornerCurveContinuous;
+        [self.scroll addSubview:self.selection];
+        self.buttons = [NSMutableArray array];
+    }
+    return self;
+}
+- (void)picked:(UIButton *)button {
+    if (button.tag >= (NSInteger)self.bar.items.count) return;
+    [self.bar tabBar:self.bar didSelectItem:self.bar.items[button.tag]];
+}
+- (void)held:(UILongPressGestureRecognizer *)hold {
+    if (hold.state == UIGestureRecognizerStateBegan) SGOpenModSettings(hold.view);
+}
+- (void)sync {
+    NSArray<UITabBarItem *> *items = self.bar.items;
+    while (self.buttons.count > items.count) {
+        [self.buttons.lastObject removeFromSuperview];
+        [self.buttons removeLastObject];
+    }
+    while (self.buttons.count < items.count) {
+        UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+        [button addTarget:self action:@selector(picked:) forControlEvents:UIControlEventTouchUpInside];
+        [self.scroll addSubview:button];
+        [self.buttons addObject:button];
+    }
+    // One compact glass pill at the native region's bottom, like Music. The surrounding
+    // rail stays clear; custom tabs expand the group and scroll when the region is full.
+    BOOL hideLabels = hideLabelsForBar(self.bar.stockBar);
+    UIFont *labelFont = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption2];
+    CGFloat row = SGRVerticalBarNavigationRowHeight(hideLabels), gap = 2, padding = 2;
+    CGFloat total = items.count * (row + gap) - (items.count ? gap : 0) + padding * 2;
+    CGFloat available = MAX(0, self.bounds.size.height - SGRVerticalBarTopReservation(self.bounds.size.height));
+    CGFloat height = MIN(available, total);
+    self.group.frame = CGRectMake(0, self.bounds.size.height - height, self.bounds.size.width, height);
+    SGRGlassCapsuleInside(self.group, &kRailKey, self.group.bounds.size, NO);
+    self.scroll.frame = self.group.bounds;
+    self.scroll.layer.cornerRadius = self.bounds.size.width / 2;
+    self.scroll.clipsToBounds = YES;
+    self.scroll.contentSize = CGSizeMake(self.bounds.size.width, total);
+    self.scroll.alwaysBounceVertical = NO;
+    self.selection.hidden = YES;
+    CGFloat y = padding;
+    for (NSUInteger i = 0; i < items.count; i++) {
+        UIButton *button = self.buttons[i];
+        UITabBarItem *item = items[i];
+        BOOL active = item == self.bar.selectedItem;
+        button.tag = i;
+        button.frame = CGRectMake(2, y, MAX(0, self.bounds.size.width - 4), row);
+        UIButtonConfiguration *config = [UIButtonConfiguration plainButtonConfiguration];
+        config.image = active ? item.selectedImage : item.image;
+        config.contentInsets = hideLabels ? NSDirectionalEdgeInsetsMake(10, 10, 10, 10)
+                                         : NSDirectionalEdgeInsetsMake(4, 2, 4, 2);
+        if (!hideLabels) {
+            config.attributedTitle = [[NSAttributedString alloc] initWithString:item.title ?: @""
+                attributes:@{NSFontAttributeName: labelFont}];
+            config.imagePlacement = NSDirectionalRectEdgeTop;
+            config.imagePadding = 2;
+            config.titleLineBreakMode = NSLineBreakByTruncatingTail;
+        }
+        config.baseForegroundColor = active ? SGRAccent() : SGRPrimary();
+        button.configuration = config;
+        button.accessibilityLabel = labelIn(self.bar.sources[i]).text;
+        button.accessibilityTraits = UIAccessibilityTraitButton | (active ? UIAccessibilityTraitSelected : 0);
+        if (active) {
+            self.selection.frame = button.frame;
+            self.selection.hidden = NO;
+        }
+        BOOL home = isHome(self.bar.sources[i], self.bar.stockBar);
+        if (home && !button.gestureRecognizers.count)
+            [button addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(held:)]];
+        else if (!home)
+            for (UIGestureRecognizer *gesture in button.gestureRecognizers.copy) [button removeGestureRecognizer:gesture];
+        y += row + gap;
+    }
+}
+// Do not turn the unused upper part of the system region into an invisible blocker.
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    if (railBranchOpacity(self.bar.stockBar, self.superview) < 0.01) return NO;
+    for (UIView *view = self.bar.stockBar; view && view != self.superview; view = view.superview)
+        if (!view.userInteractionEnabled) return NO;
+    return CGRectContainsPoint(self.group.frame, point);
+}
+- (void)layoutSubviews { [super layoutSubviews]; [self sync]; }
+@end
+
 // The system bar's own view in Spotify's bar. UIKit measures the system bar and lays it out by the safe
 // area of the view it stands in, and the room made under Spotify's bar is not the phone's: on a phone
 // with a home button it went under the platter as well, squeezing it to 49 pt. So this view hands the
@@ -316,17 +526,74 @@ static UIViewController *containerOf(UIView *stockBar) {
     return nil;
 }
 
+// The verified compact guide feeds both Spotify's page inset and miniplayer bottom anchor.
+// Keep its safe-area relationship and remove only its 49pt tab row in vertical mode.
+static void adaptBottomGuide(UIViewController *container, BOOL vertical) {
+    SEL selector = NSSelectorFromString(@"compactTabBarHeightLayoutGuide");
+    if (![container respondsToSelector:selector]) return;
+    UILayoutGuide *guide = ((id (*)(id, SEL))objc_msgSend)(container, selector);
+    for (NSLayoutConstraint *constraint in container.view.constraints) {
+        NSNumber *original = objc_getAssociatedObject(constraint, &kBottomGuideKey);
+        BOOL match = constraint.firstItem == guide && constraint.firstAttribute == NSLayoutAttributeTop
+            && constraint.secondItem == container.view.safeAreaLayoutGuide
+            && constraint.secondAttribute == NSLayoutAttributeBottom;
+        if (!match) continue;
+        if (!original && fabs(constraint.constant + kStockRow) < 0.5) {
+            original = @(constraint.constant);
+            objc_setAssociatedObject(constraint, &kBottomGuideKey, original, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        if (original) constraint.constant = vertical ? 0 : original.doubleValue;
+    }
+}
+
+// Live 9.1.94 hierarchy: each direct SPNavigationController child receives the old
+// 49pt bottom tab row independently of the compact guide. Remove only that verified
+// contribution while the rail is vertical, retaining the caller's original insets
+// so ordinary layouts restore exactly when the system changes navigation placement.
+static char kNavigationInsetsKey;
+static UIEdgeInsets pageInsetsForNavigation(UIViewController *navigation, UIEdgeInsets original) {
+    Class containerClass = NSClassFromString(@"_TtC23NavigationUI_TabBarImpl19TabBarContainerImpl");
+    BOOL belongsToTabs = containerClass && [navigation.parentViewController isKindOfClass:containerClass];
+    if (belongsToTabs && fabs(original.bottom - kStockRow) < 0.5 &&
+        !CGRectIsNull(SGRVerticalBarFrameIn(navigation.viewIfLoaded, SGRVerticalBarExtent))) original.bottom = 0;
+    return original;
+}
+static void refreshPageInsets(UIViewController *container) {
+    Class navigationClass = NSClassFromString(@"SPNavigationController");
+    for (UIViewController *child in container.childViewControllers) {
+        if (!navigationClass || ![child isKindOfClass:navigationClass]) continue;
+        NSValue *saved = objc_getAssociatedObject(child, &kNavigationInsetsKey);
+        UIEdgeInsets original = saved ? saved.UIEdgeInsetsValue : child.additionalSafeAreaInsets;
+        UIEdgeInsets desired = pageInsetsForNavigation(child, original);
+        if (!UIEdgeInsetsEqualToEdgeInsets(child.additionalSafeAreaInsets, desired))
+            child.additionalSafeAreaInsets = original;
+    }
+}
+
 static void makeRoom(UIViewController *container) {
     UIView *stockBar = sg_stockBar;
     UITabBar *bar = stockBar ? objc_getAssociatedObject(stockBar, &kBarKey) : nil;
-    if (!bar.window || !container.isViewLoaded || ![stockBar isDescendantOfView:container.view]) return;
+    if (!stockBar.window || !bar || !container.isViewLoaded || ![stockBar isDescendantOfView:container.view]) return;
+    refreshPageInsets(container);
     UIEdgeInsets extra = container.additionalSafeAreaInsets;
+    UIEdgeInsets previous = [objc_getAssociatedObject(container, &kRailInsetsKey) UIEdgeInsetsValue];
+    UIEdgeInsets railInsets = SGRVerticalBarContentInsets(container.view, SGRVerticalBarExtent);
+    // Keep other owners' additional insets; replace only the side room we contributed last pass.
+    CGFloat baseLeft = extra.left - previous.left, baseRight = extra.right - previous.right;
+    UIEdgeInsets system = container.view.safeAreaInsets;
+    railInsets.left = MAX(0, railInsets.left - (system.left - extra.left));
+    railInsets.right = MAX(0, railInsets.right - (system.right - extra.right));
+    extra.left = baseLeft + railInsets.left;
+    extra.right = baseRight + railInsets.right;
+    objc_setAssociatedObject(container, &kRailInsetsKey, [NSValue valueWithUIEdgeInsets:railInsets], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     CGFloat inset = container.view.safeAreaInsets.bottom - extra.bottom;
     CGFloat height = glassHeight(bar, stockBar);
     // Spotify's regular width bar is a fixed 76 pt that ignores the inset.
     BOOL compact = container.traitCollection.horizontalSizeClass == UIUserInterfaceSizeClassCompact;
-    CGFloat room = compact ? MAX(0, ceil(height - kStockRow - inset)) : 0;
-    if (fabs(extra.bottom - room) < 0.5) return;
+    BOOL vertical = !CGRectIsNull(SGRVerticalBarFrameIn(container.view, SGRVerticalBarExtent));
+    adaptBottomGuide(container, vertical);
+    CGFloat room = !vertical && compact ? MAX(0, ceil(height - kStockRow - inset)) : 0;
+    if (fabs(extra.bottom - room) < 0.5 && UIEdgeInsetsEqualToEdgeInsets(extra, container.additionalSafeAreaInsets)) return;
     sg_room = extra.bottom = room;
     container.additionalSafeAreaInsets = extra;
     SGLog(@"tab bar: %.0f pt of room made under Spotify's bar for the glass bar's %.0f, over an inset of %.0f", room, height, inset);
@@ -342,7 +609,7 @@ static void syncBar(UIView *stockBar) {
         // stacks Spotify makes dark itself (-[SPNavigationController viewDidLoad] while +[SPTLiquidGlass
         // isEnabled]), so a phone in light mode had it light over Spotify's black. Spotify is dark whatever
         // the system is, and so is the bar.
-        bar.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        SGRegisterAppearanceView(bar);
         bar.delegate = bar;
         bar.stockBar = stockBar;
         UILongPressGestureRecognizer *hold = [[UILongPressGestureRecognizer alloc] initWithTarget:bar action:@selector(held:)];
@@ -367,7 +634,7 @@ static void syncBar(UIView *stockBar) {
     NSArray<UIView *> *sources = tabItems(stockBar);
     if (!sources.count) return;
     // An item with no title is drawn by UIKit as its glyph alone, centred, on a bar of the same height.
-    BOOL hideLabels = SGHidden(SGRKeyNavbarHideLabels);
+    BOOL hideLabels = hideLabelsForBar(stockBar);
 
     if (![sources isEqualToArray:bar.sources]) {
         NSMutableArray<UITabBarItem *> *items = [NSMutableArray array];
@@ -379,7 +646,7 @@ static void syncBar(UIView *stockBar) {
             UIView *live = iconIn(source);
             id icon = live ? encoreIconOf(live) : nil;
             id variant = [icon respondsToSelector:NSSelectorFromString(@"active")] ? ((id (*)(id, SEL))objc_msgSend)(icon, NSSelectorFromString(@"active")) : nil;
-            [out appendFormat:@"\n  %@: %@ icon %@ active-variant %@ live-isActive %d label-white %d", labelIn(source).text, NSStringFromClass(live.class),
+            [out appendFormat:@"\n  %@: %@ icon %@ active-variant %@ live-isActive %d source-active %d", labelIn(source).text, NSStringFromClass(live.class),
                  [icon respondsToSelector:@selector(name)] ? [icon name] : icon, [variant respondsToSelector:@selector(name)] ? [variant name] : variant,
                  [live respondsToSelector:@selector(isActive)] ? [(SPTEncoreIconView *)live isActive] : -1, isActive(source)];
         }
@@ -393,7 +660,9 @@ static void syncBar(UIView *stockBar) {
         if (!item.image) item.image = glyphOf(sources[i], NO);
         if (!item.selectedImage || item.selectedImage == item.image) item.selectedImage = glyphOf(sources[i], YES);
         missing |= !item.image || !item.selectedImage;
-        NSString *title = hideLabels ? nil : labelIn(sources[i]).text;
+        NSString *sourceTitle = labelIn(sources[i]).text;
+        item.accessibilityLabel = sourceTitle;
+        NSString *title = hideLabels ? nil : sourceTitle;
         if (hideLabels ? item.title != nil : title.length && ![title isEqualToString:item.title]) item.title = title;
         if (!selected && isActive(sources[i])) selected = item;
     }
@@ -405,6 +674,31 @@ static void syncBar(UIView *stockBar) {
             syncBar(stockBar);
         });
     }
+
+    UIViewController *container = containerOf(stockBar);
+    CGRect railFrame = SGRVerticalBarFrameIn(container.view, SGRVerticalBarExtent);
+    SGRVerticalTabRail *rail = objc_getAssociatedObject(stockBar, &kRailKey);
+    if (!CGRectIsNull(railFrame)) {
+        if (!rail) {
+            rail = [SGRVerticalTabRail new];
+            rail.bar = bar;
+            objc_setAssociatedObject(stockBar, &kRailKey, rail, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        // A sibling of Spotify's bottom bar, not its child: all rail buttons remain hittable.
+        if (rail.superview != container.view) [container.view addSubview:rail];
+        static CGRect lastRail = {{-1, -1}, {0, 0}};
+        if (!CGRectEqualToRect(lastRail, railFrame)) {
+            lastRail = railFrame;
+            SGLog(@"vertical navigation: window %@ rail %@ container %@ safe %@ extra %@", NSStringFromCGRect(stockBar.window.bounds), NSStringFromCGRect(railFrame), NSStringFromCGRect(container.view.bounds), NSStringFromUIEdgeInsets(container.view.safeAreaInsets), NSStringFromUIEdgeInsets(container.additionalSafeAreaInsets));
+        }
+        rail.frame = railFrame;
+        [rail updateVisibility];
+        [rail sync];
+        [host removeFromSuperview];
+        makeRoom(container);
+        return;
+    }
+    [rail removeFromSuperview];
 
     CGRect bounds = stockBar.bounds;
     CGFloat width = bounds.size.width;
@@ -419,6 +713,17 @@ static void syncBar(UIView *stockBar) {
 }
 
 #pragma mark - hooks
+
+// The miniplayer card leaves room for the rail, but its transparent full-width host
+// still covers the bottom target. Let only the visible navigation group through.
+%hook _TtC22NowPlaying_BarPageImplP33_CCC0D2EEA6D4725EECD8965E8C38C86D20TouchPassthroughView
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    SGRVerticalTabRail *rail = sg_stockBar ? objc_getAssociatedObject(sg_stockBar, &kRailKey) : nil;
+    if (rail.window && rail.window == ((UIView *)self).window && !rail.hidden && rail.alpha > 0.01
+        && [rail pointInside:[rail convertPoint:point fromView:(UIView *)self] withEvent:event]) return NO;
+    return %orig;
+}
+%end
 
 static UIView *tabBarOf(UIView *item) {
     Class barClass = NSClassFromString(@"_TtC23NavigationUI_TabBarImpl10TabBarView");
@@ -463,8 +768,20 @@ static void itemDidLayOut(UIView *item) {
 }
 %end
 
+%hook SPNavigationController
+- (void)setAdditionalSafeAreaInsets:(UIEdgeInsets)insets {
+    objc_setAssociatedObject(self, &kNavigationInsetsKey, [NSValue valueWithUIEdgeInsets:insets], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    %orig(pageInsetsForNavigation((UIViewController *)self, insets));
+}
+%end
+
 // A tab changed from elsewhere (a link, the side drawer) repaints the labels without a layout pass.
 %hook _TtC23NavigationUI_TabBarImpl19TabBarContainerImpl
+- (void)viewDidLayoutSubviews {
+    %orig;
+    UIView *stockBar = sg_stockBar;
+    if (stockBar && [stockBar isDescendantOfView:((UIViewController *)self).view]) syncBar(stockBar);
+}
 - (void)setSelectedViewController:(UIViewController *)controller {
     %orig;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -488,5 +805,6 @@ static void itemDidLayOut(UIView *item) {
         @"_TtC23NavigationUI_TabBarImpl21TabBarItemElementView",
         @"_TtC25CreateMenu_TabBarItemImpl24CreateMenuTabBarItemView",
         @"_TtC23NavigationUI_TabBarImpl19TabBarContainerImpl",
+        @"SPNavigationController",
     ]);
 }

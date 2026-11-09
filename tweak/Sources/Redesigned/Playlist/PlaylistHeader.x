@@ -30,6 +30,7 @@
 // fire Spotify's own concealed controls, so every action, state and language stays Spotify's.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Kit/SGRHeaderGeometry.h"
 #import "Playlist.h"
 #import <objc/message.h>
 
@@ -385,9 +386,13 @@ static SGRHeaderInfo *applyInfo(UIView *block, UIView *headerRoot, UIViewControl
     for (UIView *sub in block.subviews) {
         if (sub != info) conceal(sub);
     }
-    // The page's width, centred on the screen: Spotify's block is 16pt narrower than the page (386 of 402).
-    CGFloat x = -[block convertPoint:CGPointZero toView:headerRoot].x;
-    CGRect frame = CGRectMake(round(x), 0, headerRoot.bounds.size.width, block.bounds.size.height);
+    // Spotify's block is 16pt narrower than the page. Ordinarily the replacement fills the page;
+    // with native vertical navigation it fills the same safe content column as the playlist rows.
+    // Live Duo 9.1.94: PL.Header is 466pt with an 84pt trailing safe area, while the block and info
+    // have no safe inset of their own. Resolve at the header, then convert into the block once.
+    // MAX combines overlapping clearance rather than subtracting the rail a second time from
+    // an already constrained header. The native region also follows the physical edge in RTL.
+    CGRect frame = SGRHeaderInfoFrame(headerRoot, block);
     if (!CGRectEqualToRect(info.frame, frame)) info.frame = frame;
     showPlaylist(info, block, headerRoot, viewModelOf(headerVC));
 
@@ -472,7 +477,7 @@ static UIView *applyBackground(UIView *layout) {
             return;
         }
         CGColorRef color = v.layer.backgroundColor;
-        if (color && SGIsBaseSurface(color)) v.backgroundColor = UIColor.clearColor;
+        if (color && SGRIsBaseSurface(color)) v.backgroundColor = UIColor.clearColor;
     });
     return plane;
 }

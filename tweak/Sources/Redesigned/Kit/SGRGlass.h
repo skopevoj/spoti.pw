@@ -1,9 +1,8 @@
 // Glass for the redesign's control layer, and only for it: never behind rows, cards or text. Built on
 // Core/SGGlass.m (the effect made through +effectWithStyle:). Under Reduce Transparency a shape is a
-// solid SGRSolidGlassFill, on any OS; before iOS 26 without it, a dark thin material blur. Nothing
-// touches a glass class on an OS without them. A shape is dark whatever the system appearance: glass
-// takes the one it inherits, which outside the navigation stacks Spotify makes dark (the player) is the
-// system's, light on a phone in light mode.
+// solid SGRSolidGlassFill, on any OS; before iOS 26 without it, an appearance-matched thin material blur. Nothing
+// touches a glass class on an OS without them. A shape explicitly uses the redesign's launch-selected appearance, so panes outside Spotify's
+// navigation hierarchy cannot drift into a different style.
 //
 // Ownership: a shape belongs to the control it is made in (associated with it under the caller's key).
 // Threading: main thread only.

@@ -7,6 +7,8 @@
 // The follow state comes from a mock of Spotify's collection platform under its real class and selector
 // names: `none` at once, or in `late` a second in; Following, as saved, after the tap made at 2.5 s.
 #import <UIKit/UIKit.h>
+#import "../entity-header/centering.h"
+
 
 #pragma mark - Spotify's classes, by name
 
@@ -245,15 +247,22 @@ static NSArray<NSArray *> *musicList(void) {
 
 #pragma mark - the page
 
-@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate>
+@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate, UIWindowSceneDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @property (nonatomic, strong) SGRListSource *source;
 @end
 
 @implementation SGRHarnessDelegate
 
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
-    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options { return YES; }
+- (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    UISceneConfiguration *configuration = [[UISceneConfiguration alloc] initWithName:@"Entity" sessionRole:session.role];
+    configuration.delegateClass = self.class;
+    return configuration;
+}
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options { [self buildScene:(UIWindowScene *)scene]; }
+- (BOOL)buildScene:(UIWindowScene *)scene {
+    self.window = [[UIWindow alloc] initWithWindowScene:scene];
     CGFloat W = self.window.bounds.size.width, H = self.window.bounds.size.height;
     BOOL collapsed = [NSProcessInfo.processInfo.arguments containsObject:@"collapsed"];
     BOOL late = [NSProcessInfo.processInfo.arguments containsObject:@"late"];
@@ -354,7 +363,19 @@ static NSArray<NSArray *> *musicList(void) {
     scroll.contentSize = CGSizeMake(W, 3000);
     if (collapsed) scroll.contentOffset = CGPointMake(0, 468);
 
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"centering"]) {
+        NSMutableArray *queue=[NSMutableArray arrayWithObject:header];
+        while (queue.count) {
+            UIView *view=queue.lastObject; [queue removeLastObject];
+            if ([view isKindOfClass:UILabel.class] &&
+                ([view.accessibilityIdentifier isEqualToString:@"CreativeWorkPlatform.Components.UI.TitleRow-internal"] ||
+                 [view.accessibilityIdentifier isEqualToString:@"Encore.AdaptiveTitle-internal"]))
+                ((UILabel *)view).text=@"A Beautiful Collection of Songs Live";
+            [queue addObjectsFromArray:view.subviews];
+        }
+    }
     [self.window makeKeyAndVisible];
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"centering"]) { entityHeaderChecks(page, container, header); return YES; }
 
     // What the redesign's Follow draws: nothing before the state, then the glyph for it. A tap on it at
     // 2.5 s, which Spotify answers with Following.

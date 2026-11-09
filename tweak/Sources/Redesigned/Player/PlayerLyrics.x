@@ -48,6 +48,7 @@ static const CGFloat kLivingHeight = 200;
 
 static char kOverlayKey, kPlateKey, kTitleKey;
 static BOOL sg_open;
+static NSUInteger sg_motionGeneration;      // ignore completions from an interrupted toggle
 static BOOL sg_moving;                      // the transition is in flight, so no layout pass may re-place it
 static __weak UIView *sg_host;              // SPTNowPlayingView
 static __weak UIViewController *sg_info, *sg_duration, *sg_floating;
@@ -281,6 +282,8 @@ static CGFloat thumbRadius(SGRLyricsLayout l, BOOL open) {
     return scale > 0 ? SGRRadiusCover / scale : SGRRadiusArtwork;
 }
 
+static void replace(void);
+
 static void setOpen(BOOL open, BOOL animated) {
     UIView *host = sg_host;
     if (open == sg_open) return;
@@ -300,6 +303,7 @@ static void setOpen(BOOL open, BOOL animated) {
         SGLog(@"redesign player: no artwork read yet, the lyrics stay down");
         return;
     }
+    NSUInteger generation = ++sg_motionGeneration;
     sg_open = open;
     SGRPlayerLyricsChanged();
 
@@ -332,10 +336,15 @@ static void setOpen(BOOL open, BOOL animated) {
                                        : CGAffineTransformMakeScale(kLyricsEnterScale, kLyricsEnterScale);
     };
     void (^settled)(BOOL) = ^(BOOL finished) {
+        if (generation != sg_motionGeneration) return;
         sg_moving = NO;
-        if (sg_open) return;   // opened again while it was going away
-        SGRPlayerCoverList().alpha = 1;
-        [overlay removeFromSuperview];
+        if (!sg_open) {
+            SGRPlayerCoverList().alpha = 1;
+            [overlay removeFromSuperview];
+        }
+        // A resize may have arrived while replace() was held off by this animation.
+        // Reconcile now, even when Spotify schedules no further layout pass.
+        replace();
     };
 
     if (!animated) {
@@ -366,7 +375,16 @@ static void replace(void) {
     UIView *host = sg_host;
     if (!host || sg_moving) return;   // a pass in the middle of the transition would cut it short
     SGRLyricsLayout l = layoutIn(host);
-    if (sg_open && !l.ok) return;
+    if (sg_open && !l.ok) {
+        // A fold, rotation or resized window can take away the space the open lyrics used.
+        // Keeping the old frames leaves the title and overlay over the new controls. Restore
+        // the underlying player directly: setOpen() needs valid cover geometry to animate.
+        sg_open = NO;
+        SGRPlayerLyricsOverlay *overlay = objc_getAssociatedObject(host, &kOverlayKey);
+        [overlay removeFromSuperview];
+        SGRPlayerCoverList().alpha = 1;
+        SGRPlayerLyricsChanged();
+    }
     placeTitleRow(l);
     sg_floating.viewIfLoaded.alpha = sg_open ? 0 : 1;
     if (!sg_open) return;

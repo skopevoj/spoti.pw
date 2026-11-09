@@ -2,8 +2,29 @@
 // screen, laid out with the constraints 9.1.78 makes (see the README for the addresses), under Spotify's
 // class names, with Spotify's message bar (Offline, Private Session) able to come in under the tab bar.
 #import <UIKit/UIKit.h>
+#import "Redesigned/Kit/SGRBarGeometry.h"
+#import "Redesigned/Navbar/Navbar.h"
+#import "Redesigned/Navbar/SGRTabPolicy.h"
+#import "Redesigned/Kit/SGRTokens.h"
+#import "Core/SGCore.h"
 
 #pragma mark - Spotify's classes, by the names the hooks look for
+
+// Exposes the same authoritative selection getter as Spotify's icon view.
+@interface SGHarnessIconView : UIImageView
+@property (nonatomic, getter=isActive) BOOL active;
+@property (nonatomic) BOOL exposesActive;
+@end
+@implementation SGHarnessIconView
+- (instancetype)initWithImage:(UIImage *)image {
+    if ((self = [super initWithImage:image])) _exposesActive = YES;
+    return self;
+}
+- (BOOL)respondsToSelector:(SEL)selector {
+    if (selector == @selector(isActive) && !self.exposesActive) return NO;
+    return [super respondsToSelector:selector];
+}
+@end
 
 @interface _TtC23NavigationUI_TabBarImpl10TabBarView : UIView
 @end
@@ -75,9 +96,15 @@
     [card addSubview:lines];
     UIButton *play = [UIButton systemButtonWithImage:[UIImage systemImageNamed:@"play.fill"] target:nil action:nil];
     play.tintColor = UIColor.whiteColor;
-    play.frame = CGRectMake(330, 12, 32, 32);
-    play.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
+    play.translatesAutoresizingMaskIntoConstraints = NO;
+    play.accessibilityIdentifier = @"harness.miniplayer-play";
     [card addSubview:play];
+    [NSLayoutConstraint activateConstraints:@[
+        [play.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-12],
+        [play.centerYAnchor constraintEqualToAnchor:card.centerYAnchor],
+        [play.widthAnchor constraintEqualToConstant:32],
+        [play.heightAnchor constraintEqualToConstant:32],
+    ]];
     UIView *progress = [[UIView alloc] initWithFrame:CGRectMake(8, 54, 370, 2)];
     progress.backgroundColor = UIColor.whiteColor;
     [card addSubview:progress];
@@ -123,6 +150,12 @@
 }
 @end
 
+// The live 9.1.94 navigation wrapper owns the tab-row inset separately from the page.
+@interface SPNavigationController : UIViewController
+@end
+@implementation SPNavigationController
+@end
+
 // NavigationUI_TabBarImpl.TabBarContainerImpl in a compact width, as its viewDidLoad (0x1008409a8) and
 // its size class pass (0x106fabb7c) lay it out: a guide from 49 pt above the safe area's bottom to the
 // view's bottom, a stack as tall as the guide on the view's bottom, the tab bar as tall as the stack.
@@ -130,6 +163,8 @@
 @interface _TtC23NavigationUI_TabBarImpl19TabBarContainerImpl : UIViewController
 @property (nonatomic, strong) UILayoutGuide *compactGuide;
 @property (nonatomic, strong) UIView *bar;
+@property (nonatomic, strong) SPNavigationController *navigation;
+@property (nonatomic, strong) SGHarnessPage *page;
 @end
 @implementation _TtC23NavigationUI_TabBarImpl19TabBarContainerImpl
 - (UILayoutGuide *)compactTabBarHeightLayoutGuide { return self.compactGuide; }
@@ -138,7 +173,8 @@
 
 static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
     UIView *item = [cls new];
-    UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:symbol]];
+    SGHarnessIconView *icon = [[SGHarnessIconView alloc] initWithImage:[UIImage systemImageNamed:symbol]];
+    icon.active = active;
     icon.tintColor = UIColor.whiteColor;
     icon.contentMode = UIViewContentModeScaleAspectFit;
     icon.frame = CGRectMake(0, 5.67, 24, 24);
@@ -146,7 +182,7 @@ static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
     UILabel *label = [UILabel new];
     label.text = title;
     label.font = [UIFont systemFontOfSize:10];
-    label.textColor = active ? UIColor.whiteColor : [UIColor colorWithWhite:0xB3 / 255.0 alpha:1];
+    label.textColor = active ? SGRPrimary() : SGRSecondary();
     label.textAlignment = NSTextAlignmentCenter;
     label.frame = CGRectMake(0, 35, 100, 14);
     label.autoresizingMask = UIViewAutoresizingFlexibleWidth;
@@ -161,12 +197,24 @@ static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
     self.compactGuide = [UILayoutGuide new];
     [view addLayoutGuide:self.compactGuide];
 
-    SGHarnessPage *page = [SGHarnessPage new];
-    [self addChildViewController:page];
+    SPNavigationController *navigation = self.navigation = [SPNavigationController new];
+    [self addChildViewController:navigation];
+    navigation.view.translatesAutoresizingMaskIntoConstraints = NO;
+    [view addSubview:navigation.view];
+    [navigation didMoveToParentViewController:self];
+    // Nonzero unrelated edges must survive the tab-row correction.
+    navigation.additionalSafeAreaInsets = UIEdgeInsetsMake(3, 4, 49, 5);
+    SGHarnessPage *page = self.page = [SGHarnessPage new];
+    [navigation addChildViewController:page];
     page.view.translatesAutoresizingMaskIntoConstraints = NO;
-    [view addSubview:page.view];
-    [page didMoveToParentViewController:self];
-    page.additionalSafeAreaInsets = UIEdgeInsetsMake(0, 0, 49, 0);
+    [navigation.view addSubview:page.view];
+    [page didMoveToParentViewController:navigation];
+    [NSLayoutConstraint activateConstraints:@[
+        [page.view.leadingAnchor constraintEqualToAnchor:navigation.view.leadingAnchor],
+        [page.view.trailingAnchor constraintEqualToAnchor:navigation.view.trailingAnchor],
+        [page.view.topAnchor constraintEqualToAnchor:navigation.view.topAnchor],
+        [page.view.bottomAnchor constraintEqualToAnchor:navigation.view.bottomAnchor],
+    ]];
 
     UIView *stack = [UIView new];
     stack.accessibilityIdentifier = @"TabBarContainer.stackView";
@@ -191,10 +239,10 @@ static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
     [compact addSubview:row];
 
     [NSLayoutConstraint activateConstraints:@[
-        [page.view.leadingAnchor constraintEqualToAnchor:view.leadingAnchor],
-        [page.view.trailingAnchor constraintEqualToAnchor:view.trailingAnchor],
-        [page.view.topAnchor constraintEqualToAnchor:view.topAnchor],
-        [page.view.bottomAnchor constraintEqualToAnchor:view.bottomAnchor],
+        [navigation.view.leadingAnchor constraintEqualToAnchor:view.leadingAnchor],
+        [navigation.view.trailingAnchor constraintEqualToAnchor:view.trailingAnchor],
+        [navigation.view.topAnchor constraintEqualToAnchor:view.topAnchor],
+        [navigation.view.bottomAnchor constraintEqualToAnchor:view.bottomAnchor],
         [self.compactGuide.topAnchor constraintEqualToAnchor:view.safeAreaLayoutGuide.bottomAnchor constant:-49],
         [self.compactGuide.bottomAnchor constraintEqualToAnchor:view.bottomAnchor],
         [stack.leadingAnchor constraintEqualToAnchor:view.leadingAnchor],
@@ -294,7 +342,7 @@ static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
 
     // The now playing bar's share of the pages' inset, which Spotify adds on its own path; here a
     // stand-in on the page, so the list's end shows where Spotify thinks the bars begin.
-    UIViewController *page = self.tabs.childViewControllers.firstObject;
+    UIViewController *page = self.tabs.page;
     UIEdgeInsets inset = page.additionalSafeAreaInsets;
     inset.bottom += 64;
     page.additionalSafeAreaInsets = inset;
@@ -338,6 +386,15 @@ static UITabBar *systemBarIn(UIView *root) {
     return nil;
 }
 
+static UIView *identifiedView(UIView *root, NSString *identifier) {
+    if ([root.accessibilityIdentifier isEqualToString:identifier]) return root;
+    for (UIView *child in root.subviews) {
+        UIView *found = identifiedView(child, identifier);
+        if (found) return found;
+    }
+    return nil;
+}
+
 static void report(SGHarnessChrome *chrome, NSString *moment) {
     UIWindow *window = chrome.view.window;
     UIView *stock = chrome.tabs.bar;
@@ -348,14 +405,287 @@ static void report(SGHarnessChrome *chrome, NSString *moment) {
     CGRect platterFrame = platter ? [platter convertRect:platter.bounds toView:window] : CGRectNull;
     CGRect card = SGRNowPlayingCardFrameIn(window, NULL);
     CGRect banner = [chrome.banner convertRect:chrome.banner.bounds toView:window];
-    UITableView *list = (UITableView *)chrome.tabs.childViewControllers.firstObject.view;
+    UIView *play = identifiedView(chrome.npb, @"harness.miniplayer-play");
+    NSCAssert(play != nil, @"Miniplayer play control must exist");
+    CGRect playFrame = [play convertRect:play.bounds toView:window];
+    NSCAssert(CGRectContainsRect(card, playFrame), @"Miniplayer play control must remain in the card");
+    CGPoint center = CGPointMake(CGRectGetMidX(playFrame), CGRectGetMidY(playFrame));
+    UIView *playHit = [window hitTest:center withEvent:nil];
+    NSCAssert(playHit == play || [playHit isDescendantOfView:play], @"Miniplayer play button must receive touches");
+    NSLog(@"[harness] PASS miniplayer play target %@", NSStringFromCGRect(playFrame));
+    UITableView *list = chrome.tabs.page.tableView;
     CGFloat listEnd = CGRectGetMaxY([list convertRect:list.bounds toView:window]) - list.adjustedContentInset.bottom;
+    CGRect rail = SGRVerticalBarFrameIn(window, SGRVerticalBarExtent);
+    UIEdgeInsets expectedNavigation = UIEdgeInsetsMake(3, 4, CGRectIsNull(rail) ? 49 : 0, 5);
+    NSCAssert(UIEdgeInsetsEqualToEdgeInsets(chrome.tabs.navigation.additionalSafeAreaInsets, expectedNavigation),
+              @"Only the navigation wrapper's exact 49pt tab-row inset may be removed in vertical mode");
+    NSCAssert(chrome.tabs.page.additionalSafeAreaInsets.bottom == 64,
+              @"The independent miniplayer/page inset must remain unchanged");
+    NSLog(@"[harness] PASS separate navigation %@ and page %@ insets", NSStringFromUIEdgeInsets(chrome.tabs.navigation.additionalSafeAreaInsets), NSStringFromUIEdgeInsets(chrome.tabs.page.additionalSafeAreaInsets));
+    if (!CGRectIsNull(rail)) {
+        UIView *railView = nil;
+        for (UIView *child in chrome.tabs.view.subviews)
+            if ([child.accessibilityIdentifier isEqualToString:@"spoti.vertical-navigation"]) railView = child;
+        NSCAssert(railView != nil, @"Vertical mode must have the navigation rail");
+        CGRect actual = [railView convertRect:railView.bounds toView:window];
+        NSCAssert(CGRectEqualToRect(actual, rail), @"Rail must match the system layout region");
+        UIView *group = railView.subviews.firstObject;
+        NSCAssert([group.accessibilityIdentifier isEqualToString:@"spoti.vertical-navigation.group"], @"One compact group must own the glass");
+        NSCAssert(fabs(CGRectGetMaxY(group.frame) - CGRectGetHeight(railView.bounds)) < 0.5, @"Group must align to the region bottom");
+        UITabBar *railBar = [railView valueForKey:@"bar"];
+        BOOL hideLabels = railBar.items.firstObject.title.length == 0;
+        CGFloat rowHeight = SGRVerticalBarNavigationRowHeight(hideLabels);
+        NSCAssert(railBar.items.count == 4, @"The rail must retain all four default tabs");
+        CGFloat groupHeight = MIN(rail.size.height - SGRVerticalBarTopReservation(rail.size.height), railBar.items.count * (rowHeight + 2) + 2);
+        NSCAssert(fabs(CGRectGetHeight(group.frame) - groupHeight) < 0.5, @"The group must fit the composed tabs");
+        UIScrollView *scroll = nil;
+        for (UIView *child in group.subviews) if ([child isKindOfClass:UIScrollView.class]) scroll = (UIScrollView *)child;
+        NSCAssert(scroll != nil, @"Group must contain scrolling controls");
+        NSUInteger count = 0;
+        for (UIView *button in scroll.subviews) {
+            if (![button isKindOfClass:UIButton.class]) continue;
+            count++;
+            UIButton *control = (UIButton *)button;
+            NSCAssert(hideLabels ? control.configuration.attributedTitle.length == 0 : control.configuration.attributedTitle.length > 0,
+                      @"Vertical controls must follow the Hide labels preference");
+            NSCAssert(control.accessibilityLabel.length > 0, @"Icon-only tabs must retain accessible names");
+            if ([control.accessibilityLabel isEqualToString:@"Home"])
+                NSCAssert(control.gestureRecognizers.count > 0, @"Home must retain its hold gesture");
+            NSCAssert(fabs(button.bounds.size.width - 48) < 0.5 && fabs(button.bounds.size.height - rowHeight) < 0.5,
+                      @"Vertical controls must retain 48pt-wide hit targets");
+            NSCAssert(CGRectContainsRect(scroll.bounds, button.frame), @"Default tabs must fit within the system rail");
+            CGPoint point = [button convertPoint:CGPointMake(CGRectGetMidX(button.bounds), CGRectGetMidY(button.bounds)) toView:window];
+            UIView *hit = [window hitTest:point withEvent:nil];
+            NSCAssert(hit == button || [hit isDescendantOfView:button], @"Rail button must receive touches outside stock bar");
+        }
+        NSCAssert(count == 4, @"The default Home, Search, Library and Create tabs must remain present");
+        NSCAssert(CGRectGetMaxX(card) <= CGRectGetMinX(rail), @"Miniplayer must not extend under rail");
+        NSCAssert(fabs(CGRectGetMaxY(card) + 8 - CGRectGetMinY(stockFrame)) < 1, @"Miniplayer must sit above remaining bottom safe area");
+        NSLog(@"[harness] PASS vertical rail region, one bottom-aligned glass pill, accessible targets honoring label preferences, miniplayer separation and bottom alignment");
+    } else {
+        NSCAssert(system != nil, @"Normal phone must retain native bottom tab bar");
+        NSCAssert(system.items.count == 4, @"Normal phone must preserve all default tabs");
+        NSLog(@"[harness] PASS normal bottom bar retained");
+    }
+    NSLog(@"[harness] vertical-region %@ side-insets %@ container-insets %@", NSStringFromCGRect(rail),
+          NSStringFromUIEdgeInsets(SGRVerticalBarContentInsets(window, SGRVerticalBarExtent)), NSStringFromUIEdgeInsets(chrome.tabs.additionalSafeAreaInsets));
     NSLog(@"[harness] %@ screen %.0fx%.0f safe-bottom %.0f | banner %@ | stock bar %@ | system bar %@ | platter %@ | card %@ | "
           @"gap card-to-platter %.1f | container extra inset %.0f | list ends at %.0f (card top %.0f)",
           moment, window.bounds.size.width, window.bounds.size.height, window.safeAreaInsets.bottom,
           NSStringFromCGRect(banner), NSStringFromCGRect(stockFrame), NSStringFromCGRect(systemFrame), NSStringFromCGRect(platterFrame),
           NSStringFromCGRect(card), CGRectGetMinY(platterFrame) - CGRectGetMaxY(card), chrome.tabs.additionalSafeAreaInsets.bottom,
           listEnd, CGRectGetMinY(card));
+}
+
+// Focused reservation regression, using the production rail and actual composed custom tabs.
+@interface UIView (HarnessRailSync)
+- (void)sync;
+@end
+static void reservationChecks(SGHarnessChrome *chrome) {
+    UIWindow *window = chrome.view.window;
+    if (CGRectIsNull(SGRVerticalBarFrameIn(window, SGRVerticalBarExtent))) return;
+    UIView *rail = identifiedView(chrome.tabs.view, @"spoti.vertical-navigation");
+    UITabBar *system = nil;
+    CGRect original = rail.frame;
+    CGFloat rowHeight = SGRVerticalBarNavigationRowHeight(((UITabBar *)[rail valueForKey:@"bar"]).items.firstObject.title.length == 0);
+    NSArray *saved = SGRNavbarLayout();
+    NSMutableArray *many = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 12; i++)
+        [many addObject:@{SGRNavbarID: [NSString stringWithFormat:@"fixture%lu", (unsigned long)i],
+            SGRNavbarTitle: [NSString stringWithFormat:@"Custom %lu", (unsigned long)i],
+            SGRNavbarURI: @"spotify:collection", SGRNavbarIcon: @"heart"}];
+    SGRSetNavbarLayout(many);
+    SGRComposeTabBar(chrome.tabs.bar);
+    [chrome.tabs.bar setNeedsLayout];
+    [chrome.tabs.bar layoutIfNeeded];
+    system = [rail valueForKey:@"bar"];
+    NSCAssert(system.items.count == 16, @"Four default and twelve custom tabs must remain present");
+    system.selectedItem = system.items.lastObject;
+    for (NSNumber *height in @[@470, @220, @164, @112, @80, @470]) {
+        rail.frame = CGRectMake(original.origin.x, original.origin.y, original.size.width, height.doubleValue);
+        [rail sync];
+        UIView *group = [rail valueForKey:@"group"];
+        UIScrollView *scroll = [rail valueForKey:@"scroll"];
+        NSArray<UIButton *> *buttons = [rail valueForKey:@"buttons"];
+        CGFloat reserve = SGRVerticalBarTopReservation(height.doubleValue);
+        NSCAssert(group.frame.origin.y >= reserve && group.bounds.size.height >= rowHeight + 4,
+                  @"Short rail must keep a complete nav row below reserved top controls");
+        NSCAssert([rail pointInside:CGPointMake(26, reserve - 1) withEvent:nil] == NO,
+                  @"Rail must not intercept Back/menu reservation");
+        if (reserve >= 112) NSCAssert(group.frame.origin.y >= 104 + 8, @"Menu bottom must keep an 8pt gap from tabs");
+        for (UIButton *button in buttons) {
+            CGFloat offset = MIN(MAX(0, button.frame.origin.y - 2), MAX(0, scroll.contentSize.height - scroll.bounds.size.height));
+            scroll.contentOffset = CGPointMake(0, offset);
+            NSCAssert(CGRectContainsRect(scroll.bounds, button.frame), @"Every custom tab must scroll fully into view");
+            NSCAssert(button.bounds.size.width == 48 && button.bounds.size.height == rowHeight, @"Custom tab keeps its full labeled or icon-only target");
+            CGPoint samples[] = {{24, rowHeight / 2}, {4, 4}, {44, rowHeight - 4}};
+            for (NSUInteger i = 0; i < 3; i++) {
+                CGPoint point = [button convertPoint:samples[i] toView:window];
+                UIView *hit = [window hitTest:point withEvent:nil];
+                NSCAssert(hit == button || [hit isDescendantOfView:button], @"Every scrolled custom tab must receive window hits");
+            }
+        }
+        NSCAssert((buttons.lastObject.accessibilityTraits & UIAccessibilityTraitSelected) != 0,
+                  @"Selection must survive shrinking and expanding the rail");
+        NSLog(@"[harness] PASS reserved rail height %.0f, group %@, %lu tabs reachable, selected last", height.doubleValue,
+              NSStringFromCGRect(group.frame), (unsigned long)buttons.count);
+    }
+    SGRSetNavbarLayout(saved);
+    SGRComposeTabBar(chrome.tabs.bar);
+    [chrome.tabs.bar setNeedsLayout];
+    [chrome.tabs.bar layoutIfNeeded];
+    rail.frame = original;
+    [rail sync];
+    UIScrollView *scroll = [rail valueForKey:@"scroll"];
+    [scroll layoutIfNeeded];
+    NSCAssert(scroll.contentOffset.y == 0, @"Removing custom tabs must restore the default scroll offset");
+    UIView *group = [rail valueForKey:@"group"];
+    NSCAssert(fabs(group.frame.size.height - (4 * (rowHeight + 2) + 2)) < 0.5, @"Default four-tab geometry must return after expansion");
+    NSLog(@"[harness] PASS reservation restored default geometry and scroll offset");
+}
+
+static BOOL observedFullyOpen, observedHingeUpdate;
+static void observeHarnessHinge(UIView *stockBar) {
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270100
+    if (@available(iOS 27.1, *)) {
+        if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.kyle.spotipw.duo"]) return;
+        // Independent public-API observer verifies the production observer's live result.
+        [stockBar addInteraction:[[UIHingeInteraction alloc] initWithUpdateHandler:^(UIHingeInteraction *interaction, UIHingeInteractionUpdate *update) {
+            observedFullyOpen = update.hinge && update.hinge.status == UIHingeStatusFullyOpen;
+            observedHingeUpdate = YES;
+        }]];
+    }
+#endif
+}
+
+// Pure production-policy matrix. This is not a physical folding simulation.
+static void policyChecks(void) {
+    NSUInteger checks = 0;
+    for (NSString *bundle in @[@"com.kyle.spotipw.duo", @"com.kyle.spotipw", @"com.kyle.spotipw.duo.extra", @"com.vojta.tabbarharness"]) {
+        for (NSInteger status = 0; status < 4; status++) {
+            BOOL fullyOpen = status == 3; // unknown, closed, partial, fully open
+            for (NSNumber *value in @[@0, @1, @2, @3, @4]) {
+                UIInterfaceOrientation orientation = value.integerValue;
+                for (NSNumber *saved in @[@NO, @YES]) {
+                    BOOL expected = saved.boolValue || ([bundle isEqualToString:@"com.kyle.spotipw.duo"] &&
+                        !(fullyOpen && UIInterfaceOrientationIsPortrait(orientation)));
+                    NSCAssert(SGRNavbarHidesLabels(bundle, fullyOpen, orientation, saved.boolValue) == expected,
+                              @"Duo label policy must follow exact bundle, posture, orientation and preference");
+                    checks++;
+                }
+            }
+        }
+    }
+    for (NSNumber *light in @[@NO, @YES]) {
+        UITraitCollection *traits = [UITraitCollection traitCollectionWithUserInterfaceStyle:light.boolValue ? UIUserInterfaceStyleLight : UIUserInterfaceStyleDark];
+        UIColor *primary = light.boolValue ? [UIColor colorWithWhite:0.08 alpha:1] : UIColor.whiteColor;
+        UIColor *secondary = light.boolValue ? [UIColor colorWithWhite:0.3 alpha:1] : [UIColor colorWithWhite:1 alpha:0.65];
+        NSCAssert(SGRNavbarLabelIsActive(primary, traits, light.boolValue), @"Semantic primary must select in both themes");
+        NSCAssert(SGRNavbarLabelIsActive(UIColor.labelColor, traits, light.boolValue), @"Dynamic primary must resolve against source traits");
+        NSCAssert(!SGRNavbarLabelIsActive(secondary, traits, light.boolValue), @"Semantic secondary must not select");
+        NSCAssert(!SGRNavbarLabelIsActive(nil, traits, light.boolValue), @"Missing label must not select");
+    }
+    NSLog(@"[harness] PASS %lu exact-bundle/posture/orientation/preference cases and light/dark label fallback", (unsigned long)checks);
+}
+
+static UITabBar *composedSystemBar(SGHarnessChrome *chrome) {
+    UITabBar *bar = systemBarIn(chrome.tabs.bar);
+    if (!bar) bar = [identifiedView(chrome.tabs.view, @"spoti.vertical-navigation") valueForKey:@"bar"];
+    return bar;
+}
+
+static void refreshComposition(SGHarnessChrome *chrome) {
+    SGRComposeTabBar(chrome.tabs.bar);
+    [chrome.tabs.bar setNeedsLayout];
+    [chrome.tabs.bar layoutIfNeeded];
+    [chrome.tabs.view setNeedsLayout];
+    [chrome.tabs.view layoutIfNeeded];
+}
+
+static void preferenceChecks(SGHarnessChrome *chrome) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSArray *keys = @[@"spotifyglass.redesign.navbar.layout", SGRKeyNavbar, SGRKeyNavbarHideLabels,
+                      @"spotifyglass.redesign.navbar.hideCreate"];
+    NSMutableDictionary *saved = [NSMutableDictionary dictionary];
+    for (NSString *key in keys) if ([defaults objectForKey:key]) saved[key] = [defaults objectForKey:key];
+    for (NSNumber *hiddenCreate in @[@NO, @YES]) {
+        NSArray *custom = @[@{SGRNavbarID: @"Search", SGRNavbarHidden: @YES},
+            @{SGRNavbarID: @"fixture", SGRNavbarTitle: @"Favorites", SGRNavbarURI: @"spotify:collection", SGRNavbarIcon: @"heart"},
+            @{SGRNavbarID: @"Create", SGRNavbarHidden: hiddenCreate},
+            @{SGRNavbarID: @"Your Library"}, @{SGRNavbarID: @"Home"}];
+        SGRSetNavbarLayout(custom);
+        // Obsolete values must be retained but cannot override the existing editor.
+        [defaults setBool:!hiddenCreate.boolValue forKey:@"spotifyglass.redesign.navbar.hideCreate"];
+        for (NSNumber *hideLabels in @[@NO, @YES]) {
+            SGSetEnabled(SGRKeyNavbarHideLabels, hideLabels.boolValue);
+            NSDictionary *before = defaults.dictionaryRepresentation;
+            refreshComposition(chrome);
+            UITabBar *bar = composedSystemBar(chrome);
+            NSArray *expected = hiddenCreate.boolValue ? @[@"Favorites", @"Your Library", @"Home"]
+                                                       : @[@"Favorites", @"Create", @"Your Library", @"Home"];
+            NSCAssert([[bar.items valueForKey:@"accessibilityLabel"] isEqualToArray:expected], @"Visible order and Create must follow the existing tab editor");
+            for (UIView *source in SGRowIn(chrome.tabs.bar).arrangedSubviews) {
+                __block NSString *title;
+                SGForEachView(source, ^(UIView *view) { if ([view isKindOfClass:UILabel.class]) title = ((UILabel *)view).text; });
+                if ([title isEqualToString:@"Create"])
+                    NSCAssert(source.hidden == hiddenCreate.boolValue && source.userInteractionEnabled != hiddenCreate.boolValue && source.accessibilityElementsHidden == hiddenCreate.boolValue, @"Create visibility, interaction and accessibility must match the saved tab");
+                if ([title isEqualToString:@"Search"]) NSCAssert(source.hidden, @"Saved hidden Search remains hidden");
+            }
+            BOOL expectedHide = SGRNavbarHidesLabels(NSBundle.mainBundle.bundleIdentifier, observedFullyOpen,
+                chrome.view.window.windowScene.effectiveGeometry.interfaceOrientation, hideLabels.boolValue);
+            for (UITabBarItem *item in bar.items) NSCAssert((item.title.length == 0) == expectedHide, @"Mirrored titles must match the user preference and independently observed live posture");
+            for (NSString *key in keys) NSCAssert([[defaults objectForKey:key] isEqual:before[key]], @"Rendering must not mutate saved navbar settings");
+        }
+    }
+    SGSetEnabled(SGRKeyNavbar, NO);
+    refreshComposition(chrome);
+    NSCAssert(([[composedSystemBar(chrome).items valueForKey:@"accessibilityLabel"] isEqualToArray:@[@"Home", @"Search", @"Your Library", @"Create"]]), @"Disabling custom navbar restores stock order including Create");
+    for (NSString *key in keys) {
+        if (saved[key]) [defaults setObject:saved[key] forKey:key];
+        else [defaults removeObjectForKey:key];
+    }
+    refreshComposition(chrome);
+    if ([NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.kyle.spotipw.duo"])
+        NSLog(@"[harness] PASS live hinge label result, observed update %d, fully open %d", observedHingeUpdate, observedFullyOpen);
+    NSLog(@"[harness] PASS saved tab order, custom tabs, Create show/hide, hidden Search, disabled navbar, label toggle and unchanged stored values");
+}
+
+static void selectionChecks(SGHarnessChrome *chrome) {
+    NSArray<UIView *> *sources = SGRowIn(chrome.tabs.bar).arrangedSubviews;
+    for (NSUInteger selected = 0; selected < sources.count; selected++) {
+        for (NSUInteger index = 0; index < sources.count; index++) {
+            SGForEachView(sources[index], ^(UIView *view) {
+                if ([view isKindOfClass:SGHarnessIconView.class]) ((SGHarnessIconView *)view).active = index == selected;
+                // Deliberately contradict the icon. Selection must trust isActive.
+                if ([view isKindOfClass:UILabel.class]) ((UILabel *)view).textColor = index == selected ? SGRSecondary() : SGRPrimary();
+            });
+        }
+        refreshComposition(chrome);
+        UITabBar *bar = composedSystemBar(chrome);
+        NSCAssert(bar.selectedItem == bar.items[selected], @"Source icon state must drive selection even with stale opposite label colors");
+    }
+    for (NSUInteger selected = 0; selected < sources.count; selected++) {
+        for (NSUInteger index = 0; index < sources.count; index++) {
+            SGForEachView(sources[index], ^(UIView *view) {
+                if ([view isKindOfClass:SGHarnessIconView.class]) ((SGHarnessIconView *)view).exposesActive = NO;
+                if ([view isKindOfClass:UILabel.class]) ((UILabel *)view).textColor = index == selected ? SGRPrimary() : SGRSecondary();
+            });
+        }
+        refreshComposition(chrome);
+        UITabBar *bar = composedSystemBar(chrome);
+        NSCAssert(bar.selectedItem == bar.items[selected], @"Semantic label fallback must synchronize every tab in the selected theme");
+    }
+    for (UIView *source in sources) SGForEachView(source, ^(UIView *view) {
+        if ([view isKindOfClass:SGHarnessIconView.class]) ((SGHarnessIconView *)view).exposesActive = YES;
+    });
+    SGForEachView(sources.firstObject, ^(UIView *view) {
+        if ([view isKindOfClass:SGHarnessIconView.class]) ((SGHarnessIconView *)view).active = YES;
+    });
+    SGForEachView(sources.lastObject, ^(UIView *view) {
+        if ([view isKindOfClass:SGHarnessIconView.class]) ((SGHarnessIconView *)view).active = NO;
+    });
+    refreshComposition(chrome);
+    NSLog(@"[harness] PASS %@ source-icon and semantic-label selection synchronization across all four tabs", SGRedesignLightAppearance() ? @"Light" : @"Dark");
 }
 
 #pragma mark - the app
@@ -382,10 +712,19 @@ static void after(double seconds, dispatch_block_t block) {
 
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
-    self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    BOOL light = [NSProcessInfo.processInfo.arguments containsObject:@"light"];
+    SGConfigureRedesignAppearance(light ? UIUserInterfaceStyleLight : UIUserInterfaceStyleDark);
+    self.window.overrideUserInterfaceStyle = SGRedesignAppearanceStyle();
+    SGRSetNavbarLayout(@[]);
+    SGSetEnabled(SGRKeyNavbar, YES);
+    const char *labels = getenv("HARNESS_HIDE_LABELS");
+    SGSetEnabled(SGRKeyNavbarHideLabels, labels && labels[0] == '1');
+    policyChecks();
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"reservation"]) SGRSetNavbarLayout(@[]);
     SGHarnessChrome *chrome = [SGHarnessChrome new];
     self.window.rootViewController = chrome;
     [self.window makeKeyAndVisible];
+    observeHarnessHinge(chrome.tabs.bar);
 
     // What happens, from the launch argument: `none` no message bar, `shown` one sliding in at 1.5 s,
     // `away` one there from the start sliding away at 1.5 s, `cycle` in at 1.5 s and out at 4.5 s.
@@ -393,13 +732,36 @@ static void after(double seconds, dispatch_block_t block) {
     NSString *mode = args.count > 1 ? args[1] : @"none";
     if ([mode isEqualToString:@"away"]) [chrome setBanner:YES animated:NO];
     after(0.5, ^{
-        UITableView *list = (UITableView *)chrome.tabs.childViewControllers.firstObject.view;
+        UITableView *list = chrome.tabs.page.tableView;
         [list scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:29 inSection:0] atScrollPosition:UITableViewScrollPositionBottom animated:NO];
         report(chrome, @"start");
     });
     if ([mode isEqualToString:@"shown"] || [mode isEqualToString:@"cycle"]) after(1.5, ^{ [chrome setBanner:YES animated:YES]; });
     if ([mode isEqualToString:@"away"]) after(1.5, ^{ [chrome setBanner:NO animated:YES]; });
     if ([mode isEqualToString:@"cycle"]) after(4.5, ^{ [chrome setBanner:NO animated:YES]; });
+    after(7, ^{
+        SPNavigationController *navigation = chrome.tabs.navigation;
+        // A caller replacing the tab contribution must retain its full, unrelated inset.
+        navigation.additionalSafeAreaInsets = UIEdgeInsetsMake(7, 8, 61, 9);
+        [chrome.tabs.view setNeedsLayout];
+        [chrome.tabs.view layoutIfNeeded];
+        NSCAssert(UIEdgeInsetsEqualToEdgeInsets(navigation.additionalSafeAreaInsets, UIEdgeInsetsMake(7, 8, 61, 9)), @"Non-49pt caller insets must remain intact");
+        // Moving the same controller outside the tab container restores ordinary semantics.
+        [navigation willMoveToParentViewController:nil];
+        [navigation removeFromParentViewController];
+        navigation.additionalSafeAreaInsets = UIEdgeInsetsMake(3, 4, 49, 5);
+        NSCAssert(navigation.additionalSafeAreaInsets.bottom == 49, @"Navigation outside tabs must retain its 49pt inset");
+        [chrome.tabs addChildViewController:navigation];
+        [navigation didMoveToParentViewController:chrome.tabs];
+        [chrome.tabs.view setNeedsLayout];
+        [chrome.tabs.view layoutIfNeeded];
+        report(chrome, @"navigation-restored");
+        NSLog(@"[harness] PASS caller inset replacement and navigation ownership restoration");
+        preferenceChecks(chrome);
+        selectionChecks(chrome);
+
+    });
+    if ([mode isEqualToString:@"reservation"]) after(8.5, ^{ reservationChecks(chrome); });
     // Half way through the slide, what the screen shows (the presentation layers).
     if (![mode isEqualToString:@"none"]) after(1.5 + 0.17, ^{
         CALayer *stock = chrome.tabs.bar.layer.presentationLayer, *npb = chrome.npb.layer.presentationLayer, *banner = chrome.banner.layer.presentationLayer;
@@ -408,8 +770,9 @@ static void after(double seconds, dispatch_block_t block) {
               [stock convertPoint:CGPointZero toLayer:self.window.layer.presentationLayer].y,
               [npb convertPoint:CGPointMake(0, npb.bounds.size.height) toLayer:self.window.layer.presentationLayer].y);
     });
+    if ([mode isEqualToString:@"cycle"]) after(6, ^{ report(chrome, @"restored"); });
     after(2.5, ^{
-        UITableView *list = (UITableView *)chrome.tabs.childViewControllers.firstObject.view;
+        UITableView *list = chrome.tabs.page.tableView;
         [list scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:29 inSection:0] atScrollPosition:UITableViewScrollPositionBottom animated:NO];
         report(chrome, mode);
     });

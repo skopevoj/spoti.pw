@@ -36,14 +36,20 @@ static UIView *identified(UIView *root, NSString *identifier, const void *cacheK
 
 static void clearSurface(UIView *view) {
     UIColor *color = view.backgroundColor;
-    if (color && SGIsBaseSurface(color.CGColor)) view.backgroundColor = UIColor.clearColor;
+    if (color && SGRIsBaseSurface(color.CGColor)) view.backgroundColor = UIColor.clearColor;
 }
 
 static void applyHairline(UIView *row, CGFloat leading) {
     CALayer *line = objc_getAssociatedObject(row, &kLineKey);
     if (!line) {
         line = [CALayer layer];
-        line.backgroundColor = [UIColor colorWithWhite:1 alpha:0.12].CGColor;
+        SGRegisterAppearanceRefresh(line, ^(id owner) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            ((CALayer *)owner).backgroundColor = SGRHairline().CGColor;
+            [CATransaction commit];
+        });
+        line.backgroundColor = SGRHairline().CGColor;
         line.zPosition = 1;
         objc_setAssociatedObject(row, &kLineKey, line, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }

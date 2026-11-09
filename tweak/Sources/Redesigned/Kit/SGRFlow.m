@@ -1,4 +1,5 @@
 #import "SGRFlow.h"
+#import "Core/SGAppearance.h"
 
 enum { kDiscs = 5 };
 
@@ -45,6 +46,26 @@ static UIColor *shaded(UIColor *color, CGFloat share) {
     return [UIColor colorWithRed:r * share green:g * share blue:b * share alpha:1];
 }
 
+static CGFloat ambientLinear(CGFloat c) {
+    return c <= .04045 ? c/12.92 : pow((c+.055)/1.055,2.4);
+}
+UIColor *SGRLightAmbientColor(UIColor *color) {
+    CGFloat h=0,s=0,v=0,a=1;
+    if (![color getHue:&h saturation:&s brightness:&v alpha:&a] || s<.025)
+        return [UIColor colorWithWhite:.96 alpha:1];
+    CGFloat r=0,g=0,b=0;
+    [[UIColor colorWithHue:h saturation:MIN(.72,s) brightness:1 alpha:1] getRed:&r green:&g blue:&b alpha:NULL];
+    // Lift towards white only as far as needed, retaining considerably more artwork
+    // hue than the old blanket 96%-white wash. .84 gives >4.8:1 against #666 ink.
+    CGFloat low=0,high=1;
+    for (NSUInteger i=0;i<16;i++) {
+        CGFloat mix=(low+high)/2;
+        CGFloat luminance=.2126*ambientLinear(r+(1-r)*mix)+.7152*ambientLinear(g+(1-g)*mix)+.0722*ambientLinear(b+(1-b)*mix);
+        if(luminance<.84)low=mix;else high=mix;
+    }
+    return [UIColor colorWithRed:r+(1-r)*high green:g+(1-g)*high blue:b+(1-b)*high alpha:1];
+}
+
 static NSArray *discColors(UIColor *color) {
     return @[(id)color.CGColor, (id)[color colorWithAlphaComponent:0.55].CGColor, (id)[color colorWithAlphaComponent:0].CGColor];
 }
@@ -58,6 +79,7 @@ static NSArray *discColors(UIColor *color) {
     CFTimeInterval _elapsed, _since;
     BOOL _moving;
     UIColor *_baseColor;
+    NSArray<UIColor *> *_sourceColors;
 }
 
 - (instancetype)init {
@@ -194,18 +216,31 @@ static NSArray *discColors(UIColor *color) {
 
 - (void)setColors:(NSArray<UIColor *> *)colors animated:(BOOL)animated {
     if (colors.count < kDiscs) return;
+    _sourceColors = [colors copy];
     _baseColor = shaded(colors[4], kBaseShade);
+    BOOL light=SGRedesignLightAppearance();
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    [self recolor:_base key:@"backgroundColor" to:(__bridge id)_baseColor.CGColor animated:animated];
-    for (int i = 0; i < kDiscs; i++) [self recolor:_discs[i] key:@"colors" to:discColors(colors[i]) animated:animated];
+    UIColor *base=light?SGRLightAmbientColor(colors[4]):_baseColor;
+    [self recolor:_base key:@"backgroundColor" to:(__bridge id)base.CGColor animated:animated];
+    for (int i = 0; i < kDiscs; i++) {
+        UIColor *color=light?SGRLightAmbientColor(colors[i]):colors[i];
+        [self recolor:_discs[i] key:@"colors" to:discColors(color) animated:animated];
+    }
+    UIColor *floor=light?UIColor.whiteColor:UIColor.blackColor;
+    _shade.colors=@[(id)[floor colorWithAlphaComponent:0].CGColor,(id)[floor colorWithAlphaComponent:light?.25:kShadeBottom].CGColor];
     [CATransaction commit];
+}
+
+- (void)refreshAppearance {
+    // Repaint existing layers without moving discs, restarting time or re-reading art.
+    if (_sourceColors) [self setColors:_sourceColors animated:NO];
 }
 
 - (void)recolor:(CALayer *)layer key:(NSString *)key to:(id)value animated:(BOOL)animated {
     id from = [(layer.presentationLayer ?: layer) valueForKey:key];
     [layer setValue:value forKey:key];
-    if (!animated || !from) return;
+    if (!animated || !from) { [layer removeAnimationForKey:key]; return; }
     CABasicAnimation *blend = [CABasicAnimation animationWithKeyPath:key];
     blend.fromValue = from;
     blend.toValue = value;

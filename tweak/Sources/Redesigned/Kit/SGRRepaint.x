@@ -2,6 +2,7 @@
 // is the now playing bar's card from the album-colour paint.
 #import "Core/SGCore.h"
 #import "SGRRepaint.h"
+#import "SGRTokens.h"
 
 __weak UIView *sgr_nowPlayingRoot = nil;
 __weak UIView *sgr_nowPlayingCard = nil;
@@ -24,7 +25,7 @@ __weak UIView *sgr_artistRoot = nil;
                 color = NULL;
             } else if (SGIsInside(view, sgr_lyricsPageRoot)) {
                 color = NULL;
-            } else if (SGIsBaseSurface(color) && (SGIsInside(view, sgr_playlistRoot) || SGIsInside(view, sgr_albumRoot) || SGIsInside(view, sgr_artistRoot))) {
+            } else if (SGRIsBaseSurface(color) && (SGIsInside(view, sgr_playlistRoot) || SGIsInside(view, sgr_albumRoot) || SGIsInside(view, sgr_artistRoot))) {
                 color = NULL;
             }
         }

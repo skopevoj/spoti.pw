@@ -15,6 +15,7 @@
 //   402x49 of four ElementContentView<TabBarItemElement> 100x49, each an SPTEncoreIconView 24x24
 //   at y 12.5 over an SPTEncoreLabel at y 35.
 #import "Core/SGCore.h"
+#import "Redesigned/Kit/SGRTokens.h"
 #import "Navbar.h"
 #import "Headers/SPTEncoreIconView.h"
 #import "Shared/Navigation/Links.h"
@@ -39,7 +40,7 @@ static UIFont *sg_tabFont;
 // anything below has moved them.
 static NSMutableArray<NSString *> *sg_stockOrder;
 
-static UIColor *itemColor(void) { return [UIColor colorWithWhite:0xB3 / 255.0 alpha:1]; }
+static UIColor *itemColor(void) { return SGRSecondary(); }
 
 #pragma mark - the mod's own items
 
@@ -231,6 +232,13 @@ void SGRComposeTabBar(UIView *tabBar) {
     BOOL empty = YES;
     for (UIView *item in wanted) if (!item.hidden) empty = NO;
     if (empty) for (UIView *item in wanted) item.hidden = NO;
+
+    // Hidden tabs must not leave a hit target or accessible child behind. Visibility
+    // comes only from the existing composition, including the user's Create entry.
+    for (UIView *item in stockViews.allValues) {
+        item.userInteractionEnabled = !item.hidden;
+        item.accessibilityElementsHidden = item.hidden;
+    }
 
     // Items of the mod's own join the stack at the end, where they are past whatever Spotify
     // counts, and Spotify's own keep the places it gave them.

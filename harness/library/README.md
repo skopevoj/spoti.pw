@@ -32,3 +32,35 @@ recorded on). Each moment is logged with where every control landed in the heade
 
 What it does not cover: the real stack's constraints and when its coalesced update actually runs, the
 element framework behind the avatar, the list's rows (`LibraryRows.x`) and the folder page.
+
+`wrapped` inserts the header container introduced in Spotify 9.1.94. Run both `wrapped steady` and
+`wrapped` (delayed model) to cover discovery and the header’s own layout hook. Each report asserts
+that the redesigned title exists. This is a hierarchy regression fixture, not a real Duo test.
+
+`encoreavatar` replaces the legacy AdaptiveFaceContainer with the 48pt SideDrawerButton Encore
+control seen in the Spotify 9.1.94 Duo device snapshot (2026-11-08). Run `wrapped encoreavatar
+steady norecents` and `wrapped encoreavatar back` to cover immediate and coalesced control layout.
+The default retains the legacy avatar fixture. These assertions test header placement, not the
+real app's bottom chrome or inherited safe-area insets.
+
+`safepage` reproduces the live controller's horizontal safe-area constraints on the page. Assertions
+require the page and collection viewport to fill the host bounds in vertical navigation, and to
+retain the original safe-area width otherwise. Checked on the Duo iOS 27.1 simulator (466pt full
+viewport) and iPhone iOS 26.5 simulator (402pt unchanged). The collection has no added side inset; verified row-content constraints keep text clear of the
+system status area and floating controls while the cell and separator span the viewport. This
+still needs real-device visual verification.
+
+`rows` compiles the real LibraryRows hook and uses the actual Playlist.Row.Library inner-stack
+constraint pattern from the device snapshot (top/bottom +/-8, leading/trailing +/-16). With
+`safepage wrapped encoreavatar steady norecents rows`, assertions check full-width cells and
+separators, inner content clearance, zero added scroll side insets, and bottom edge hidden only
+in vertical navigation. Verified on Duo (466pt cell, 350pt inner stack) and ordinary iPhone
+(402pt cell, 370pt inner stack). Scroll top/bottom insets remain Spotify's responsibility.
+
+`compositional gridtransition` reproduces the final physical probe: configuration None but an
+explicit SafeArea section still returns 382pt list attributes inside a 466pt viewport. The fixture
+retains upstream per-item and elements attributes and asserts that the production hooks return
+466pt copies without changing upstream objects, x/y, heights or content size. It checks full-width
+list cells/separators, unchanged safe-width grid cards, switching back to list, and reused rows after
+scrolling. The ordinary phone remains unchanged. No compositional configuration mutation is used.
+This is a regression fixture, not physical app verification.

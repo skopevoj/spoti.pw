@@ -16,6 +16,8 @@
 #import "Redesigned/Player/Player.h"
 #import "Redesigned/Kit/SGRBridges.h"
 #import "Redesigned/Kit/SGRField.h"
+#import "Redesigned/Kit/SGRBarGeometry.h"
+#import "Redesigned/Kit/SGRGlyph.h"
 
 void SGRHarnessPlayFrom(NSInteger ms);
 void SGRHarnessSetTrack(NSString *uri, NSString *imageURI, BOOL paused);
@@ -131,6 +133,24 @@ static NSString *colorName(UIImage *image) {
 }
 
 #pragma mark - Spotify's classes, by name
+
+static NSUInteger menuResponderActivations;
+@interface _TtC20NowPlaying_ModesImpl18HeaderElementsUnit : UIViewController
+- (void)harnessMenuResponderAction:(id)sender;
+@end
+@implementation _TtC20NowPlaying_ModesImpl18HeaderElementsUnit
+- (void)harnessMenuResponderAction:(id)sender { menuResponderActivations++; }
+@end
+
+// Encore-style activation with no UIControl target/action.
+static NSUInteger menuActivations;
+@interface SGRHarnessMore : UIControl
+- (void)menuTapped;
+@end
+@implementation SGRHarnessMore
+- (void)menuTapped { menuActivations++; }
+- (BOOL)accessibilityActivate { [self menuTapped]; return YES; }
+@end
 
 @interface _TtC19NowPlaying_ViewImpl24NowPlayingViewController : UIViewController @end
 @implementation _TtC19NowPlaying_ViewImpl24NowPlayingViewController @end
@@ -295,7 +315,7 @@ static void loadLyrics(void) {
 
 #pragma mark - the harness
 
-@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate>
+@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate, UIWindowSceneDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @end
 
@@ -308,15 +328,24 @@ static void loadLyrics(void) {
     NSUInteger _failures, _checks;
 }
 
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     loadLyrics();
     SGRHarnessPlayFrom(2400);
-    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     UIViewController *root = [UIViewController new];
     root.view.backgroundColor = [UIColor colorWithRed:0.09 green:0.07 blue:0.17 alpha:1];
     self.window.rootViewController = root;
 
+    root.view.frame = self.window.bounds;
     CGFloat W = root.view.bounds.size.width, H = root.view.bounds.size.height;
+    // Synthetic viewport sizes exercise fold geometry without requiring Simulator UI input.
+    NSString *size = NSProcessInfo.processInfo.environment[@"HARNESS_SIZE"];
+    NSArray *dimensions = [size componentsSeparatedByString:@"x"];
+    if (dimensions.count == 2) {
+        W = [dimensions[0] doubleValue]; H = [dimensions[1] doubleValue];
+        NSAssert(W >= 320 && H >= 400, @"HARNESS_SIZE must be at least 320x400");
+    }
+    NSLog(@"[harness] viewport %.0fx%.0f", W, H);
     // The player's own numbers are the tree's 402x874; the simulator's screen is whatever it is, so the
     // rows are placed as shares of it, the way Spotify's layout puts them.
     CGFloat headerTop = 62, headerHeight = 48;
@@ -374,7 +403,38 @@ static void loadLyrics(void) {
     // the header row
     UIView *header = box(host, UIStackView.class, CGRectMake(0, headerTop, W, headerHeight), nil);
     glyphButton(header, CGRectMake(12, 0, 48, 48), @"chevron.down", @"now-playing-minimize-button");
-    glyphButton(header, CGRectMake(W - 60, 0, 48, 48), @"ellipsis", @"Context menu");
+    UIView *more = box(header, SGRHarnessMore.class, CGRectMake(W - 60, 0, 48, 48), @"Context menu");
+    more.isAccessibilityElement = YES;
+    more.accessibilityLabel = @"More options";
+    UIImageView *moreGlyph = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"ellipsis"]];
+    moreGlyph.frame = more.bounds;
+    moreGlyph.contentMode = UIViewContentModeCenter;
+    [more addSubview:moreGlyph];
+    [(UIControl *)more addTarget:more action:@selector(menuTapped) forControlEvents:UIControlEventTouchUpInside];
+    UITapGestureRecognizer *menuGesture = [[UITapGestureRecognizer alloc] initWithTarget:more action:@selector(menuTapped)];
+    [more addGestureRecognizer:menuGesture];
+    [(UIControl *)more addTarget:nil action:@selector(harnessMenuResponderAction:) forControlEvents:UIControlEventPrimaryActionTriggered];
+    NSArray *menuConstraints = @[];
+    if ([scenario() isEqualToString:@"menu"]) {
+        more.translatesAutoresizingMaskIntoConstraints = NO;
+        if (getenv("HARNESS_MENU_STACK")) {
+            UIStackView *stack = (UIStackView *)header;
+            stack.axis = UILayoutConstraintAxisHorizontal;
+            stack.alignment = UIStackViewAlignmentCenter;
+            stack.layoutMarginsRelativeArrangement = YES;
+            stack.layoutMargins = UIEdgeInsetsMake(0, 12, 0, 12);
+            [stack addArrangedSubview:[UIView new]];
+            [stack addArrangedSubview:more];
+        }
+        menuConstraints = @[[more.widthAnchor constraintEqualToConstant:48],
+            [more.heightAnchor constraintEqualToConstant:48],
+            [more.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-12],
+            [more.centerYAnchor constraintEqualToAnchor:header.centerYAnchor]];
+        [NSLayoutConstraint activateConstraints:menuConstraints];
+        [header layoutIfNeeded];
+    }
+    UIViewController *headerUnit = [_TtC20NowPlaying_ModesImpl18HeaderElementsUnit new];
+    headerUnit.view = header;
 
     // the bottom stack: information, duration, controls, volume, footer
     UIView *bottom = box(host, UIStackView.class, CGRectMake(0, bottomTop, W, bottomHeight), @"npv.bottomStackView");
@@ -460,13 +520,15 @@ static void loadLyrics(void) {
     playback.view = controls;
     UIViewController *player = [_TtC19NowPlaying_ViewImpl24NowPlayingViewController new];
     player.view = host;
-    _units = @[info, duration, floating, playback, footer, scrollUnit, background, player];
+    _units = @[info, duration, floating, playback, footer, scrollUnit, background, headerUnit, player];
     _covers = covers;
     [self start];
     [self layOut];
     // Spotify lays its units out again as a track's elements arrive, which is what the redesign's
     // transforms and narrowed labels have to survive.
-    [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *t) { [self layOut]; }];
+    // Resize checks must not be rescued by a later periodic layout pass.
+    if (![scenario() isEqualToString:@"resize"])
+        [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *t) { [self layOut]; }];
 
     NSLog(@"[harness] lyrics available: %d", SGRPlayerLyricsAvailable());
     // With the lines up, the row that rose into them must still be Spotify's to touch, and the lines
@@ -484,6 +546,135 @@ static void loadLyrics(void) {
     if ([scenario() isEqualToString:@"artwork"]) [self runArtworkChecks];
     else if ([scenario() isEqualToString:@"look"]) [self runLook];
     else if ([scenario() isEqualToString:@"scroll"]) [self runScrollChecks];
+    else if ([scenario() isEqualToString:@"resize"]) {
+        CGPoint original = bottom.center;
+        __block BOOL settledOK = NO, animationOK = NO, repeatedOK = NO;
+        BOOL (^overlayPresent)(void) = ^BOOL {
+            for (UIView *v in host.subviews)
+                if ([NSStringFromClass(v.class) isEqualToString:@"SGRPlayerLyricsOverlay"]) return YES;
+            return NO;
+        };
+        BOOL (^restored)(void) = ^BOOL {
+            return !SGRPlayerLyricsOpen() && covers.alpha == 1 &&
+                CGAffineTransformIsIdentity(infoView.transform) &&
+                CGAffineTransformIsIdentity(titleElement.transform) &&
+                titleElement.layer.mask == nil && floatingView.alpha == 1 && !overlayPresent();
+        };
+        void (^schedule)(double, dispatch_block_t) = ^(double seconds, dispatch_block_t block) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)), dispatch_get_main_queue(), block);
+        };
+        schedule(2, ^{ SGRPlayerToggleLyrics(); });
+        schedule(4, ^{
+            BOOL opened = SGRPlayerLyricsOpen();
+            bottom.center = CGPointMake(original.x, original.y - bandHeight);
+            [self layOut];
+            settledOK = opened && restored();
+            bottom.center = original;
+            [self layOut];
+            SGRPlayerToggleLyrics();
+        });
+        // Shrink during the opening spring. No layout is sent after this until the check.
+        schedule(4.05, ^{
+            bottom.center = CGPointMake(original.x, original.y - bandHeight);
+            [self layOut];
+        });
+        schedule(6, ^{
+            animationOK = restored();
+            bottom.center = original;
+            [self layOut];
+            if (!SGRPlayerLyricsOpen()) SGRPlayerToggleLyrics();
+        });
+        // Interrupt several opening/closing springs. An old completion must not remove
+        // the current overlay or release its layout guard prematurely.
+        for (NSNumber *at in @[@6.05, @6.10, @6.15, @6.20])
+            schedule(at.doubleValue, ^{ SGRPlayerToggleLyrics(); });
+        schedule(8, ^{
+            repeatedOK = SGRPlayerLyricsOpen() && covers.alpha == 0 && overlayPresent() &&
+                !CGAffineTransformIsIdentity(infoView.transform);
+            if (SGRPlayerLyricsOpen()) SGRPlayerToggleLyrics();
+        });
+        schedule(10, ^{
+            BOOL closed = restored();
+            NSLog(@"[harness] resize checks: settled %d during-animation %d repeated-toggle %d final-close %d -- %@",
+                  settledOK, animationOK, repeatedOK, closed,
+                  settledOK && animationOK && repeatedOK && closed ? @"PASS" : @"FAIL");
+        });
+    }
+    else if ([scenario() isEqualToString:@"menu"]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            CGRect rail = SGRVerticalBarFrameIn(host, SGRVerticalBarExtent);
+            BOOL vertical = !CGRectIsNull(rail);
+            UIView *(^findSidebar)(void) = ^{
+                NSMutableArray *queue = [NSMutableArray arrayWithObject:self.window];
+                while (queue.count) {
+                    UIView *v = queue.lastObject;
+                    [queue removeLastObject];
+                    if ([v.accessibilityIdentifier isEqualToString:@"spotifyglass.player.sidebar-more"]) return v;
+                    [queue addObjectsFromArray:v.subviews];
+                }
+                return (UIView *)nil;
+            };
+            BOOL (^hitsOriginal)(void) = ^{
+                for (NSValue *point in @[[NSValue valueWithCGPoint:CGPointMake(2, 2)],
+                    [NSValue valueWithCGPoint:CGPointMake(46, 2)], [NSValue valueWithCGPoint:CGPointMake(24, 24)],
+                    [NSValue valueWithCGPoint:CGPointMake(2, 46)], [NSValue valueWithCGPoint:CGPointMake(46, 46)]]) {
+                    CGPoint at = [more convertPoint:point.CGPointValue toView:self.window];
+                    UIView *target = [self.window hitTest:at withEvent:nil];
+                    if (target != more && ![target isDescendantOfView:more]) return NO;
+                }
+                return YES;
+            };
+            BOOL (^isRestored)(void) = ^BOOL {
+                BOOL constraints = YES;
+                for (NSLayoutConstraint *constraint in menuConstraints) constraints &= constraint.active;
+                BOOL arranged = !getenv("HARNESS_MENU_STACK") || [((UIStackView *)header).arrangedSubviews containsObject:more];
+                return !findSidebar() && more.superview == header && !more.translatesAutoresizingMaskIntoConstraints &&
+                    more.alpha == 1 && !more.accessibilityElementsHidden && constraints && arranged;
+            };
+            UIView *sidebar = findSidebar();
+            CGRect drawn = [more convertRect:more.bounds toView:host];
+            BOOL placement = vertical ? sidebar && more.superview == sidebar && CGRectContainsRect(rail, drawn) &&
+                CGRectGetMinY(drawn) >= CGRectGetMinY(rail) + 8 && more.alpha == 1 &&
+                !more.accessibilityElementsHidden && CGSizeEqualToSize(more.bounds.size, CGSizeMake(48, 48)) : isRestored();
+            BOOL hit = hitsOriginal();
+            BOOL actionsPreserved = [more.gestureRecognizers containsObject:menuGesture] &&
+                [[(UIControl *)more actionsForTarget:more forControlEvent:UIControlEventTouchUpInside] containsObject:@"menuTapped"];
+            [(UIControl *)more sendActionsForControlEvents:UIControlEventTouchUpInside];
+            [more accessibilityActivate];
+            [(UIControl *)more sendActionsForControlEvents:UIControlEventPrimaryActionTriggered];
+            BOOL responder = menuResponderActivations == 1;
+            BOOL actions = menuActivations == 2 && actionsPreserved && responder;
+            BOOL interception = YES, modeRestoration = YES;
+            if (vertical) {
+                // A clear interactive sibling above the entire nested player must not swallow taps.
+                UIView *blocker = [[UIView alloc] initWithFrame:host.superview.bounds];
+                [host.superview addSubview:blocker];
+                BOOL interceptedBeforeLayout = !hitsOriginal();
+                [player viewDidLayoutSubviews];
+                interception = interceptedBeforeLayout && hitsOriginal() && more.superview == findSidebar();
+                [blocker removeFromSuperview];
+                [player viewDidLayoutSubviews];
+                // Move the host clear of the system rail without viewWillDisappear. This exercises
+                // the exact no-usable-vertical-region branch used when the layout mode changes.
+                CGRect originalBounds = host.bounds;
+                host.bounds = CGRectMake(0, 0, 100, originalBounds.size.height);
+                [player viewDidLayoutSubviews];
+                modeRestoration = isRestored();
+                host.bounds = originalBounds;
+                [player viewDidLayoutSubviews];
+                for (NSUInteger i = 0; i < 4; i++) [self layOut];
+                modeRestoration &= more.superview == findSidebar() && hitsOriginal();
+            }
+            [player viewWillDisappear:NO];
+            BOOL restored = isRestored();
+            [player viewDidLayoutSubviews];
+            BOOL reopened = vertical ? findSidebar() != nil && more.superview == findSidebar() && hitsOriginal() : isRestored();
+            NSLog(@"[harness] menu checks: vertical %d stack %d rail %@ placement %d hit %d actions %d responder %d interception %d mode-restoration %d restored %d reopened %d -- %@",
+                vertical, getenv("HARNESS_MENU_STACK") != NULL, NSStringFromCGRect(rail), placement, hit, actions, responder,
+                interception, modeRestoration, restored, reopened,
+                placement && hit && actions && interception && modeRestoration && restored && reopened ? @"PASS" : @"FAIL");
+        });
+    }
     // Opened, closed and opened again, so a screenshot can be taken of each state and of the move itself.
     else for (NSNumber *at in @[@2, @6, @10]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(at.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -491,7 +682,6 @@ static void loadLyrics(void) {
             SGRPlayerToggleLyrics();
         });
     }
-    return YES;
 }
 
 - (void)layOut {

@@ -8,6 +8,7 @@
 #   SIGN_PROFILE=/path/to/profile.mobileprovision
 #   SIGN_P12_PASSWORD=...
 # WIFI=1 installs over Wi-Fi instead of USB (the phone must be paired for wireless sync).
+# DEVICE_UDID selects one paired phone explicitly, so a connected iPad is never chosen instead.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,5 +38,8 @@ sign() {  # sign [bundle id]
 }
 
 if [ -n "$APP_ID" ] && [ "$APP_ID" != "*" ]; then sign "$APP_ID"; else sign; fi
-echo "==> installing $SIGNED"
-ideviceinstaller ${WIFI:+-n} install "$SIGNED" 2>&1 | tail -3
+INSTALL_ARGS=(install "$SIGNED")
+[ -z "${DEVICE_UDID:-}" ] || INSTALL_ARGS=(-u "$DEVICE_UDID" "${INSTALL_ARGS[@]}")
+[ -z "${WIFI:-}" ] || INSTALL_ARGS=(-n "${INSTALL_ARGS[@]}")
+echo "==> installing $SIGNED${DEVICE_UDID:+ on $DEVICE_UDID}"
+ideviceinstaller "${INSTALL_ARGS[@]}" 2>&1 | tail -3

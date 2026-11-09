@@ -112,3 +112,14 @@ void SGKaraokeSeek(NSInteger ms) {
     sg_started = CACurrentMediaTime();
 }
 void SGRHarnessPlayFrom(NSInteger ms) { SGKaraokeSeek(ms); }
+
+#pragma mark - Lyrics meanings (no network in the layout harness)
+#import "Shared/LyricsMeanings/Meanings.h"
+void SGLyricsMeaningsFor(NSString *trackID, NSArray<SGKaraokeLine *> *lines,
+                        void (^reply)(NSDictionary<NSNumber *, NSArray<SGLyricsMeaning *> *> *)) {
+    reply(@{});
+}
+void SGRShowMeanings(NSString *lineText, NSArray<SGLyricsMeaning *> *meanings) {}
+
+// Shared menu decoration is outside the player geometry harness.
+void SGPlayerMenuWatchMoreButton(UIView *button) {}

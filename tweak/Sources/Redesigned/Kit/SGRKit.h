@@ -15,7 +15,8 @@
 //                    controls, taking a list cell's paint off the field
 //     SGRBridges.h   player state, now playing artwork, the player's open and close
 //     SGRRepaint.h   the areas the redesign keeps transparent when Spotify repaints them
-//     SGRAccent.h    the redesign's accent colour; its AMOLED black is SGRAmoled.x, always on
+//     SGRAccent.h    the redesign's accent colour
+//     SGRAppearance.h launch-applied dark/light/system theme; AMOLED black applies only in dark
 //
 // Every hook file of the redesign starts its %ctor with `if (!SGRedesignedUI()) return;` and every one
 // of Native/ with `if (!SGNativeUI()) return;` (Core/SGUIMode.h), so the two looks never run together.
@@ -33,3 +34,5 @@
 #import "SGRBridges.h"
 #import "SGRRepaint.h"
 #import "SGRAccent.h"
+
+#import "SGRNativeSurface.h"

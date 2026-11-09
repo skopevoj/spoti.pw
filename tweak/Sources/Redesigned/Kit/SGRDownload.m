@@ -177,11 +177,14 @@ static UIColor *tintFor(SGRDownloadState state) {
     }
     _stop = [CAShapeLayer layer];
     [_ring.layer addSublayer:_stop];
+    SGRegisterAppearanceView(self);
+    SGRegisterAppearanceRefresh(self, ^(id owner) { [(SGRDownloadGlyph *)owner sgr_paint]; });
     [self sgr_paint];
     return self;
 }
 
 - (void)sgr_paint {
+    _symbol.tintColor = tintFor(_state);
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _track.strokeColor = [SGRPrimary() colorWithAlphaComponent:0.25].CGColor;

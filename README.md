@@ -46,6 +46,16 @@ The redesign is `UIGlassEffect`, which only exists from iOS 26. Below that the R
 is greyed out and the mod runs Spotify's own screens with everything else it adds on top. Both live
 in Settings → Mod Settings.
 
+## spoti.duo experimental branch
+
+This fork adds Duo-aware navigation and **Dark, Light, and live System** appearance to the redesigned UI. Choose the appearance in Mod Settings; changes apply without closing Spotify. The native theme bridge was audited against Spotify **9.1.94**, with simulator fixtures and an isolated real-provider probe; comprehensive signed-in app acceptance is still pending. [Appearance details and limitations](docs/appearance.md).
+
+The exact `com.kyle.spotipw.duo` bundle hides tab labels except when fully open in portrait, where it follows your saved **Hide labels** setting. Other bundle IDs always follow that setting. Create, custom tabs, hidden tabs and saved order use the existing Navbar editor. `DUO=1` alone does not change the bundle ID; choose an identifier that matches your signing profile. [Duo build notes](docs/iphone-duo.md).
+
+The editable [cyan Liquid Glass icon source](assets/Spotify%20Liquid%20Glass.icon) is included. The standard build still uses its existing PNG icon option; native icon catalog integration is not automated. [Icon notes](docs/native-icon.md).
+
+No decrypted Spotify app, signed IPA, certificate, profile or proprietary test binary is included. The upstream build instructions below retain their original version default; explicitly selecting 9.1.94 requires `EXPECTED_SPOTIFY_VERSION=9.1.94`, a suitable IPA and your own signing setup. This is experimental source for review, not a prebuilt release.
+
 ## Build it
 
 No IPA is distributed. Bring a decrypted **Spotify 9.1.78** IPA; you get an unsigned
@@ -74,7 +84,44 @@ Put the decrypted `.ipa` in `ipa/`, then:
 `make install` reads `SIGN_P12`, `SIGN_PROFILE` and `SIGN_P12_PASSWORD` from `.signing.env`; copy
 `.signing.env.example` and fill it in.
 
-The first build spends a minute reading Spotify's flags out of your IPA. `make flags` regenerates it.
+The first build, or a change of source IPA, reads Spotify's flags from that IPA. `make flags` regenerates the table.
+
+### iPhone Duo (experimental)
+
+Duo support applies to **Redesigned UI** and requires building with an **iPhoneOS 27.1+
+SDK**. The window's native `verticalBarEdge` trait and layout region select the side rail;
+other layouts retain the bottom tab bar. Tab order, custom links, Create, Home's hold action,
+and the existing **Hide labels** preference are preserved. The exact spoti.duo bundle applies
+the posture-specific label policy above.
+
+The miniplayer and Library content clear the rail, the player's real menu control stays
+reachable, playlist headers center in the usable column, and open lyrics recover when a
+fold or window resize takes away their space. Native UI remains Spotify's responsibility.
+
+[Apple's preparation guide](https://developer.apple.com/iphone-duo/prepare/) explains why
+the SDK linked by the **main app**, not an injected tweak, controls Duo compatibility.
+For an audited input IPA, this explicit option retargets the main executable's SDK metadata:
+
+    make release DUO=1 IPA=/path/to/Spotify-9.1.78.ipa
+
+`DUO=1` / `--duo` uses the selected installed SDK, preserves the minimum OS, build-tool
+metadata and injected load commands, updates matching SDK plist metadata, and signs the
+changed executable ad hoc with its existing entitlements before normal certificate signing.
+It refuses an SDK downgrade. **This does not recompile Spotify or establish compatibility
+with every newer SDK behavior.** Without the option, the main executable is not retargeted.
+
+The input preflight checks the Spotify version and bundle, thin arm64 executable and
+decrypted state. The default remains **9.1.78**. A different version requires an explicit
+`EXPECTED_SPOTIFY_VERSION` override and its own hook audit; the override does not make it
+supported. Flag-table caching is keyed by the IPA, extractor and generated table.
+
+To select a paired device for installation, use `DEVICE_UDID=<device-udid> make install`.
+Add `WIFI=1` only for a device already paired for wireless sync.
+
+Run the build regressions with `python3 -m unittest discover -s tests -v`. The actual
+Mach-O retarget/sign test needs Xcode and `ldid`. UIKit regression harnesses and their
+commands are in [docs/iphone-duo.md](docs/iphone-duo.md). **Keep this experimental until
+those harnesses and the injected app are verified against the chosen Spotify version.**
 
 ### Signing
 

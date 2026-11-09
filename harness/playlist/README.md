@@ -26,6 +26,27 @@ Back at rest the hero must be the height it had at 4 s: a hero that kept its pul
 
 What it does not cover: the real element framework's autolayout, and the flags `PlaylistField.x` forces.
 
+## Duo header centering
+
+The harness uses a scene delegate, required for launch on iOS 27. Run the actual header hooks and
+Kit views against the native Duo layout region and an ordinary phone with:
+
+    ./run-centering.sh <simulator-udid>
+
+This launches Liked Songs, an owned playlist, someone else's playlist and a mix. Each runs 36 checks:
+native Duo window resize widths 466 → 669 → 951 → 466 (ordinary phone: 320 → 402 → 466 → 320),
+expanded/collapsed/pulled header states, horizontal block offsets, and headers already constrained
+to the content column. Each case repeats the block/action-row layout observers four times and checks
+the info bounds, title/meta centers, Play center, and the complete action row against the playlist's
+safe content column. Ordinary-phone layouts keep the full header width. The resize cases are
+synthetic window resizes on the current native device trait, not physical fold/orientation changes.
+
+The recorded live Duo geometry is 466pt for PL.Header and its content-layout root, with an 84pt
+trailing safe area; playlist rows are 382pt. Before the fix, the info ignored the inset and centered
+at x=233 instead of the rows' x=191. The expected column is measured from the mock playlist's actual
+row frames, which use the page's safe area independently rather than calling the production header's
+inset calculation.
+
 `other` on the launch line makes it someone else's playlist (save on Play's right instead of download, and a
 description with an HTML entity); the header controller's view model is mocked from the device's values (2026-09-18).
 

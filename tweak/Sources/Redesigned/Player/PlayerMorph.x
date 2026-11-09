@@ -94,7 +94,7 @@ static CGFloat screenRadius(void) {
 
     _sheet = [[UIView alloc] initWithFrame:card];
     _sheet.userInteractionEnabled = NO;
-    _sheet.backgroundColor = SGRPlayerField().fieldColor ?: UIColor.blackColor;
+    _sheet.backgroundColor = SGRPlayerField().fieldColor ?: SGRNeutralField();
     _sheet.layer.cornerCurve = kCACornerCurveContinuous;
     _sheet.clipsToBounds = YES;
     [container insertSubview:_sheet belowSubview:overlay];
@@ -251,6 +251,16 @@ static SGRPlayerMorph *morphFor(SPTBarOverlayPresentationTransition *transition,
 
 %ctor {
     if (!SGRedesignedUI()) return;
+    // 9.1.94 removed this animator. The retained CompactOverlayTransition has a different
+    // contract, so leave Spotify's transition in charge instead of guessing at its methods.
+    Class animator = NSClassFromString(@"SPTBarOverlayPresentationTransition");
+    for (NSString *name in @[@"transitioningContext", @"overlayView", @"barSnapshotView", @"barFrame",
+                             @"progress", @"setProgress:", @"destroyTransitioningContext"]) {
+        if (!class_getInstanceMethod(animator, NSSelectorFromString(name))) {
+            SGLog(@"redesign player: custom morph unavailable; using Spotify's transition");
+            return;
+        }
+    }
     %init;
     SGRequireClasses(@[@"SPTBarOverlayPresentationTransition"]);
 }

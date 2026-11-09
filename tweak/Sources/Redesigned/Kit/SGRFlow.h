@@ -15,11 +15,16 @@
 // Threading: main thread only.
 #import <UIKit/UIKit.h>
 
+// Hue-preserving pastel field with a luminance floor for dark primary/secondary ink.
+// This maps only our generated ambient palette, never the album cover itself.
+UIColor *SGRLightAmbientColor(UIColor *color);
+
 @interface SGRFlowLayer : CALayer
 // Five colours, as -[SGRPalette flowColors] gives them: top left, top right, bottom left, bottom right,
 // the whole artwork's. Animated, they blend into the new ones where the discs are.
 - (void)setColors:(NSArray<UIColor *> *)colors animated:(BOOL)animated;
-// The colour under the discs, darker than the artwork's main one; nil before any colours are set.
+- (void)refreshAppearance;
+// The original dark colour under the discs, darker than the artwork's main one; nil before any colours are set.
 @property (nonatomic, readonly) UIColor *baseColor;
 // Drifting, or held still where it is. Off to begin with.
 @property (nonatomic) BOOL moving;

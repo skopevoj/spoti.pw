@@ -144,8 +144,8 @@ static UILabel *wordLabel(NSString *text, UIFont *font, UIColor *color, CGRect f
     _riseStart = word.start;
     _riseEnd = word.end;
     _rightToLeft = rightToLeft;
-    [self addSubview:wordLabel(word.text, font, [UIColor colorWithWhite:1 alpha:kDimAlpha], self.bounds, rightToLeft)];
-    _lit = wordLabel(word.text, font, UIColor.whiteColor, self.bounds, rightToLeft);
+    [self addSubview:wordLabel(word.text, font, [SGRPrimary() colorWithAlphaComponent:kDimAlpha], self.bounds, rightToLeft)];
+    _lit = wordLabel(word.text, font, SGRPrimary(), self.bounds, rightToLeft);
     // Hidden until the line is sung: a masked layer is drawn offscreen every frame even when the
     // mask leaves nothing of it, and a song has hundreds of words waiting their turn.
     _lit.hidden = YES;
@@ -686,7 +686,7 @@ static double wholeFrom(SGKaraokeLine *run, BOOL sweepsEstimates) {
         _translation = [[UILabel alloc] initWithFrame:layout.translation];
         _translation.numberOfLines = 0;
         _translation.font = style.translation;
-        _translation.textColor = UIColor.whiteColor;
+        _translation.textColor = SGRPrimary();
         _translation.alpha = kDimAlpha;
         _translation.textAlignment = _right ? NSTextAlignmentRight : NSTextAlignmentLeft;
         _translation.text = line.translation;
@@ -810,8 +810,8 @@ static const NSUInteger kLinesPerFrame = 4;
                           [UIImageSymbolConfiguration configurationWithPointSize:kBubbleGlyph weight:UIImageSymbolWeightBold]];
         _bubble = [[UIImageView alloc] initWithImage:glyph];
         _bubble.contentMode = UIViewContentModeCenter;
-        _bubble.tintColor = UIColor.blackColor;
-        _bubble.backgroundColor = UIColor.whiteColor;
+        _bubble.tintColor = SGAppearanceColor(UIColor.whiteColor, UIColor.blackColor);
+        _bubble.backgroundColor = SGRPrimary();
         _bubble.layer.cornerRadius = kBubbleSide / 2;
         _bubble.alpha = kBubbleAlpha;
         _bubble.frame = CGRectMake(x, CGRectGetMidY(word) - kBubbleSide / 2, kBubbleSide, kBubbleSide);
@@ -842,8 +842,14 @@ static const NSUInteger kLinesPerFrame = 4;
     [path moveToPoint:CGPointMake(from, rowY)];
     [path addLineToPoint:CGPointMake(to, rowY)];
     _underline = [CAShapeLayer layer];
+    SGRegisterAppearanceRefresh(_underline, ^(id owner) {
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        ((CAShapeLayer *)owner).strokeColor = [SGRPrimary() colorWithAlphaComponent:kUnderlineAlpha].CGColor;
+        [CATransaction commit];
+    });
     _underline.path = path.CGPath;
-    _underline.strokeColor = [UIColor colorWithWhite:1 alpha:kUnderlineAlpha].CGColor;
+    _underline.strokeColor = [SGRPrimary() colorWithAlphaComponent:kUnderlineAlpha].CGColor;
     _underline.lineWidth = kUnderlineWidth;
     _underline.lineCap = kCALineCapRound;
     _underline.lineDashPattern = @[@0, @5];
@@ -908,9 +914,15 @@ static double smoothstep(double p) {
     NSMutableArray<CALayer *> *dots = [NSMutableArray array];
     for (NSUInteger i = 0; i < 3; i++) {
         CALayer *dot = [CALayer layer];
+        SGRegisterAppearanceRefresh(dot, ^(id owner) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            ((CALayer *)owner).backgroundColor = SGRPrimary().CGColor;
+            [CATransaction commit];
+        });
         dot.frame = CGRectMake(i * (_side + _gap), 0, _side, _side);
         dot.cornerRadius = _side / 2;
-        dot.backgroundColor = UIColor.whiteColor.CGColor;
+        dot.backgroundColor = SGRPrimary().CGColor;
         dot.opacity = kDimAlpha;
         [_group addSublayer:dot];
         [dots addObject:dot];
@@ -1106,7 +1118,7 @@ typedef struct {
     [self addSubview:_scroll];
     _credit = [[UILabel alloc] initWithFrame:CGRectZero];
     _credit.font = [UIFont systemFontOfSize:kCreditSize weight:UIFontWeightSemibold];
-    _credit.textColor = [UIColor colorWithWhite:1 alpha:kCreditAlpha];
+    _credit.textColor = [SGRPrimary() colorWithAlphaComponent:kCreditAlpha];
     _credit.hidden = YES;
     _crediting = SGFlag(SGKeyLyricsCredit, NO);
     _sweepsEstimates = SGFlag(SGKeyLyricsSimulateWords, NO);
@@ -1417,9 +1429,9 @@ typedef struct {
         }
         config.image = glyph;
         config.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
-        config.baseForegroundColor = UIColor.whiteColor;
+        config.baseForegroundColor = SGRPrimary();
         _extras = [UIButton buttonWithConfiguration:config primaryAction:nil];
-        _extras.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        SGRegisterAppearanceView(_extras);
         _extras.showsMenuAsPrimaryAction = YES;
         _extras.preferredMenuElementOrder = UIContextMenuConfigurationElementOrderFixed;
         _extras.accessibilityLabel = @"Pronunciation and translation";

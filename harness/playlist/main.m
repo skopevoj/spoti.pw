@@ -2,6 +2,7 @@
 // trees/clean/playlist/01.txt, so Redesigned/Playlist can be laid out and looked at on the Mac.
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import "Redesigned/Kit/SGRBarGeometry.h"
 #import "../download-mock.h"
 
 #pragma mark - Spotify's classes, by name
@@ -13,6 +14,26 @@
 @implementation _TtC35ListUXPlatform_FreeTierPlaylistImpl17FTPViewController
 - (void)sgr_creatorFired { NSLog(@"[harness] the creator line opened the playlist's owner"); }
 - (void)sgr_pillFired:(UIView *)pill { NSLog(@"[harness] the sheet fired Spotify's %@ pill", pill.accessibilityLabel); }
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    // The live Duo list is full width, but Spotify measures its rows to the safe content column.
+    BOOL vertical = !CGRectIsNull(SGRVerticalBarFrameIn(self.view, SGRVerticalBarExtent));
+    UIEdgeInsets safe = vertical ? self.view.safeAreaInsets : UIEdgeInsetsZero;
+    for (UIView *list in self.view.subviews) {
+        if (![list.accessibilityIdentifier isEqualToString:@"SPTFreeTierPlaylistTableView"]) continue;
+        list.frame = self.view.bounds;
+        for (UIView *cell in list.subviews) {
+            if (![cell.accessibilityIdentifier hasPrefix:@"Playlist.ItemCell"]) continue;
+            CGRect frame = cell.frame;
+            frame.origin.x = safe.left;
+            frame.size.width = self.view.bounds.size.width - safe.left - safe.right;
+            cell.frame = frame;
+            for (UIView *row in cell.subviews) {
+                if ([row.accessibilityIdentifier isEqualToString:@"Encore.ListRow"]) row.frame = cell.bounds;
+            }
+        }
+    }
+}
 @end
 
 @interface _TtC35ListUXPlatform_FreeTierPlaylistImpl32FTPTouchCancellingCollectionView : UIScrollView @end
@@ -242,6 +263,8 @@ static NSString *trailingLabel(UIView *root) {
     return @"no header";
 }
 
+#import "header-centering.h"
+
 // Liked Songs (trees/continuous/1.txt, 2026-09-18): the same page with no cover, a 238pt header, a column of
 // only the title and the count (the count in a stack of its own, 314pt of label and a 56pt spacer), no add or
 // more in the row, the play button 80x48 with its 48pt disc at x=16, and LiquidGlass.gradientContainer, the
@@ -333,6 +356,11 @@ static void buildLikedSongs(UIViewController *page, CGFloat W) {
     disc.backgroundColor = [UIColor colorWithRed:0.02 green:0.97 blue:0 alpha:1];
     [condensed addSubview:disc];
 
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"centering"]) {
+        startHeaderCenteringChecks(page, header, layout, block, actions);
+        return;
+    }
+
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         scrim.alpha = 1;
         [layout setNeedsLayout];
@@ -352,14 +380,26 @@ static void buildLikedSongs(UIViewController *page, CGFloat W) {
     });
 }
 
-@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate>
+@interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate, UIWindowSceneDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @end
 
 @implementation SGRHarnessDelegate
 
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
-    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options { return YES; }
+
+- (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    UISceneConfiguration *configuration = [[UISceneConfiguration alloc] initWithName:@"Playlist" sessionRole:session.role];
+    configuration.delegateClass = self.class;
+    return configuration;
+}
+
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    [self buildScene:(UIWindowScene *)scene];
+}
+
+- (BOOL)buildScene:(UIWindowScene *)scene {
+    self.window = [[UIWindow alloc] initWithWindowScene:scene];
     CGFloat W = self.window.bounds.size.width, H = self.window.bounds.size.height;
 
     UIViewController *page = [_TtC35ListUXPlatform_FreeTierPlaylistImpl17FTPViewController new];
@@ -668,6 +708,10 @@ static void buildLikedSongs(UIViewController *page, CGFloat W) {
     }
 
     [self.window makeKeyAndVisible];
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"centering"]) {
+        startHeaderCenteringChecks(page, header, layout, block, actions);
+        return YES;
+    }
 
     // The header collapsing, and the page pulled down past the top, with the frames Spotify sets in each
     // (trees/continuous/2.txt and 4.txt). The hero has to slide up out of the clipping view with the plane

@@ -15,6 +15,8 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Library.h"
+#import "Redesigned/Kit/SGRBarGeometry.h"
+#import "LibraryRowGeometry.h"
 
 // What a row leaves between its artwork and its text (03.txt:36 and :39: the artwork ends at 64, the text
 // starts at 76), and where the hairline starts with it.
@@ -46,6 +48,12 @@ static void hairline(UIView *cell, UIView *thumb) {
     }
     if (!line) {
         line = [CALayer layer];
+        SGRegisterAppearanceRefresh(line, ^(id owner) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            ((CALayer *)owner).backgroundColor = SGRHairline().CGColor;
+            [CATransaction commit];
+        });
         line.backgroundColor = SGRHairline().CGColor;
         objc_setAssociatedObject(cell, &kLineKey, line, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
@@ -64,6 +72,7 @@ static void hairline(UIView *cell, UIView *thumb) {
 }
 
 static void style(UIView *cell) {
+    SGRLibraryInsetRowContent(cell);
     UIView *thumb = SGRFindByIdentifier(cell, @"Artwork.Row.Library", &kThumbKey);
     if (thumb) roundCorners(thumb, SGRRadiusThumb);
     else roundCorners(SGRFindByIdentifier(cell, @"Components.UI.CardLibrary.Artwork", &kCoverKey), SGRRadiusCover);

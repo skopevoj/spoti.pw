@@ -12,6 +12,11 @@ static const CGFloat kFallbackHeight = 874;   // a window-less field sizes for a
 // Where the colour starts fading to black and where it is black, as shares of the window's height:
 // the redesign is AMOLED throughout (SGRAmoled.x).
 static const CGFloat kBlackFrom = 0.55, kBlackTo = 1;
+// Use the artwork's hue in both appearances. Light owns a pastel palette instead
+// of hiding the existing ambient colors behind a nearly opaque white sheet.
+static UIColor *visibleFieldColor(UIColor *color) {
+    return SGRedesignLightAppearance() ? SGRLightAmbientColor(color) : color;
+}
 
 static CGFloat windowHeight(UIView *view) {
     CGFloat height = view.window.bounds.size.height;
@@ -34,9 +39,11 @@ static NSDictionary *noActions(void) {
     CALayer *_solid;
     CAGradientLayer *_black;
     CALayer *_backdrop;
+    CAGradientLayer *_lightFloor;
     SGRFlowLayer *_flow;
     BOOL _watching;
     UIColor *_color;
+    UIColor *_rawColor; // Keep artwork-derived color, never re-tint the already washed value.
     UIColor *_preferred;   // the page's own colour, made fit; wins over the artwork's
     UIImage *_image;
     NSString *_identity;
@@ -49,7 +56,9 @@ static NSDictionary *noActions(void) {
     self.userInteractionEnabled = NO;
     self.clipsToBounds = NO;
     self.accessibilityElementsHidden = YES;
-    _color = SGRNeutralField();
+    UIColor *neutral = [UIColor colorWithWhite:0x12 / 255.0 alpha:1];
+    _rawColor = neutral;
+    _color = visibleFieldColor(neutral);
 
     _solid = [CALayer layer];
     _solid.actions = noActions();
@@ -66,7 +75,28 @@ static NSDictionary *noActions(void) {
     _backdrop.contentsGravity = kCAGravityResize;
     _backdrop.hidden = YES;
     [self.layer addSublayer:_backdrop];
+    {
+        _lightFloor = [CAGradientLayer layer];
+        _lightFloor.actions = noActions();
+        _lightFloor.colors = @[(id)[UIColor colorWithWhite:1 alpha:0].CGColor, (id)UIColor.whiteColor.CGColor];
+        [self.layer addSublayer:_lightFloor];
+    }
+    SGRegisterAppearanceView(self);
+    SGRegisterAppearanceRefresh(self, ^(id owner) { [(SGRArtworkField *)owner sgr_refreshAppearance]; });
+    [self sgr_refreshAppearance];
     return self;
+}
+
+- (void)sgr_refreshAppearance {
+    BOOL light = SGRedesignLightAppearance();
+    // The still dark bitmap remains retained for exact restoration. In Light the
+    // owned hue-derived field and floor stay readable without recoloring cover art.
+    _backdrop.hidden = light || _flows || !_backdrop.contents;
+    [_flow refreshAppearance];
+    _lightFloor.hidden = !light || _flows;
+    _black.hidden = light || _flows;
+    [_solid removeAnimationForKey:@"backgroundColor"];
+    [self applyColor:_rawColor animated:NO];
 }
 
 - (UIColor *)fieldColor {
@@ -100,6 +130,8 @@ static NSDictionary *noActions(void) {
     CGFloat to = MAX(from + 1, height * kBlackTo + bleed.top);
     _black.frame = painted;
     _black.locations = @[@(MIN(1, from / total)), @(MIN(1, to / total))];
+    _lightFloor.frame = painted;
+    _lightFloor.locations = _black.locations;
     _backdrop.frame = CGRectMake(0, 0, bounds.size.width, [self backdropHeightNow]);
     _flow.frame = CGRectMake(0, 0, bounds.size.width, [self backdropHeightNow]);
     [CATransaction commit];
@@ -116,7 +148,8 @@ static NSDictionary *noActions(void) {
         [self.layer insertSublayer:_flow above:_solid];
     }
     // The moving field is the whole picture: no still backdrop over it, no fade to black under it.
-    _black.hidden = flows;
+    _black.hidden = flows || SGRedesignLightAppearance();
+    _lightFloor.hidden = flows || !SGRedesignLightAppearance();
     if (flows) _backdrop.hidden = YES;
     else _flow.hidden = YES;
     [self watch];
@@ -168,13 +201,16 @@ static NSDictionary *noActions(void) {
 }
 
 - (void)applyColor:(UIColor *)color animated:(BOOL)animated {
-    if (!color || CGColorEqualToColor(color.CGColor, _color.CGColor)) return;
+    if (!color) return;
+    _rawColor = color;
+    UIColor *visible = visibleFieldColor(color);
+    if (CGColorEqualToColor(visible.CGColor, _color.CGColor)) return;
     CALayer *shown = _solid.presentationLayer ?: _solid;
     id from = (__bridge id)shown.backgroundColor;
-    _color = color;
+    _color = visible;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    _solid.backgroundColor = color.CGColor;
+    _solid.backgroundColor = visible.CGColor;
     [CATransaction commit];
     if (animated && from) {
         CABasicAnimation *fade = [CABasicAnimation animationWithKeyPath:@"backgroundColor"];
@@ -185,7 +221,7 @@ static NSDictionary *noActions(void) {
         fade.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
         [_solid addAnimation:fade forKey:@"backgroundColor"];
     }
-    [NSNotificationCenter.defaultCenter postNotificationName:SGRFieldColorDidChangeNotification object:self userInfo:@{@"color": color}];
+    [NSNotificationCenter.defaultCenter postNotificationName:SGRFieldColorDidChangeNotification object:self userInfo:@{@"color": visible}];
 }
 
 - (void)setProvisionalColor:(UIColor *)color {
@@ -236,7 +272,7 @@ static NSDictionary *noActions(void) {
             [_backdrop addAnimation:fade forKey:@"contents"];
         }
         _backdrop.contents = (__bridge id)palette.backdrop.CGImage;
-        _backdrop.hidden = NO;
+        _backdrop.hidden = SGRedesignLightAppearance();
         [CATransaction commit];
     }
     [self applyColor:_preferred ?: palette.fieldColor animated:animated];
